@@ -8,7 +8,7 @@ using Brutal.VulkanApi.Abstractions;
 namespace Brutality.Rendering;
 
 /// <summary>
-/// Draws a spinning, textured, lit cube with dynamic rendering, keeping two frames in flight.
+/// Draws a spinning, textured, lit cube and sphere side by side with dynamic rendering, keeping two frames in flight.
 /// </summary>
 sealed unsafe class Renderer : IDisposable
 {
@@ -38,7 +38,8 @@ sealed unsafe class Renderer : IDisposable
     Swapchain _swapchain;
     bool _swapchainStale;
 
-    readonly GpuMesh _mesh;
+    readonly GpuMesh _cube;
+    readonly GpuMesh _sphere;
     readonly Texture _texture;
 
     readonly VkDescriptorSetLayout _descriptorSetLayout;
@@ -64,7 +65,8 @@ sealed unsafe class Renderer : IDisposable
         );
         _swapchain = new Swapchain(gpu, window.FramebufferSize, _depthFormat, null);
 
-        _mesh = GpuMesh.Generate(gpu, mesh => ProcGenMeshLibrary.GenerateCube(mesh, float3.Zero, 1.0f, 1));
+        _cube = GpuMesh.Generate(gpu, mesh => ProcGenMeshLibrary.GenerateCube(mesh, float3.Zero, 1.0f, 1));
+        _sphere = GpuMesh.Generate(gpu, mesh => ProcGenMeshLibrary.GenerateSphere(mesh, float3.Zero, 0.6f, 32));
         _texture = texturePath is null ? Texture.CreateCheckerboard(gpu) : Texture.LoadFromFile(gpu, texturePath);
 
         // One combined image sampler, read by the fragment shader.
@@ -394,22 +396,31 @@ sealed unsafe class Renderer : IDisposable
         cmd.BindDescriptorSets(VkPipelineBindPoint.Graphics, _pipelineLayout, 0, [_descriptorSet], []);
 
         // Row vectors, as in System.Numerics: transforms compose left to right.
-        var model = float4x4.CreateFromYawPitchRoll(time * 0.7f, time * 0.4f, 0);
-        var view = float4x4.CreateLookAt(new float3(0, 0.6f, 2.4f), float3.Zero, float3.UnitY);
+        var view = float4x4.CreateLookAt(new float3(0, 0.8f, 3.2f), float3.Zero, float3.UnitY);
         var projection = float4x4.CreatePerspectiveFieldOfView(
             float.DegreesToRadians(60),
             (float)extent.Width / extent.Height,
             0.1f,
             100f
         );
-        cmd.PushConstants(
-            _pipelineLayout,
-            VkShaderStageFlags.VertexBit,
-            ByteSize.Zero,
-            new PushConstants { ModelViewProjection = model * view * projection, Model = model }
-        );
+        var viewProjection = view * projection;
 
-        _mesh.Draw(cmd);
+        void DrawMesh(GpuMesh mesh, float4x4 model)
+        {
+            cmd.PushConstants(
+                _pipelineLayout,
+                VkShaderStageFlags.VertexBit,
+                ByteSize.Zero,
+                new PushConstants { ModelViewProjection = model * viewProjection, Model = model }
+            );
+            mesh.Draw(cmd);
+        }
+
+        DrawMesh(
+            _cube,
+            float4x4.CreateFromYawPitchRoll(time * 0.7f, time * 0.4f, 0) * float4x4.CreateTranslation(-0.9f, 0, 0)
+        );
+        DrawMesh(_sphere, float4x4.CreateRotationY(time * 0.5f) * float4x4.CreateTranslation(0.9f, 0, 0));
 
         cmd.EndRendering();
 
@@ -442,7 +453,8 @@ sealed unsafe class Renderer : IDisposable
         _device.DestroyDescriptorSetLayout(_descriptorSetLayout, null);
 
         _texture.Dispose();
-        _mesh.Dispose();
+        _sphere.Dispose();
+        _cube.Dispose();
         _swapchain.Dispose();
     }
 }
