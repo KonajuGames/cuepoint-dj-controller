@@ -61,6 +61,11 @@ sealed class ScrollPanel : Panel
 
     public override UiCursor Cursor => UiCursor.Arrow;
 
+    /// <summary>
+    /// Scrolling the log shouldn't take you out of the note box, say.
+    /// </summary>
+    public override bool KeepsFocusOnClick => true;
+
     float _contentHeight;
 
     /// <summary>

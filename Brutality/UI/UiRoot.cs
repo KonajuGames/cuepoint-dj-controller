@@ -246,9 +246,13 @@ sealed class UiRoot
 
         if (down)
         {
-            // Clicking moves focus to what was clicked, or clears it when that can't take focus.
-            _focusVisible = false;
-            Focus(Hovered is { IsFocusable: true } ? Hovered : null);
+            // Clicking moves focus to what was clicked, or clears it when that can't take focus, except on controls
+            // like scrollbars that leave focus (and its ring) where it was.
+            if (Hovered is not { KeepsFocusOnClick: true })
+            {
+                _focusVisible = false;
+                Focus(Hovered is { IsFocusable: true } ? Hovered : null);
+            }
 
             if (Hovered is null)
                 return;

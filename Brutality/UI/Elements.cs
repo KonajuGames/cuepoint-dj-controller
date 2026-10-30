@@ -75,6 +75,12 @@ abstract class UiElement
     /// </summary>
     public virtual bool CapturesKeyboard => false;
 
+    /// <summary>
+    /// Whether clicking this element leaves keyboard focus where it was, rather than clearing it. For controls like
+    /// scrollbars that help you look around without being somewhere to type.
+    /// </summary>
+    public virtual bool KeepsFocusOnClick => false;
+
     public bool IsFocused { get; internal set; }
 
     /// <summary>
