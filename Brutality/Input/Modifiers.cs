@@ -1,7 +1,7 @@
 namespace Brutality.Input;
 
 [Flags]
-enum UiModifiers
+enum Modifiers
 {
     None = 0,
     Shift = 1,
@@ -14,17 +14,17 @@ enum UiModifiers
     Super = 8,
 }
 
-static class UiModifiersExtensions
+static class ModifiersExtensions
 {
     /// <summary>
     /// The modifier for shortcuts like paste: Command on macOS, Control elsewhere.
     /// </summary>
-    public static bool HasShortcutModifier(this UiModifiers modifiers) =>
-        (modifiers & (OperatingSystem.IsMacOS() ? UiModifiers.Super : UiModifiers.Control)) != 0;
+    public static bool HasShortcutModifier(this Modifiers modifiers) =>
+        (modifiers & (OperatingSystem.IsMacOS() ? Modifiers.Super : Modifiers.Control)) != 0;
 
     /// <summary>
     /// The modifier for moving or deleting a word at a time: Option on macOS, Control elsewhere.
     /// </summary>
-    public static bool HasWordModifier(this UiModifiers modifiers) =>
-        (modifiers & (OperatingSystem.IsMacOS() ? UiModifiers.Alt : UiModifiers.Control)) != 0;
+    public static bool HasWordModifier(this Modifiers modifiers) =>
+        (modifiers & (OperatingSystem.IsMacOS() ? Modifiers.Alt : Modifiers.Control)) != 0;
 }

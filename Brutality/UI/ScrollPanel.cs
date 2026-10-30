@@ -316,7 +316,7 @@ sealed class ScrollPanel : Panel
         return null;
     }
 
-    public override void PointerDown(float2 point, UiModifiers modifiers)
+    public override void PointerDown(float2 point, Modifiers modifiers)
     {
         _drag = null;
         if (ScrollbarAt(point) is not { } axis)

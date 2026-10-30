@@ -3,7 +3,7 @@ namespace Brutality.Input;
 /// <summary>
 /// The keys the UI acts on; anything else arrives as <see cref="Other"/>.
 /// </summary>
-enum UiKey
+enum Key
 {
     Other,
     Tab,

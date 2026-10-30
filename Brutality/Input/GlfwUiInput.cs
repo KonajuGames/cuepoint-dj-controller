@@ -73,15 +73,15 @@ sealed class GlfwUiInput : IDisposable
 
     void OnMouseButton(GlfwWindow window, GlfwMouseButton button, GlfwButtonAction action, GlfwModifier mods)
     {
-        UiMouseButton? uiButton = button switch
+        MouseButton? uiButton = button switch
         {
-            GlfwMouseButton.Left => UiMouseButton.Left,
-            GlfwMouseButton.Right => UiMouseButton.Right,
-            GlfwMouseButton.Middle => UiMouseButton.Middle,
+            GlfwMouseButton.Left => MouseButton.Left,
+            GlfwMouseButton.Right => MouseButton.Right,
+            GlfwMouseButton.Middle => MouseButton.Middle,
             _ => null,
         };
         if (uiButton is { } b)
-            _ui.MouseButton(b, action == GlfwButtonAction.Press, ToUiModifiers(mods));
+            _ui.MouseButton(b, action == GlfwButtonAction.Press, ToModifiers(mods));
         UpdateCursor();
     }
 
@@ -108,7 +108,7 @@ sealed class GlfwUiInput : IDisposable
         }
         else
         {
-            handled = _ui.KeyDown(ToUiKey(key), ToUiModifiers(mods));
+            handled = _ui.KeyDown(ToKey(key), ToModifiers(mods));
             if (handled)
                 _keysHeldByUi.Add(key);
         }
@@ -123,33 +123,33 @@ sealed class GlfwUiInput : IDisposable
             _ui.TextInput(rune);
     }
 
-    // GLFW's Shift, Control, Alt and Super bits match UiModifiers; Caps Lock and Num Lock are dropped.
-    static UiModifiers ToUiModifiers(GlfwModifier mods) => (UiModifiers)((int)mods & 0xF);
+    // GLFW's Shift, Control, Alt and Super bits match Modifiers; Caps Lock and Num Lock are dropped.
+    static Modifiers ToModifiers(GlfwModifier mods) => (Modifiers)((int)mods & 0xF);
 
-    static UiKey ToUiKey(GlfwKey key) =>
+    static Key ToKey(GlfwKey key) =>
         key switch
         {
-            GlfwKey.Tab => UiKey.Tab,
-            GlfwKey.Enter or GlfwKey.KpEnter => UiKey.Enter,
-            GlfwKey.Escape => UiKey.Escape,
-            GlfwKey.Space => UiKey.Space,
-            GlfwKey.Backspace => UiKey.Backspace,
-            GlfwKey.Delete => UiKey.Delete,
-            GlfwKey.Left => UiKey.Left,
-            GlfwKey.Right => UiKey.Right,
-            GlfwKey.Up => UiKey.Up,
-            GlfwKey.Down => UiKey.Down,
-            GlfwKey.Home => UiKey.Home,
-            GlfwKey.End => UiKey.End,
-            GlfwKey.PageUp => UiKey.PageUp,
-            GlfwKey.PageDown => UiKey.PageDown,
-            GlfwKey.A => UiKey.A,
-            GlfwKey.C => UiKey.C,
-            GlfwKey.V => UiKey.V,
-            GlfwKey.X => UiKey.X,
-            GlfwKey.Y => UiKey.Y,
-            GlfwKey.Z => UiKey.Z,
-            _ => UiKey.Other,
+            GlfwKey.Tab => Key.Tab,
+            GlfwKey.Enter or GlfwKey.KpEnter => Key.Enter,
+            GlfwKey.Escape => Key.Escape,
+            GlfwKey.Space => Key.Space,
+            GlfwKey.Backspace => Key.Backspace,
+            GlfwKey.Delete => Key.Delete,
+            GlfwKey.Left => Key.Left,
+            GlfwKey.Right => Key.Right,
+            GlfwKey.Up => Key.Up,
+            GlfwKey.Down => Key.Down,
+            GlfwKey.Home => Key.Home,
+            GlfwKey.End => Key.End,
+            GlfwKey.PageUp => Key.PageUp,
+            GlfwKey.PageDown => Key.PageDown,
+            GlfwKey.A => Key.A,
+            GlfwKey.C => Key.C,
+            GlfwKey.V => Key.V,
+            GlfwKey.X => Key.X,
+            GlfwKey.Y => Key.Y,
+            GlfwKey.Z => Key.Z,
+            _ => Key.Other,
         };
 
     /// <summary>

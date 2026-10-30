@@ -220,9 +220,10 @@ sealed class UiRoot
         return false;
     }
 
-    public void MouseButton(UiMouseButton button, bool down, UiModifiers modifiers = UiModifiers.None)
+    public void MouseButton(MouseButton button, bool down, Modifiers modifiers = Modifiers.None)
     {
-        if (button != UiMouseButton.Left)
+        // Qualified, since inside this class the bare name means this method.
+        if (button != Input.MouseButton.Left)
             return;
 
         if (down)
@@ -280,16 +281,16 @@ sealed class UiRoot
     /// Escape clears focus if that element doesn't use it. Returns whether the UI used the key; when it didn't, the
     /// app is free to.
     /// </summary>
-    public bool KeyDown(UiKey key, UiModifiers modifiers)
+    public bool KeyDown(Key key, Modifiers modifiers)
     {
-        if (key == UiKey.Tab)
-            return MoveFocus(backwards: (modifiers & UiModifiers.Shift) != 0);
+        if (key == Key.Tab)
+            return MoveFocus(backwards: (modifiers & Modifiers.Shift) != 0);
 
         if (Focused is not { } focused)
             return false;
         if (focused.KeyDown(key, modifiers))
             return true;
-        if (key == UiKey.Escape)
+        if (key == Key.Escape)
         {
             Focus(null);
             return true;

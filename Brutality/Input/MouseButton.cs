@@ -1,6 +1,6 @@
 namespace Brutality.Input;
 
-enum UiMouseButton
+enum MouseButton
 {
     Left,
     Right,

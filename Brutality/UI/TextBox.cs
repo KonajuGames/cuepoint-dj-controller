@@ -302,13 +302,13 @@ sealed class TextBox(Font font) : UiElement
         _lastActivity = Environment.TickCount64;
     }
 
-    public override void PointerDown(float2 point, UiModifiers modifiers)
+    public override void PointerDown(float2 point, Modifiers modifiers)
     {
         var index = IndexAtPoint(point);
         var now = Environment.TickCount64;
         // Shift+click always extends the selection, however soon it follows the last click.
         var continuesRun =
-            (modifiers & UiModifiers.Shift) == 0
+            (modifiers & Modifiers.Shift) == 0
             && now - _lastClickTime <= DOUBLE_CLICK_MS
             && float2.Distance(point, _lastClickPoint) <= DOUBLE_CLICK_DISTANCE;
         _clickCount = continuesRun ? _clickCount + 1 : 1;
@@ -330,7 +330,7 @@ sealed class TextBox(Font font) : UiElement
             Select(word.Start, word.End - word.Start);
             _dragWord = word;
         }
-        else if ((modifiers & UiModifiers.Shift) != 0)
+        else if ((modifiers & Modifiers.Shift) != 0)
             _caret = index;
         else
             CaretIndex = index;
@@ -375,78 +375,78 @@ sealed class TextBox(Font font) : UiElement
         return _text.Length;
     }
 
-    public override bool KeyDown(UiKey key, UiModifiers modifiers)
+    public override bool KeyDown(Key key, Modifiers modifiers)
     {
         var byWord = modifiers.HasWordModifier();
         var shortcut = modifiers.HasShortcutModifier();
-        var extend = (modifiers & UiModifiers.Shift) != 0;
+        var extend = (modifiers & Modifiers.Shift) != 0;
         var handled = true;
         var edits = false;
 
         switch (key)
         {
             // Without Shift, Left and Right first collapse a selection to the side they point at.
-            case UiKey.Left when HasSelection && !extend && !byWord:
+            case Key.Left when HasSelection && !extend && !byWord:
                 CaretIndex = SelectionStart;
                 break;
-            case UiKey.Right when HasSelection && !extend && !byWord:
+            case Key.Right when HasSelection && !extend && !byWord:
                 CaretIndex = SelectionStart + SelectionLength;
                 break;
-            case UiKey.Left:
+            case Key.Left:
                 MoveCaret(byWord ? PreviousWord(_caret) : PreviousCharacter(_caret), extend);
                 break;
-            case UiKey.Right:
+            case Key.Right:
                 MoveCaret(byWord ? NextWord(_caret) : NextCharacter(_caret), extend);
                 break;
-            case UiKey.Home:
+            case Key.Home:
                 MoveCaret(0, extend);
                 break;
-            case UiKey.End:
+            case Key.End:
                 MoveCaret(_text.Length, extend);
                 break;
 
-            case UiKey.Backspace when HasSelection:
-            case UiKey.Delete when HasSelection:
+            case Key.Backspace when HasSelection:
+            case Key.Delete when HasSelection:
                 DeleteSelection();
                 edits = true;
                 break;
-            case UiKey.Backspace:
+            case Key.Backspace:
                 Remove(byWord ? PreviousWord(_caret) : PreviousCharacter(_caret), _caret, EditKind.Deleting);
                 edits = true;
                 break;
-            case UiKey.Delete:
+            case Key.Delete:
                 Remove(_caret, byWord ? NextWord(_caret) : NextCharacter(_caret), EditKind.Deleting);
                 edits = true;
                 break;
 
-            case UiKey.A when shortcut:
+            case Key.A when shortcut:
                 SelectAll();
                 break;
-            case UiKey.C when shortcut:
+            case Key.C when shortcut:
                 if (HasSelection)
                     UiClipboard.SetText(SelectedText);
                 break;
-            case UiKey.X when shortcut:
+            case Key.X when shortcut:
                 if (HasSelection)
                 {
                     UiClipboard.SetText(SelectedText);
                     DeleteSelection();
                 }
                 break;
-            case UiKey.V when shortcut:
+            case Key.V when shortcut:
                 Insert(UiClipboard.GetText() ?? "", EditKind.None);
                 edits = true;
                 break;
 
-            case UiKey.Z when shortcut && extend:
-            case UiKey.Y when shortcut && !OperatingSystem.IsMacOS():
+            case Key.Z when shortcut && extend:
+            case Key.Y when shortcut && !OperatingSystem.IsMacOS():
                 Redo();
                 break;
-            case UiKey.Z when shortcut:
+            case Key.Z when shortcut:
                 Undo();
                 break;
 
-            case UiKey.Enter:
+            case Key.Enter:
                 Submitted?.Invoke(this);
                 break;
             default:

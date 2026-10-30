@@ -99,7 +99,7 @@ abstract class UiElement
     /// <summary>
     /// A key went down (or repeated) while this element had focus. Returns whether it was used.
     /// </summary>
-    public virtual bool KeyDown(UiKey key, UiModifiers modifiers) => false;
+    public virtual bool KeyDown(Key key, Modifiers modifiers) => false;
 
     /// <summary>
     /// A character was typed while this element had focus.
@@ -109,7 +109,7 @@ abstract class UiElement
     /// <summary>
     /// The left button went down at <paramref name="point"/>, over this element.
     /// </summary>
-    public virtual void PointerDown(float2 point, UiModifiers modifiers) { }
+    public virtual void PointerDown(float2 point, Modifiers modifiers) { }
 
     /// <summary>
     /// The mouse moved to <paramref name="point"/> while the left button, pressed on this element, is still held.
@@ -377,9 +377,9 @@ sealed class Button : Panel
 
     public override bool IsFocusable => Enabled;
 
-    public override bool KeyDown(UiKey key, UiModifiers modifiers)
+    public override bool KeyDown(Key key, Modifiers modifiers)
     {
-        if (key is not (UiKey.Enter or UiKey.Space))
+        if (key is not (Key.Enter or Key.Space))
             return false;
         RaiseClicked();
         return true;
