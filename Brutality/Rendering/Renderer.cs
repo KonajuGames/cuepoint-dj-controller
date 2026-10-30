@@ -188,6 +188,15 @@ sealed unsafe class Renderer : IDisposable
             DynamicStates = dynamicStates,
         };
 
+        // ProcGenMeshLibrary winds triangles clockwise seen from outside, the opposite of the Presets' default. The
+        // flipped viewport in Record keeps on-screen winding the same as in world space.
+        var rasterization = new VkPipelineRasterizationStateCreateInfo
+        {
+            CullMode = VkCullModeFlags.BackBit,
+            FrontFace = VkFrontFace.Clockwise,
+            LineWidth = 1,
+        };
+
         var colorFormat = _swapchain.Format;
         var rendering = new VkPipelineRenderingCreateInfo
         {
@@ -206,8 +215,7 @@ sealed unsafe class Renderer : IDisposable
                 VertexInputState = vertexInput,
                 InputAssemblyState = Presets.InputAssembly.TriangleList,
                 ViewportState = &viewportState,
-                // The generator's winding isn't documented, so nothing is culled and depth testing sorts it out.
-                RasterizationState = Presets.Rasterization.Fill.CullNone,
+                RasterizationState = &rasterization,
                 MultisampleState = Presets.Multisample.None,
                 DepthStencilState = Presets.DepthStencil.DepthTestWrite,
                 ColorBlendState = Presets.BlendState.BlendNone,

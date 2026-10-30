@@ -12,8 +12,7 @@ const float AMBIENT = 0.25;
 
 void main()
 {
-    // Two-sided, since the pipeline doesn't cull.
-    float diffuse = abs(dot(normalize(normal), LIGHT_DIRECTION));
+    float diffuse = max(dot(normalize(normal), LIGHT_DIRECTION), 0.0);
     vec3 color = texture(albedo, uv).rgb;
     outColor = vec4(color * (AMBIENT + (1.0 - AMBIENT) * diffuse), 1.0);
 }
