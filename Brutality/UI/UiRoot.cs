@@ -190,6 +190,9 @@ sealed class UiRoot
     {
         _mouse = position;
         UpdateHover();
+
+        // The pressed element follows the mouse until release, even outside itself (to drag a text selection, say).
+        Pressed?.PointerDrag(position);
     }
 
     /// <summary>
@@ -234,7 +237,7 @@ sealed class UiRoot
         return false;
     }
 
-    public void MouseButton(UiMouseButton button, bool down)
+    public void MouseButton(UiMouseButton button, bool down, UiModifiers modifiers = UiModifiers.None)
     {
         if (button != UiMouseButton.Left)
             return;
@@ -250,7 +253,7 @@ sealed class UiRoot
             Pressed = Hovered;
             Pressed.IsPressed = true;
             if (_mouse is { } mouse)
-                Pressed.PointerDown(mouse);
+                Pressed.PointerDown(mouse, modifiers);
             return;
         }
 
@@ -272,14 +275,17 @@ sealed class UiRoot
         if (showFocusRing)
             _focusVisible = true;
 
-        if (Focused is not null)
-            Focused.IsFocused = Focused.ShowFocus = false;
+        var previous = Focused;
+        if (previous is not null)
+            previous.IsFocused = previous.ShowFocus = false;
         Focused = element;
-        if (Focused is not null)
-        {
-            Focused.IsFocused = true;
-            Focused.ShowFocus = _focusVisible;
-        }
+        if (Focused is null)
+            return;
+
+        Focused.IsFocused = true;
+        Focused.ShowFocus = _focusVisible;
+        if (Focused != previous)
+            Focused.FocusGained(showFocusRing);
     }
 
     /// <summary>

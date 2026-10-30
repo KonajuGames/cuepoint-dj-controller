@@ -4,13 +4,21 @@ using Brutal.Numerics;
 namespace Brutality.UI;
 
 /// <summary>
-/// A single-line text field. Click or Tab into it, then type: arrows, Home and End move the caret, Backspace and
-/// Delete remove a character (or a word, with Ctrl, or Option on macOS), Ctrl+V (Cmd+V) pastes and Enter raises
-/// <see cref="Submitted"/>. Text wider than the box scrolls sideways to keep the caret in view.
+/// A single-line text field. Click or Tab into it, then type: arrows, Home and End move the caret, and holding Shift
+/// with them selects. Ctrl (Option on macOS) moves or deletes a word at a time. Ctrl+A (Cmd+A on macOS) selects
+/// everything, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste, and Enter raises <see cref="Submitted"/>. Drag to
+/// select, Shift+click to extend, and double-click to select a word. Text wider than the box scrolls sideways to keep
+/// the caret in view.
 /// </summary>
 sealed class TextBox(Font font) : UiElement
 {
     const long CARET_BLINK_MS = 530;
+
+    /// <summary>
+    /// Clicks closer together in time and space than this count as a double-click.
+    /// </summary>
+    const long DOUBLE_CLICK_MS = 500;
+    const float DOUBLE_CLICK_DISTANCE = 4;
 
     public Font Font { get; set; } = font;
 
@@ -28,6 +36,7 @@ sealed class TextBox(Font font) : UiElement
     public float4 FocusColor { get; set; } = UiColor.Hex(0x7AB8FF);
     public float4 TextColor { get; set; } = UiColor.White;
     public float4 PlaceholderColor { get; set; } = UiColor.Hex(0x6A6A78);
+    public float4 SelectionColor { get; set; } = UiColor.Hex(0x3D6FB8, 0.7f);
 
     /// <summary>
     /// Enter was pressed. Handlers often read <see cref="Text"/> and then clear it.
@@ -35,14 +44,27 @@ sealed class TextBox(Font font) : UiElement
     public event Action<TextBox>? Submitted;
 
     /// <summary>
-    /// The text changed by typing, deleting or pasting (not by setting <see cref="Text"/>).
+    /// The text changed by typing, deleting, cutting or pasting (not by setting <see cref="Text"/>).
     /// </summary>
     public event Action<TextBox>? TextChanged;
 
     string _text = "";
-    int _caret;
+
+    /// <summary>
+    /// Where the caret is, and the other end of the selection. Equal when nothing is selected.
+    /// </summary>
+    int _caret, _anchor;
+
     float _scroll;
     long _lastActivity = Environment.TickCount64;
+
+    long _lastClickTime;
+    float2 _lastClickPoint;
+
+    /// <summary>
+    /// After a double-click, dragging extends by whole words from the word that was clicked.
+    /// </summary>
+    (int Start, int End)? _dragWord;
 
     public string Text
     {
@@ -51,17 +73,34 @@ sealed class TextBox(Font font) : UiElement
         {
             _text = value.Length > MaxLength ? value[..MaxLength] : value;
             _caret = Math.Min(_caret, _text.Length);
+            _anchor = Math.Min(_anchor, _text.Length);
         }
     }
 
     /// <summary>
-    /// The caret's position as an index into <see cref="Text"/>.
+    /// The caret's position as an index into <see cref="Text"/>. Setting it clears the selection.
     /// </summary>
     public int CaretIndex
     {
         get => _caret;
-        set => _caret = Math.Clamp(value, 0, _text.Length);
+        set => _caret = _anchor = Math.Clamp(value, 0, _text.Length);
     }
+
+    public int SelectionStart => Math.Min(_caret, _anchor);
+    public int SelectionLength => Math.Abs(_caret - _anchor);
+    public bool HasSelection => _caret != _anchor;
+    public string SelectedText => _text.Substring(SelectionStart, SelectionLength);
+
+    /// <summary>
+    /// Selects <paramref name="length"/> characters from <paramref name="start"/>, leaving the caret at the end.
+    /// </summary>
+    public void Select(int start, int length)
+    {
+        _anchor = Math.Clamp(start, 0, _text.Length);
+        _caret = Math.Clamp(start + length, 0, _text.Length);
+    }
+
+    public void SelectAll() => Select(0, _text.Length);
 
     public override bool IsInteractive => true;
     public override bool IsFocusable => true;
@@ -72,6 +111,8 @@ sealed class TextBox(Font font) : UiElement
     float Inset => Padding + BORDER;
     float InnerWidth => MathF.Max(0, Size.X - 2 * Inset);
 
+    float XOf(int index) => MathF.Round(Font.Advance(_text.AsSpan(0, index)));
+
     public override float2 Measure() => Size = new float2(Width, Font.LineHeight + 2 * Inset);
 
     public override void Arrange(float2 position)
@@ -79,8 +120,8 @@ sealed class TextBox(Font font) : UiElement
         base.Arrange(position);
 
         // Scroll just enough to keep the caret in view, leaving a pixel for the caret itself.
-        var caretX = MathF.Round(Font.Advance(_text.AsSpan(0, _caret)));
-        var textWidth = MathF.Round(Font.Advance(_text));
+        var caretX = XOf(_caret);
+        var textWidth = XOf(_text.Length);
         if (caretX - _scroll > InnerWidth - 1)
             _scroll = caretX - InnerWidth + 1;
         if (caretX - _scroll < 0)
@@ -96,6 +137,14 @@ sealed class TextBox(Font font) : UiElement
         var inner = ScreenPosition + new float2(Inset, Inset);
         batch.PushClip(inner, new float2(InnerWidth, Font.LineHeight));
 
+        // The selection only shows while focused, as in most toolkits; it's kept for when focus returns.
+        if (IsFocused && HasSelection)
+        {
+            var start = XOf(SelectionStart) - _scroll;
+            var end = XOf(SelectionStart + SelectionLength) - _scroll;
+            batch.AddRect(inner + new float2(start, 0), new float2(end - start, Font.LineHeight), SelectionColor);
+        }
+
         if (_text.Length == 0)
             batch.AddText(Font, Placeholder, inner, PlaceholderColor);
         else
@@ -104,19 +153,58 @@ sealed class TextBox(Font font) : UiElement
         // Solid while typing, blinking once idle.
         var showCaret = IsFocused && (Environment.TickCount64 - _lastActivity) / CARET_BLINK_MS % 2 == 0;
         if (showCaret)
-        {
-            var caretX = MathF.Round(Font.Advance(_text.AsSpan(0, _caret))) - _scroll;
-            batch.AddRect(inner + new float2(caretX, 0), new float2(1, Font.LineHeight), TextColor);
-        }
+            batch.AddRect(inner + new float2(XOf(_caret) - _scroll, 0), new float2(1, Font.LineHeight), TextColor);
 
         batch.PopClip();
     }
 
-    public override void PointerDown(float2 point)
+    public override void FocusGained(bool byKeyboard)
     {
-        _caret = IndexAt(point.X - (ScreenPosition.X + Inset) + _scroll);
+        // Tabbing in selects the lot, so typing replaces it; clicking places the caret instead.
+        if (byKeyboard)
+            SelectAll();
         _lastActivity = Environment.TickCount64;
     }
+
+    public override void PointerDown(float2 point, UiModifiers modifiers)
+    {
+        var index = IndexAtPoint(point);
+        var now = Environment.TickCount64;
+        var isDoubleClick =
+            now - _lastClickTime <= DOUBLE_CLICK_MS && float2.Distance(point, _lastClickPoint) <= DOUBLE_CLICK_DISTANCE;
+        _lastClickTime = isDoubleClick ? 0 : now; // A third click starts over rather than counting as another double.
+        _lastClickPoint = point;
+        _dragWord = null;
+
+        if (isDoubleClick)
+        {
+            var word = WordAt(index);
+            Select(word.Start, word.End - word.Start);
+            _dragWord = word;
+        }
+        else if ((modifiers & UiModifiers.Shift) != 0)
+            _caret = index;
+        else
+            CaretIndex = index;
+
+        _lastActivity = now;
+    }
+
+    public override void PointerDrag(float2 point)
+    {
+        var index = IndexAtPoint(point);
+        if (_dragWord is { } word)
+        {
+            // Grow by whole words, keeping the double-clicked word selected.
+            var other = WordAt(index);
+            (_anchor, _caret) = index < word.Start ? (word.End, other.Start) : (word.Start, Math.Max(word.End, other.End));
+        }
+        else
+            _caret = index;
+        _lastActivity = Environment.TickCount64;
+    }
+
+    int IndexAtPoint(float2 point) => IndexAt(point.X - (ScreenPosition.X + Inset) + _scroll);
 
     /// <summary>
     /// The caret position nearest <paramref name="x"/> pixels from the start of the text.
@@ -139,20 +227,35 @@ sealed class TextBox(Font font) : UiElement
     public override bool KeyDown(UiKey key, UiModifiers modifiers)
     {
         var byWord = modifiers.HasWordModifier();
+        var shortcut = modifiers.HasShortcutModifier();
+        var extend = (modifiers & UiModifiers.Shift) != 0;
         var handled = true;
+
         switch (key)
         {
+            // Without Shift, Left and Right first collapse a selection to the side they point at.
+            case UiKey.Left when HasSelection && !extend && !byWord:
+                CaretIndex = SelectionStart;
+                break;
+            case UiKey.Right when HasSelection && !extend && !byWord:
+                CaretIndex = SelectionStart + SelectionLength;
+                break;
             case UiKey.Left:
-                _caret = byWord ? PreviousWord(_caret) : PreviousCharacter(_caret);
+                MoveCaret(byWord ? PreviousWord(_caret) : PreviousCharacter(_caret), extend);
                 break;
             case UiKey.Right:
-                _caret = byWord ? NextWord(_caret) : NextCharacter(_caret);
+                MoveCaret(byWord ? NextWord(_caret) : NextCharacter(_caret), extend);
                 break;
             case UiKey.Home:
-                _caret = 0;
+                MoveCaret(0, extend);
                 break;
             case UiKey.End:
-                _caret = _text.Length;
+                MoveCaret(_text.Length, extend);
+                break;
+
+            case UiKey.Backspace when HasSelection:
+            case UiKey.Delete when HasSelection:
+                DeleteSelection();
                 break;
             case UiKey.Backspace:
                 Remove(byWord ? PreviousWord(_caret) : PreviousCharacter(_caret), _caret);
@@ -160,11 +263,27 @@ sealed class TextBox(Font font) : UiElement
             case UiKey.Delete:
                 Remove(_caret, byWord ? NextWord(_caret) : NextCharacter(_caret));
                 break;
+
+            case UiKey.A when shortcut:
+                SelectAll();
+                break;
+            case UiKey.C when shortcut:
+                if (HasSelection)
+                    UiClipboard.SetText(SelectedText);
+                break;
+            case UiKey.X when shortcut:
+                if (HasSelection)
+                {
+                    UiClipboard.SetText(SelectedText);
+                    DeleteSelection();
+                }
+                break;
+            case UiKey.V when shortcut:
+                Insert(UiClipboard.GetText() ?? "");
+                break;
+
             case UiKey.Enter:
                 Submitted?.Invoke(this);
-                break;
-            case UiKey.V when modifiers.HasShortcutModifier():
-                Insert(UiClipboard.GetText() ?? "");
                 break;
             default:
                 handled = false;
@@ -182,6 +301,16 @@ sealed class TextBox(Font font) : UiElement
             Insert(character.ToString());
     }
 
+    void MoveCaret(int index, bool extend)
+    {
+        _caret = index;
+        if (!extend)
+            _anchor = index;
+    }
+
+    /// <summary>
+    /// Replaces the selection, or inserts at the caret, with <paramref name="text"/>.
+    /// </summary>
     void Insert(string text)
     {
         // Single line: pasted line breaks and tabs become spaces, other control characters go.
@@ -193,9 +322,11 @@ sealed class TextBox(Font font) : UiElement
             else if (!Rune.IsControl(rune))
                 builder.Append(rune.ToString());
         }
+        if (builder.Length == 0)
+            return;
 
-        var room = MaxLength - _text.Length;
-        if (room <= 0 || builder.Length == 0)
+        var room = MaxLength - (_text.Length - SelectionLength);
+        if (room <= 0)
             return;
 
         var insert = builder.ToString();
@@ -205,19 +336,24 @@ sealed class TextBox(Font font) : UiElement
             var cut = char.IsHighSurrogate(insert[room - 1]) ? room - 1 : room;
             insert = insert[..cut];
         }
+        if (insert.Length == 0)
+            return;
 
-        _text = _text.Insert(_caret, insert);
-        _caret += insert.Length;
+        var start = SelectionStart;
+        _text = _text.Remove(start, SelectionLength).Insert(start, insert);
+        CaretIndex = start + insert.Length;
         _lastActivity = Environment.TickCount64;
         TextChanged?.Invoke(this);
     }
+
+    void DeleteSelection() => Remove(SelectionStart, SelectionStart + SelectionLength);
 
     void Remove(int start, int end)
     {
         if (end <= start)
             return;
         _text = _text.Remove(start, end - start);
-        _caret = start;
+        CaretIndex = start;
         TextChanged?.Invoke(this);
     }
 
@@ -253,5 +389,28 @@ sealed class TextBox(Font font) : UiElement
         while (index < _text.Length && !char.IsWhiteSpace(_text[index]))
             index++;
         return index;
+    }
+
+    /// <summary>
+    /// The run of word characters, or of spaces, around <paramref name="index"/>, as double-click selects it.
+    /// </summary>
+    (int Start, int End) WordAt(int index)
+    {
+        if (_text.Length == 0)
+            return (0, 0);
+
+        // Clicks land on character boundaries, so look at both neighbours and prefer a word over a space.
+        var probe =
+            index < _text.Length && !char.IsWhiteSpace(_text[index]) ? index
+            : index > 0 && !char.IsWhiteSpace(_text[index - 1]) ? index - 1
+            : Math.Min(index, _text.Length - 1);
+
+        var space = char.IsWhiteSpace(_text[probe]);
+        int start = probe, end = probe + 1;
+        while (start > 0 && char.IsWhiteSpace(_text[start - 1]) == space)
+            start--;
+        while (end < _text.Length && char.IsWhiteSpace(_text[end]) == space)
+            end++;
+        return (start, end);
     }
 }

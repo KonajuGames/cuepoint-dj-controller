@@ -80,7 +80,7 @@ sealed class GlfwUiInput : IDisposable
             _ => null,
         };
         if (uiButton is { } b)
-            _ui.MouseButton(b, action == GlfwButtonAction.Press);
+            _ui.MouseButton(b, action == GlfwButtonAction.Press, ToUiModifiers(mods));
         UpdateCursor();
     }
 
@@ -97,7 +97,7 @@ sealed class GlfwUiInput : IDisposable
         }
         else
         {
-            handled = _ui.KeyDown(ToUiKey(key), (UiModifiers)((int)mods & 0xF));
+            handled = _ui.KeyDown(ToUiKey(key), ToUiModifiers(mods));
             if (handled)
                 _keysHeldByUi.Add(key);
         }
@@ -111,6 +111,9 @@ sealed class GlfwUiInput : IDisposable
         if (Rune.TryCreate(codePoint, out var rune))
             _ui.TextInput(rune);
     }
+
+    // GLFW's Shift, Control, Alt and Super bits match UiModifiers; Caps Lock and Num Lock are dropped.
+    static UiModifiers ToUiModifiers(GlfwModifier mods) => (UiModifiers)((int)mods & 0xF);
 
     static UiKey ToUiKey(GlfwKey key) =>
         key switch

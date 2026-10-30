@@ -102,7 +102,19 @@ abstract class UiElement
     /// <summary>
     /// The left button went down at <paramref name="point"/>, over this element.
     /// </summary>
-    public virtual void PointerDown(float2 point) { }
+    public virtual void PointerDown(float2 point, UiModifiers modifiers) { }
+
+    /// <summary>
+    /// The mouse moved to <paramref name="point"/> while the left button, pressed on this element, is still held.
+    /// The point can be outside the element.
+    /// </summary>
+    public virtual void PointerDrag(float2 point) { }
+
+    /// <summary>
+    /// This element just took focus, by keyboard (Tab) if <paramref name="byKeyboard"/>, otherwise by a click or
+    /// code.
+    /// </summary>
+    public virtual void FocusGained(bool byKeyboard) { }
 
     /// <summary>
     /// The visible children, in drawing order, for walking the tree.
