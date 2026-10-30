@@ -136,6 +136,8 @@ sealed class GlfwUiInput : IDisposable
             GlfwKey.C => UiKey.C,
             GlfwKey.V => UiKey.V,
             GlfwKey.X => UiKey.X,
+            GlfwKey.Y => UiKey.Y,
+            GlfwKey.Z => UiKey.Z,
             _ => UiKey.Other,
         };
 

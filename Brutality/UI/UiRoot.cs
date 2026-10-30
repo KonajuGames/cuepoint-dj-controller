@@ -43,6 +43,8 @@ enum UiKey
     C,
     V,
     X,
+    Y,
+    Z,
 }
 
 [Flags]

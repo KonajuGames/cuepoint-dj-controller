@@ -6,9 +6,9 @@ namespace Brutality.UI;
 /// <summary>
 /// A single-line text field. Click or Tab into it, then type: arrows, Home and End move the caret, and holding Shift
 /// with them selects. Ctrl (Option on macOS) moves or deletes a word at a time. Ctrl+A (Cmd+A on macOS) selects
-/// everything, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste, and Enter raises <see cref="Submitted"/>. Drag to
-/// select, Shift+click to extend, and double-click to select a word. Text wider than the box scrolls sideways to keep
-/// the caret in view.
+/// everything, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste, Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (Cmd+Z and
+/// Cmd+Shift+Z on macOS), and Enter raises <see cref="Submitted"/>. Drag to select, Shift+click to extend, and
+/// double-click to select a word. Text wider than the box scrolls sideways to keep the caret in view.
 /// </summary>
 sealed class TextBox(Font font) : UiElement
 {
@@ -66,6 +66,33 @@ sealed class TextBox(Font font) : UiElement
     /// </summary>
     (int Start, int End)? _dragWord;
 
+    /// <summary>
+    /// The text, caret and selection before an edit, so undo puts all three back.
+    /// </summary>
+    readonly record struct Snapshot(string Text, int Caret, int Anchor);
+
+    /// <summary>
+    /// What the last edit was, so a run of the same kind becomes one undo step.
+    /// </summary>
+    enum EditKind
+    {
+        None,
+        Typing,
+        Deleting,
+    }
+
+    const int MAX_UNDO_STEPS = 100;
+
+    /// <summary>
+    /// A run of typing or deleting stays one undo step until a pause this long.
+    /// </summary>
+    const long UNDO_GROUP_MS = 1000;
+
+    readonly List<Snapshot> _undo = [];
+    readonly List<Snapshot> _redo = [];
+    EditKind _lastEdit;
+    long _lastEditTime;
+
     public string Text
     {
         get => _text;
@@ -74,6 +101,9 @@ sealed class TextBox(Font font) : UiElement
             _text = value.Length > MaxLength ? value[..MaxLength] : value;
             _caret = Math.Min(_caret, _text.Length);
             _anchor = Math.Min(_anchor, _text.Length);
+
+            // Setting the text from code starts afresh, rather than being something the user can undo.
+            ClearHistory();
         }
     }
 
@@ -101,6 +131,65 @@ sealed class TextBox(Font font) : UiElement
     }
 
     public void SelectAll() => Select(0, _text.Length);
+
+    public bool CanUndo => _undo.Count > 0;
+    public bool CanRedo => _redo.Count > 0;
+
+    /// <summary>
+    /// Reverts the last edit (or run of typing or deleting), restoring the caret and selection from before it.
+    /// </summary>
+    public bool Undo() => Step(_undo, _redo);
+
+    public bool Redo() => Step(_redo, _undo);
+
+    public void ClearHistory()
+    {
+        _undo.Clear();
+        _redo.Clear();
+        _lastEdit = EditKind.None;
+    }
+
+    bool Step(List<Snapshot> from, List<Snapshot> to)
+    {
+        if (from.Count == 0)
+            return false;
+
+        to.Add(new Snapshot(_text, _caret, _anchor));
+        var state = from[^1];
+        from.RemoveAt(from.Count - 1);
+        (_text, _caret, _anchor) = (state.Text, state.Caret, state.Anchor);
+
+        _lastEdit = EditKind.None;
+        _lastActivity = Environment.TickCount64;
+        TextChanged?.Invoke(this);
+        return true;
+    }
+
+    /// <summary>
+    /// Call just before changing the text. Saves an undo step, unless this edit continues the current run of typing
+    /// or deleting, and drops anything that could have been redone.
+    /// </summary>
+    void RecordEdit(EditKind kind, bool startsWord = false)
+    {
+        var now = Environment.TickCount64;
+        var continues =
+            kind != EditKind.None
+            && kind == _lastEdit
+            && !HasSelection
+            && !startsWord
+            && now - _lastEditTime <= UNDO_GROUP_MS;
+
+        if (!continues)
+        {
+            _undo.Add(new Snapshot(_text, _caret, _anchor));
+            if (_undo.Count > MAX_UNDO_STEPS)
+                _undo.RemoveAt(0);
+        }
+
+        _redo.Clear();
+        _lastEdit = kind;
+        _lastEditTime = now;
+    }
 
     public override bool IsInteractive => true;
     public override bool IsFocusable => true;
@@ -175,6 +264,7 @@ sealed class TextBox(Font font) : UiElement
         _lastClickTime = isDoubleClick ? 0 : now; // A third click starts over rather than counting as another double.
         _lastClickPoint = point;
         _dragWord = null;
+        _lastEdit = EditKind.None; // Typing somewhere else is a new undo step.
 
         if (isDoubleClick)
         {
@@ -230,6 +320,7 @@ sealed class TextBox(Font font) : UiElement
         var shortcut = modifiers.HasShortcutModifier();
         var extend = (modifiers & UiModifiers.Shift) != 0;
         var handled = true;
+        var edits = false;
 
         switch (key)
         {
@@ -256,12 +347,15 @@ sealed class TextBox(Font font) : UiElement
             case UiKey.Backspace when HasSelection:
             case UiKey.Delete when HasSelection:
                 DeleteSelection();
+                edits = true;
                 break;
             case UiKey.Backspace:
-                Remove(byWord ? PreviousWord(_caret) : PreviousCharacter(_caret), _caret);
+                Remove(byWord ? PreviousWord(_caret) : PreviousCharacter(_caret), _caret, EditKind.Deleting);
+                edits = true;
                 break;
             case UiKey.Delete:
-                Remove(_caret, byWord ? NextWord(_caret) : NextCharacter(_caret));
+                Remove(_caret, byWord ? NextWord(_caret) : NextCharacter(_caret), EditKind.Deleting);
+                edits = true;
                 break;
 
             case UiKey.A when shortcut:
@@ -279,7 +373,16 @@ sealed class TextBox(Font font) : UiElement
                 }
                 break;
             case UiKey.V when shortcut:
-                Insert(UiClipboard.GetText() ?? "");
+                Insert(UiClipboard.GetText() ?? "", EditKind.None);
+                edits = true;
+                break;
+
+            case UiKey.Z when shortcut && extend:
+            case UiKey.Y when shortcut && !OperatingSystem.IsMacOS():
+                Redo();
+                break;
+            case UiKey.Z when shortcut:
+                Undo();
                 break;
 
             case UiKey.Enter:
@@ -292,13 +395,21 @@ sealed class TextBox(Font font) : UiElement
 
         if (handled)
             _lastActivity = Environment.TickCount64;
+
+        // Moving the caret or selecting ends a run, so the next typing is a step of its own.
+        if (handled && !edits)
+            _lastEdit = EditKind.None;
         return handled;
     }
 
     public override void TextInput(Rune character)
     {
-        if (!Rune.IsControl(character))
-            Insert(character.ToString());
+        if (Rune.IsControl(character))
+            return;
+
+        // Each new word is its own undo step; a space stays with the word before it.
+        var startsWord = !Rune.IsWhiteSpace(character) && _caret > 0 && char.IsWhiteSpace(_text[_caret - 1]);
+        Insert(character.ToString(), EditKind.Typing, startsWord);
     }
 
     void MoveCaret(int index, bool extend)
@@ -311,7 +422,7 @@ sealed class TextBox(Font font) : UiElement
     /// <summary>
     /// Replaces the selection, or inserts at the caret, with <paramref name="text"/>.
     /// </summary>
-    void Insert(string text)
+    void Insert(string text, EditKind kind, bool startsWord = false)
     {
         // Single line: pasted line breaks and tabs become spaces, other control characters go.
         var builder = new StringBuilder(text.Length);
@@ -339,6 +450,7 @@ sealed class TextBox(Font font) : UiElement
         if (insert.Length == 0)
             return;
 
+        RecordEdit(kind, startsWord);
         var start = SelectionStart;
         _text = _text.Remove(start, SelectionLength).Insert(start, insert);
         CaretIndex = start + insert.Length;
@@ -346,12 +458,13 @@ sealed class TextBox(Font font) : UiElement
         TextChanged?.Invoke(this);
     }
 
-    void DeleteSelection() => Remove(SelectionStart, SelectionStart + SelectionLength);
+    void DeleteSelection() => Remove(SelectionStart, SelectionStart + SelectionLength, EditKind.None);
 
-    void Remove(int start, int end)
+    void Remove(int start, int end, EditKind kind)
     {
         if (end <= start)
             return;
+        RecordEdit(kind);
         _text = _text.Remove(start, end - start);
         CaretIndex = start;
         TextChanged?.Invoke(this);
