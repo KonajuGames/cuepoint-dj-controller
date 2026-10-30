@@ -94,6 +94,34 @@ static class UiClock
 {
     public static Func<double> Seconds { get; set; } =
         () => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
+
+    /// <summary>
+    /// Seconds since the last call with the same <paramref name="lastStep"/>, which starts as NaN: 0 on the first
+    /// call, and at most a tenth of a second, so a long stall (a minimised window, a breakpoint) finishes an
+    /// animation rather than overshooting it.
+    /// </summary>
+    public static double Delta(ref double lastStep)
+    {
+        var now = Seconds();
+        var dt = double.IsNaN(lastStep) ? 0 : Math.Clamp(now - lastStep, 0, 0.1);
+        lastStep = now;
+        return dt;
+    }
+
+    /// <summary>
+    /// Moves <paramref name="current"/> towards <paramref name="target"/> over <paramref name="dt"/> seconds, easing
+    /// out: every step closes the same fraction of what's left, so a move starts quickly and settles gently, and a
+    /// target that changes mid-move just carries on from wherever it is. <paramref name="timeConstant"/> is the time
+    /// to close about two thirds of the gap; within half a pixel it arrives.
+    /// </summary>
+    public static float Approach(float current, float target, double dt, float timeConstant)
+    {
+        if (timeConstant > 0)
+            current = target + (current - target) * (float)Math.Exp(-dt / timeConstant);
+        else
+            current = target;
+        return MathF.Abs(current - target) < 0.5f ? target : current;
+    }
 }
 
 /// <summary>

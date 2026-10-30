@@ -234,31 +234,19 @@ sealed class ScrollPanel : Panel
     }
 
     /// <summary>
-    /// Moves the offset towards the target, easing out: each frame covers the same fraction of what's left, so it
-    /// starts quickly and settles gently, and a new wheel notch mid-glide just carries on from wherever it is.
+    /// Moves the offset a frame's worth towards the target (see <see cref="UiClock.Approach"/>).
     /// </summary>
     void StepAnimation()
     {
-        var now = UiClock.Seconds();
         var first = double.IsNaN(_lastStep);
-        // Capped so a long stall (a minimised window, a breakpoint) finishes the move rather than overshooting.
-        var dt = first ? 0 : Math.Clamp(now - _lastStep, 0, 0.1);
-        _lastStep = now;
+        var dt = UiClock.Delta(ref _lastStep);
 
         // The first layout has nothing to animate from, so it lands where it should be.
-        if (!SmoothScrolling || first || SmoothScrollTime <= 0)
-            _offset = _target;
-        else
-        {
-            var keep = (float)Math.Exp(-dt / SmoothScrollTime);
-            _offset = _target + (_offset - _target) * keep;
-        }
-
-        // Within half a pixel draws the same as arriving, so arrive.
-        if (MathF.Abs(_offset.X - _target.X) < 0.5f)
-            _offset = new float2(_target.X, _offset.Y);
-        if (MathF.Abs(_offset.Y - _target.Y) < 0.5f)
-            _offset = new float2(_offset.X, _target.Y);
+        var time = SmoothScrolling && !first ? SmoothScrollTime : 0;
+        _offset = new float2(
+            UiClock.Approach(_offset.X, _target.X, dt, time),
+            UiClock.Approach(_offset.Y, _target.Y, dt, time)
+        );
         _offset = float2.Clamp(_offset, float2.Zero, MaxScroll);
     }
 

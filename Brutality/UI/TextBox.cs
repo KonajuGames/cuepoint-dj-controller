@@ -8,8 +8,8 @@ namespace Brutality.UI;
 /// with them selects. Ctrl (Option on macOS) moves or deletes a word at a time. Ctrl+A (Cmd+A on macOS) selects
 /// everything, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste, Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (Cmd+Z and
 /// Cmd+Shift+Z on macOS), and Enter raises <see cref="Submitted"/>. Drag to select, Shift+click to extend,
-/// double-click to select a word and triple-click to select everything. Text wider than the box scrolls sideways to
-/// keep the caret in view.
+/// double-click to select a word and triple-click to select everything. Text wider than the box glides sideways to
+/// keep the caret in view (see <see cref="SmoothScrolling"/>).
 /// </summary>
 sealed class TextBox(Font font) : UiElement
 {
@@ -40,6 +40,28 @@ sealed class TextBox(Font font) : UiElement
     public float4 SelectionColor { get; set; } = UiColor.Hex(0x3D6FB8, 0.7f);
 
     /// <summary>
+    /// Glide sideways to follow the caret rather than jumping. On by default.
+    /// </summary>
+    public bool SmoothScrolling { get; set; } = true;
+
+    /// <summary>
+    /// How quickly the sideways glide settles: the time to cover about two thirds of the remaining distance.
+    /// </summary>
+    public float SmoothScrollTime { get; set; } = 0.035f;
+
+    /// <summary>
+    /// How far the text is scrolled left, in pixels, as drawn right now.
+    /// </summary>
+    public float ScrollOffset => _scroll;
+
+    /// <summary>
+    /// Where the sideways scroll is heading; equal to <see cref="ScrollOffset"/> once it settles.
+    /// </summary>
+    public float ScrollTarget => _scrollTarget;
+
+    public bool IsScrollAnimating => _scroll != _scrollTarget;
+
+    /// <summary>
     /// Enter was pressed. Handlers often read <see cref="Text"/> and then clear it.
     /// </summary>
     public event Action<TextBox>? Submitted;
@@ -56,7 +78,12 @@ sealed class TextBox(Font font) : UiElement
     /// </summary>
     int _caret, _anchor;
 
-    float _scroll;
+    /// <summary>
+    /// How far the text is scrolled left right now, and where that's heading to keep the caret in view.
+    /// </summary>
+    float _scroll, _scrollTarget;
+
+    double _lastScrollStep = double.NaN;
     long _lastActivity = Environment.TickCount64;
 
     long _lastClickTime;
@@ -219,14 +246,22 @@ sealed class TextBox(Font font) : UiElement
     {
         base.Arrange(position);
 
-        // Scroll just enough to keep the caret in view, leaving a pixel for the caret itself.
+        // Aim to scroll just enough to keep the caret in view, leaving a pixel for the caret itself. Worked out from
+        // the target rather than the current position, so the view heads for one place even mid-glide.
         var caretX = XOf(_caret);
-        var textWidth = XOf(_text.Length);
-        if (caretX - _scroll > InnerWidth - 1)
-            _scroll = caretX - InnerWidth + 1;
-        if (caretX - _scroll < 0)
-            _scroll = caretX;
-        _scroll = Math.Clamp(_scroll, 0, MathF.Max(0, textWidth + 1 - InnerWidth));
+        var maxScroll = MathF.Max(0, XOf(_text.Length) + 1 - InnerWidth);
+        var target = _scrollTarget;
+        if (caretX - target > InnerWidth - 1)
+            target = caretX - InnerWidth + 1;
+        if (caretX - target < 0)
+            target = caretX;
+        _scrollTarget = Math.Clamp(target, 0, maxScroll);
+
+        // The first layout lands in place; after that, glide.
+        var first = double.IsNaN(_lastScrollStep);
+        var dt = UiClock.Delta(ref _lastScrollStep);
+        _scroll = UiClock.Approach(_scroll, _scrollTarget, dt, SmoothScrolling && !first ? SmoothScrollTime : 0);
+        _scroll = Math.Clamp(_scroll, 0, maxScroll);
     }
 
     public override void Draw(UiBatch batch)
