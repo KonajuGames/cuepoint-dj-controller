@@ -7,15 +7,16 @@ namespace Brutality.UI;
 /// A single-line text field. Click or Tab into it, then type: arrows, Home and End move the caret, and holding Shift
 /// with them selects. Ctrl (Option on macOS) moves or deletes a word at a time. Ctrl+A (Cmd+A on macOS) selects
 /// everything, Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste, Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (Cmd+Z and
-/// Cmd+Shift+Z on macOS), and Enter raises <see cref="Submitted"/>. Drag to select, Shift+click to extend, and
-/// double-click to select a word. Text wider than the box scrolls sideways to keep the caret in view.
+/// Cmd+Shift+Z on macOS), and Enter raises <see cref="Submitted"/>. Drag to select, Shift+click to extend,
+/// double-click to select a word and triple-click to select everything. Text wider than the box scrolls sideways to
+/// keep the caret in view.
 /// </summary>
 sealed class TextBox(Font font) : UiElement
 {
     const long CARET_BLINK_MS = 530;
 
     /// <summary>
-    /// Clicks closer together in time and space than this count as a double-click.
+    /// A click this soon after the last one, and this close to it, counts towards a double or triple click.
     /// </summary>
     const long DOUBLE_CLICK_MS = 500;
     const float DOUBLE_CLICK_DISTANCE = 4;
@@ -62,9 +63,19 @@ sealed class TextBox(Font font) : UiElement
     float2 _lastClickPoint;
 
     /// <summary>
+    /// Clicks in the current run: 1 places the caret, 2 selects a word, 3 or more select everything.
+    /// </summary>
+    int _clickCount;
+
+    /// <summary>
     /// After a double-click, dragging extends by whole words from the word that was clicked.
     /// </summary>
     (int Start, int End)? _dragWord;
+
+    /// <summary>
+    /// After a triple-click, dragging keeps everything selected.
+    /// </summary>
+    bool _dragAll;
 
     /// <summary>
     /// The text, caret and selection before an edit, so undo puts all three back.
@@ -259,14 +270,25 @@ sealed class TextBox(Font font) : UiElement
     {
         var index = IndexAtPoint(point);
         var now = Environment.TickCount64;
-        var isDoubleClick =
-            now - _lastClickTime <= DOUBLE_CLICK_MS && float2.Distance(point, _lastClickPoint) <= DOUBLE_CLICK_DISTANCE;
-        _lastClickTime = isDoubleClick ? 0 : now; // A third click starts over rather than counting as another double.
+        // Shift+click always extends the selection, however soon it follows the last click.
+        var continuesRun =
+            (modifiers & UiModifiers.Shift) == 0
+            && now - _lastClickTime <= DOUBLE_CLICK_MS
+            && float2.Distance(point, _lastClickPoint) <= DOUBLE_CLICK_DISTANCE;
+        _clickCount = continuesRun ? _clickCount + 1 : 1;
+        _lastClickTime = now;
         _lastClickPoint = point;
         _dragWord = null;
+        _dragAll = false;
         _lastEdit = EditKind.None; // Typing somewhere else is a new undo step.
 
-        if (isDoubleClick)
+        if (_clickCount >= 3)
+        {
+            // A fourth click and on keep everything selected, rather than cycling back to a caret.
+            SelectAll();
+            _dragAll = true;
+        }
+        else if (_clickCount == 2)
         {
             var word = WordAt(index);
             Select(word.Start, word.End - word.Start);
@@ -282,6 +304,9 @@ sealed class TextBox(Font font) : UiElement
 
     public override void PointerDrag(float2 point)
     {
+        if (_dragAll)
+            return;
+
         var index = IndexAtPoint(point);
         if (_dragWord is { } word)
         {
