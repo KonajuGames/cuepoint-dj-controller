@@ -1,8 +1,9 @@
 using System.Text;
 using Brutal.GlfwApi;
 using Brutal.Numerics;
+using Brutality.UI;
 
-namespace Brutality.UI;
+namespace Brutality.Input;
 
 /// <summary>
 /// Feeds a GLFW window's mouse, keyboard and text events into a <see cref="UiRoot"/>, shows the cursor it asks for

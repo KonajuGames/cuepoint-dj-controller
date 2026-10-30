@@ -1,5 +1,6 @@
 using System.Text;
 using Brutal.Numerics;
+using Brutality.Input;
 
 namespace Brutality.UI;
 
