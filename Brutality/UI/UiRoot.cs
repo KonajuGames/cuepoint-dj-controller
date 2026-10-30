@@ -116,6 +116,39 @@ sealed class UiRoot
         UpdateHover();
     }
 
+    /// <summary>
+    /// The wheel turned by <paramref name="notches"/>, positive towards the top. Scrolls the innermost scroll panel
+    /// under the cursor; once that's at its limit, the next one out. Returns whether anything scrolled.
+    /// </summary>
+    public bool MouseWheel(float notches)
+    {
+        if (_mouse is not { } mouse || notches == 0)
+            return false;
+
+        // The path from the topmost element under the cursor down to the deepest one.
+        var scrollers = new List<ScrollPanel>();
+        for (var i = Elements.Count - 1; i >= 0; i--)
+        {
+            var element = Elements[i];
+            if (!element.Visible || !element.Contains(mouse))
+                continue;
+
+            for (UiElement? current = element; current is not null; current = (current as Panel)?.ChildAt(mouse))
+            {
+                if (current is ScrollPanel scroller)
+                    scrollers.Add(scroller);
+            }
+            break;
+        }
+
+        for (var i = scrollers.Count - 1; i >= 0; i--)
+        {
+            if (scrollers[i].ScrollByWheel(notches))
+                return true;
+        }
+        return false;
+    }
+
     public void MouseButton(UiMouseButton button, bool down)
     {
         if (button != UiMouseButton.Left)

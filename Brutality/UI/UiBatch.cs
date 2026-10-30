@@ -53,9 +53,36 @@ sealed class UiBatch
 
     public UiBatch(FontAtlas atlas) => _atlas = atlas;
 
+    /// <summary>
+    /// Clip rectangles as (min, max) corners; the top one applies to everything added.
+    /// </summary>
+    readonly Stack<(float2 Min, float2 Max)> _clips = [];
+
     public ReadOnlySpan<UiVertex> Vertices => CollectionsMarshal.AsSpan(_vertices);
 
-    public void Clear() => _vertices.Clear();
+    public void Clear()
+    {
+        _vertices.Clear();
+        _clips.Clear();
+    }
+
+    /// <summary>
+    /// Clips everything added until the matching <see cref="PopClip"/> to this rectangle, within any clip already
+    /// in effect.
+    /// </summary>
+    public void PushClip(float2 position, float2 size)
+    {
+        var min = position;
+        var max = position + size;
+        if (_clips.TryPeek(out var outer))
+        {
+            min = float2.Max(min, outer.Min);
+            max = float2.Min(max, outer.Max);
+        }
+        _clips.Push((min, float2.Max(min, max)));
+    }
+
+    public void PopClip() => _clips.Pop();
 
     public void AddRect(float2 position, float2 size, float4 color)
     {
@@ -109,6 +136,20 @@ sealed class UiBatch
 
     void AddQuad(float2 min, float2 max, float2 uvMin, float2 uvMax, float4 color)
     {
+        // Every quad is axis-aligned, so clipping is just trimming it and its UVs by the same fraction.
+        if (_clips.TryPeek(out var clip))
+        {
+            var clippedMin = float2.Max(min, clip.Min);
+            var clippedMax = float2.Min(max, clip.Max);
+            if (clippedMin.X >= clippedMax.X || clippedMin.Y >= clippedMax.Y)
+                return;
+
+            var size = max - min;
+            var uvSize = uvMax - uvMin;
+            (uvMin, uvMax) = (uvMin + (clippedMin - min) / size * uvSize, uvMin + (clippedMax - min) / size * uvSize);
+            (min, max) = (clippedMin, clippedMax);
+        }
+
         var topRight = new UiVertex(new float2(max.X, min.Y), new float2(uvMax.X, uvMin.Y), color);
         var bottomLeft = new UiVertex(new float2(min.X, max.Y), new float2(uvMin.X, uvMax.Y), color);
 

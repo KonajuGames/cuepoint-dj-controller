@@ -23,6 +23,7 @@ sealed class GlfwUiInput : IDisposable
         window.OnCursorPos += OnCursorPos;
         window.OnCursorEnter += OnCursorEnter;
         window.OnMouseButton += OnMouseButton;
+        window.OnScroll += OnScroll;
     }
 
     /// <summary>
@@ -68,6 +69,9 @@ sealed class GlfwUiInput : IDisposable
         UpdateCursor();
     }
 
+    // Vertical only: Y is the wheel, X is a tilt wheel or sideways touchpad swipe.
+    void OnScroll(GlfwWindow window, double2 offset) => _ui.MouseWheel((float)offset.Y);
+
     /// <summary>
     /// Applies the UI's cursor if it changed. Also call after <see cref="UiRoot.Layout"/>, since a layout change can
     /// move a button under a still cursor.
@@ -86,6 +90,7 @@ sealed class GlfwUiInput : IDisposable
         _window.OnCursorPos -= OnCursorPos;
         _window.OnCursorEnter -= OnCursorEnter;
         _window.OnMouseButton -= OnMouseButton;
+        _window.OnScroll -= OnScroll;
         _window.SetCursor(default);
         _handCursor.Dispose();
     }

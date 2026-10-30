@@ -81,7 +81,12 @@ abstract class UiElement
     /// <summary>
     /// Places the element with its top-left at <paramref name="position"/>, after <see cref="Measure"/>.
     /// </summary>
-    public virtual void Arrange(float2 position) => ScreenPosition = position;
+    public virtual void Arrange(float2 position) => ArrangeSelf(position);
+
+    /// <summary>
+    /// Sets <see cref="ScreenPosition"/> alone, for overrides that place their children differently.
+    /// </summary>
+    protected void ArrangeSelf(float2 position) => ScreenPosition = position;
 
     public abstract void Draw(UiBatch batch);
 
@@ -152,7 +157,18 @@ class Panel : UiElement
         return child;
     }
 
-    public override float2 Measure()
+    /// <summary>
+    /// Space taken by the border and padding on each side.
+    /// </summary>
+    protected float Inset => Padding + BorderWidth;
+
+    public override float2 Measure() =>
+        Size = float2.Max(MeasureChildren() + new float2(2 * Inset, 2 * Inset), MinSize);
+
+    /// <summary>
+    /// Measures the visible children and returns the size of them stacked, without padding or border.
+    /// </summary>
+    protected float2 MeasureChildren()
     {
         var content = float2.Zero;
         var count = 0;
@@ -170,18 +186,21 @@ class Panel : UiElement
         }
 
         var gaps = Math.Max(0, count - 1) * Spacing;
-        content += Direction == UiDirection.Vertical ? new float2(0, gaps) : new float2(gaps, 0);
-
-        var inset = 2 * (Padding + BorderWidth);
-        return Size = float2.Max(content + new float2(inset, inset), MinSize);
+        return content + (Direction == UiDirection.Vertical ? new float2(0, gaps) : new float2(gaps, 0));
     }
 
     public override void Arrange(float2 position)
     {
         base.Arrange(position);
+        ArrangeChildren(position + new float2(Inset, Inset));
+    }
 
-        var inset = Padding + BorderWidth;
-        var cursor = position + new float2(inset, inset);
+    /// <summary>
+    /// Stacks the visible children starting at <paramref name="origin"/>.
+    /// </summary>
+    protected void ArrangeChildren(float2 origin)
+    {
+        var cursor = origin;
         foreach (var child in Children)
         {
             if (!child.Visible)
@@ -196,14 +215,40 @@ class Panel : UiElement
 
     public override void Draw(UiBatch batch)
     {
+        DrawFrame(batch);
+        DrawChildren(batch);
+    }
+
+    /// <summary>
+    /// The background and border.
+    /// </summary>
+    protected void DrawFrame(UiBatch batch)
+    {
         batch.AddRect(ScreenPosition, Size, CurrentBackground);
         batch.AddBorder(ScreenPosition, Size, BorderWidth, BorderColor);
+    }
 
+    protected void DrawChildren(UiBatch batch)
+    {
         foreach (var child in Children)
         {
             if (child.Visible)
                 child.Draw(batch);
         }
+    }
+
+    /// <summary>
+    /// The visible child under <paramref name="point"/> that's drawn on top, or null.
+    /// </summary>
+    internal UiElement? ChildAt(float2 point)
+    {
+        for (var i = Children.Count - 1; i >= 0; i--)
+        {
+            var child = Children[i];
+            if (child.Visible && child.Contains(point))
+                return child;
+        }
+        return null;
     }
 
     public override UiElement? HitTest(float2 point)

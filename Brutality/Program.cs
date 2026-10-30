@@ -98,8 +98,9 @@ static string FindFont(bool bold) =>
     ?? throw new FileNotFoundException("No usable system font found; install DejaVu Sans or Liberation Sans");
 
 /// <summary>
-/// The on-screen overlay: a stats panel with playback buttons in the top-left and a controls hint in the
-/// bottom-right. It also owns the scene's clock, which the buttons pause and reset.
+/// The on-screen overlay: a stats panel with playback buttons in the top-left, a scrolling event log in the
+/// top-right and a controls hint in the bottom-right. It also owns the scene's clock, which the buttons pause and
+/// reset.
 /// </summary>
 sealed class Hud
 {
@@ -119,13 +120,18 @@ sealed class Hud
     readonly Label _frameRate;
     readonly Button _pause;
     readonly Button _reset;
+    readonly ScrollPanel _log;
+    readonly Font _body;
     bool _paused;
+    int2 _lastFramebufferSize;
 
     double _sampleStart;
     int _framesSinceSample;
 
     public Hud(Font body, Font title, string deviceName, string? texturePath)
     {
+        _body = body;
+
         var stats = Ui.Add(
             new Panel
             {
@@ -147,8 +153,42 @@ sealed class Hud
         var buttons = stats.Add(new Panel { Direction = UiDirection.Horizontal, Spacing = 8 });
         _pause = buttons.Add(new Button(body, "Pause") { MinSize = new float2(84, 0) });
         _reset = buttons.Add(new Button(body, "Reset") { MinSize = new float2(84, 0) });
-        _pause.Clicked += _ => _paused = !_paused;
-        _reset.Clicked += _ => SceneTime = 0;
+        _pause.Clicked += _ =>
+        {
+            _paused = !_paused;
+            Log(_paused ? $"Paused at {SceneTime:F1} s" : "Resumed");
+        };
+        _reset.Clicked += _ =>
+        {
+            SceneTime = 0;
+            Log("Reset the scene clock");
+        };
+
+        var logPanel = Ui.Add(
+            new Panel
+            {
+                Anchor = UiAnchor.TopRight,
+                Position = new float2(16, 16),
+                Padding = 12,
+                Spacing = 6,
+                Background = PanelBackground,
+                BorderColor = PanelBorder,
+                BorderWidth = 1,
+            }
+        );
+        logPanel.Add(new Label(title, "Event log"));
+        _log = logPanel.Add(
+            new ScrollPanel
+            {
+                MaxHeight = 150,
+                MinSize = new float2(240, 0),
+                Spacing = 2,
+                StickToEnd = true,
+            }
+        );
+        Log($"GPU: {deviceName}");
+        Log($"Texture: {texturePath ?? "generated checkerboard"}");
+        Log("Scroll here with the mouse wheel");
 
         var hint = Ui.Add(
             new Panel
@@ -160,6 +200,17 @@ sealed class Hud
             }
         );
         hint.Add(new Label(body, "Esc  Quit") { Color = Muted });
+    }
+
+    /// <summary>
+    /// Adds a timestamped line to the event log, dropping the oldest past a limit.
+    /// </summary>
+    public void Log(string message)
+    {
+        const int MAX_ENTRIES = 200;
+        if (_log.Children.Count >= MAX_ENTRIES)
+            _log.Children.RemoveAt(0);
+        _log.Add(new Label(_body, $"{DateTime.Now:HH:mm:ss}  {message}") { Color = Muted });
     }
 
     /// <summary>
@@ -180,6 +231,11 @@ sealed class Hud
         _reset.Enabled = SceneTime > 0;
 
         _resolution.Text = $"{framebufferSize.X} × {framebufferSize.Y}";
+        if (framebufferSize != _lastFramebufferSize)
+        {
+            Log($"Framebuffer is {framebufferSize.X} × {framebufferSize.Y}");
+            _lastFramebufferSize = framebufferSize;
+        }
 
         // Averaged over half a second, so the number is readable.
         _framesSinceSample++;
