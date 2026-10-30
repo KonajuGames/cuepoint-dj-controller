@@ -7,7 +7,7 @@ namespace Brutality.UI;
 /// The vertex layout of the UI pipeline: a position in pixels from the top-left of the screen, a UV into the font
 /// atlas, and a linear-space colour with alpha.
 /// </summary>
-struct UiVertex(float2 position, float2 uv, float4 color)
+struct Vertex(float2 position, float2 uv, float4 color)
 {
     public float2 Position = position;
     public float2 Uv = uv;
@@ -18,7 +18,7 @@ struct UiVertex(float2 position, float2 uv, float4 color)
 /// Colours for the UI. Written as sRGB (as colour pickers and hex codes are) and converted to the linear values the
 /// sRGB swapchain expects.
 /// </summary>
-static class UiColor
+static class Colors
 {
     /// <summary>
     /// A colour from a 0xRRGGBB hex value.
@@ -46,19 +46,19 @@ static class UiColor
 /// <summary>
 /// Collects the triangles for one frame of UI: solid rectangles and text, drawn in the order they're added.
 /// </summary>
-sealed class UiBatch
+sealed class Batch
 {
-    readonly List<UiVertex> _vertices = [];
+    readonly List<Vertex> _vertices = [];
     readonly FontAtlas _atlas;
 
-    public UiBatch(FontAtlas atlas) => _atlas = atlas;
+    public Batch(FontAtlas atlas) => _atlas = atlas;
 
     /// <summary>
     /// Clip rectangles as (min, max) corners; the top one applies to everything added.
     /// </summary>
     readonly Stack<(float2 Min, float2 Max)> _clips = [];
 
-    public ReadOnlySpan<UiVertex> Vertices => CollectionsMarshal.AsSpan(_vertices);
+    public ReadOnlySpan<Vertex> Vertices => CollectionsMarshal.AsSpan(_vertices);
 
     public void Clear()
     {
@@ -150,14 +150,14 @@ sealed class UiBatch
             (min, max) = (clippedMin, clippedMax);
         }
 
-        var topRight = new UiVertex(new float2(max.X, min.Y), new float2(uvMax.X, uvMin.Y), color);
-        var bottomLeft = new UiVertex(new float2(min.X, max.Y), new float2(uvMin.X, uvMax.Y), color);
+        var topRight = new Vertex(new float2(max.X, min.Y), new float2(uvMax.X, uvMin.Y), color);
+        var bottomLeft = new Vertex(new float2(min.X, max.Y), new float2(uvMin.X, uvMax.Y), color);
 
-        _vertices.Add(new UiVertex(min, uvMin, color));
+        _vertices.Add(new Vertex(min, uvMin, color));
         _vertices.Add(topRight);
         _vertices.Add(bottomLeft);
         _vertices.Add(bottomLeft);
         _vertices.Add(topRight);
-        _vertices.Add(new UiVertex(max, uvMax, color));
+        _vertices.Add(new Vertex(max, uvMax, color));
     }
 }

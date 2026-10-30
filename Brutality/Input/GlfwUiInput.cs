@@ -6,16 +6,16 @@ using Brutality.UI;
 namespace Brutality.Input;
 
 /// <summary>
-/// Feeds a GLFW window's mouse, keyboard and text events into a <see cref="UiRoot"/>, shows the cursor it asks for
-/// and connects <see cref="UiClipboard"/> to the system clipboard. Dispose before the window.
+/// Feeds a GLFW window's mouse, keyboard and text events into a <see cref="Root"/>, shows the cursor it asks for
+/// and connects <see cref="Clipboard"/> to the system clipboard. Dispose before the window.
 /// </summary>
 sealed class GlfwUiInput : IDisposable
 {
     readonly GlfwWindow _window;
-    readonly UiRoot _ui;
+    readonly Root _ui;
     readonly GlfwCursor _handCursor;
     readonly GlfwCursor _textCursor;
-    UiCursor _shownCursor = UiCursor.Arrow;
+    Cursor _shownCursor = Cursor.Arrow;
     readonly HashSet<GlfwKey> _keysHeldByUi = [];
 
     /// <summary>
@@ -24,15 +24,15 @@ sealed class GlfwUiInput : IDisposable
     /// </summary>
     public event Action<GlfwKey, GlfwKeyAction, GlfwModifier>? UnhandledKey;
 
-    public GlfwUiInput(GlfwWindow window, UiRoot ui)
+    public GlfwUiInput(GlfwWindow window, Root ui)
     {
         _window = window;
         _ui = ui;
         _handCursor = Glfw.CreateCursor(GlfwStandardCursor.PointingHand);
         _textCursor = Glfw.CreateCursor(GlfwStandardCursor.IBeam);
 
-        UiClipboard.GetText = () => Glfw.Clipboard;
-        UiClipboard.SetText = text => Glfw.Clipboard = text;
+        Clipboard.GetText = () => Glfw.Clipboard;
+        Clipboard.SetText = text => Glfw.Clipboard = text;
 
         window.OnCursorPos += OnCursorPos;
         window.OnCursorEnter += OnCursorEnter;
@@ -153,7 +153,7 @@ sealed class GlfwUiInput : IDisposable
         };
 
     /// <summary>
-    /// Applies the UI's cursor if it changed. Also call after <see cref="UiRoot.Layout"/>, since a layout change can
+    /// Applies the UI's cursor if it changed. Also call after <see cref="Root.Layout"/>, since a layout change can
     /// move a button under a still cursor.
     /// </summary>
     public void UpdateCursor()
@@ -164,8 +164,8 @@ sealed class GlfwUiInput : IDisposable
         _window.SetCursor(
             wanted switch
             {
-                UiCursor.Hand => _handCursor,
-                UiCursor.Text => _textCursor,
+                Cursor.Hand => _handCursor,
+                Cursor.Text => _textCursor,
                 _ => default,
             }
         );
@@ -183,7 +183,7 @@ sealed class GlfwUiInput : IDisposable
         _window.SetCursor(default);
         _handCursor.Dispose();
         _textCursor.Dispose();
-        UiClipboard.GetText = () => null;
-        UiClipboard.SetText = _ => { };
+        Clipboard.GetText = () => null;
+        Clipboard.SetText = _ => { };
     }
 }

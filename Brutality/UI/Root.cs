@@ -6,7 +6,7 @@ namespace Brutality.UI;
 /// <summary>
 /// The cursor the UI wants shown, for the window layer to apply.
 /// </summary>
-enum UiCursor
+enum Cursor
 {
     Arrow,
     Hand,
@@ -17,7 +17,7 @@ enum UiCursor
 /// The system clipboard, for text boxes to paste from. The window layer fills these in; without it, paste does
 /// nothing.
 /// </summary>
-static class UiClipboard
+static class Clipboard
 {
     public static Func<string?> GetText { get; set; } = () => null;
     public static Action<string> SetText { get; set; } = _ => { };
@@ -27,7 +27,7 @@ static class UiClipboard
 /// The time animations run on, in seconds from an arbitrary start. Replace it to drive them from a game clock, or
 /// step them exactly in tests.
 /// </summary>
-static class UiClock
+static class Clock
 {
     public static Func<double> Seconds { get; set; } =
         () => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
@@ -66,23 +66,23 @@ static class UiClock
 /// under the cursor, turns presses and releases into clicks, and routes keys and typing to the focused element.
 /// Platform-neutral; see <see cref="GlfwUiInput"/> for feeding it a window's events.
 /// </summary>
-sealed class UiRoot
+sealed class Root
 {
     /// <summary>
     /// Drawn first to last, so later elements are on top and win hit tests.
     /// </summary>
-    public List<UiElement> Elements { get; } = [];
+    public List<Element> Elements { get; } = [];
 
     /// <summary>
     /// The interactive element under the mouse, if any.
     /// </summary>
-    public UiElement? Hovered { get; private set; }
+    public Element? Hovered { get; private set; }
 
     /// <summary>
     /// The element the left button went down on. It keeps the mouse until the button is released, even if the
     /// cursor leaves it, and only clicks if released back over it.
     /// </summary>
-    public UiElement? Pressed { get; private set; }
+    public Element? Pressed { get; private set; }
 
     /// <summary>
     /// The mouse is over some visible top-level element, interactive or not.
@@ -94,12 +94,12 @@ sealed class UiRoot
     /// </summary>
     public bool WantsMouse => IsMouseOver || Pressed is not null;
 
-    public UiCursor Cursor => Hovered?.Cursor ?? UiCursor.Arrow;
+    public Cursor Cursor => Hovered?.Cursor ?? Cursor.Arrow;
 
     /// <summary>
     /// The element keys and typed characters go to, if any.
     /// </summary>
-    public UiElement? Focused { get; private set; }
+    public Element? Focused { get; private set; }
 
     /// <summary>
     /// The focused element takes every key (a text box being typed in), so the app's shortcuts should stay quiet.
@@ -114,7 +114,7 @@ sealed class UiRoot
     bool _focusVisible;
 
     public T Add<T>(T element)
-        where T : UiElement
+        where T : Element
     {
         Elements.Add(element);
         return element;
@@ -135,9 +135,9 @@ sealed class UiRoot
             element.Arrange(
                 element.Anchor switch
                 {
-                    UiAnchor.TopRight => new float2(screenSize.X - size.X - element.Position.X, element.Position.Y),
-                    UiAnchor.BottomLeft => new float2(element.Position.X, screenSize.Y - size.Y - element.Position.Y),
-                    UiAnchor.BottomRight => screenSize - size - element.Position,
+                    Anchor.TopRight => new float2(screenSize.X - size.X - element.Position.X, element.Position.Y),
+                    Anchor.BottomLeft => new float2(element.Position.X, screenSize.Y - size.Y - element.Position.Y),
+                    Anchor.BottomRight => screenSize - size - element.Position,
                     _ => element.Position,
                 }
             );
@@ -151,7 +151,7 @@ sealed class UiRoot
         UpdateHover();
     }
 
-    public void Draw(UiBatch batch)
+    public void Draw(Batch batch)
     {
         foreach (var element in Elements)
         {
@@ -204,7 +204,7 @@ sealed class UiRoot
             if (!element.Visible || !element.Contains(mouse))
                 continue;
 
-            for (UiElement? current = element; current is not null; current = (current as Panel)?.ChildAt(mouse))
+            for (Element? current = element; current is not null; current = (current as Panel)?.ChildAt(mouse))
             {
                 if (current is ScrollPanel scroller)
                     scrollers.Add(scroller);
@@ -258,7 +258,7 @@ sealed class UiRoot
     /// Gives <paramref name="element"/> keyboard focus, or clears focus with null. Focus set this way shows a ring
     /// only if <paramref name="showFocusRing"/>, as when moving by keyboard.
     /// </summary>
-    public void Focus(UiElement? element, bool showFocusRing = false)
+    public void Focus(Element? element, bool showFocusRing = false)
     {
         if (showFocusRing)
             _focusVisible = true;
@@ -334,9 +334,9 @@ sealed class UiRoot
     /// <summary>
     /// Every visible element that can take focus, depth first in drawing order, which is also Tab order.
     /// </summary>
-    IEnumerable<UiElement> FocusableElements()
+    IEnumerable<Element> FocusableElements()
     {
-        var stack = new Stack<UiElement>();
+        var stack = new Stack<Element>();
         for (var i = Elements.Count - 1; i >= 0; i--)
         {
             if (Elements[i].Visible)
@@ -354,7 +354,7 @@ sealed class UiRoot
 
     void UpdateHover()
     {
-        UiElement? hit = null;
+        Element? hit = null;
         var over = false;
         if (_mouse is { } mouse)
         {

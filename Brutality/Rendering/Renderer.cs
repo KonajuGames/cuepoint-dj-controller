@@ -42,7 +42,7 @@ sealed unsafe class Renderer : IDisposable
     readonly GpuMesh _cube;
     readonly GpuMesh _sphere;
     readonly Texture _texture;
-    readonly UiRenderer _ui;
+    readonly OverlayRenderer _ui;
 
     readonly VkDescriptorSetLayout _descriptorSetLayout;
     readonly VkDescriptorPool _descriptorPool;
@@ -135,7 +135,7 @@ sealed unsafe class Renderer : IDisposable
             null
         );
         _pipeline = CreatePipeline();
-        _ui = new UiRenderer(gpu, fonts, _swapchain.Format, _depthFormat, FRAMES_IN_FLIGHT);
+        _ui = new OverlayRenderer(gpu, fonts, _swapchain.Format, _depthFormat, FRAMES_IN_FLIGHT);
 
         _commandPool = _device.CreateCommandPool(
             new VkCommandPoolCreateInfo
@@ -235,7 +235,7 @@ sealed unsafe class Renderer : IDisposable
     /// <summary>
     /// Records, submits and presents one frame. Call only while the window has a non-zero framebuffer.
     /// </summary>
-    public void DrawFrame(float time, UiRoot ui)
+    public void DrawFrame(float time, Root ui)
     {
         if (_swapchainStale && !TryRecreateSwapchain())
             return;
@@ -306,7 +306,7 @@ sealed unsafe class Renderer : IDisposable
         _frameIndex = (_frameIndex + 1) % FRAMES_IN_FLIGHT;
     }
 
-    void Record(CommandBuffer cmd, int imageIndex, float time, UiRoot ui)
+    void Record(CommandBuffer cmd, int imageIndex, float time, Root ui)
     {
         var image = _swapchain.Images[imageIndex];
         var depth = _swapchain.Depth;

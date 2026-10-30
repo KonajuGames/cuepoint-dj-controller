@@ -9,12 +9,12 @@ namespace Brutality.UI;
 /// </summary>
 sealed class Hud
 {
-    static readonly float4 PanelBackground = UiColor.Hex(0x15151C, 0.82f);
-    static readonly float4 PanelBorder = UiColor.Hex(0xEB7828, 0.9f);
-    static readonly float4 Muted = UiColor.Hex(0x9A9AA8);
-    static readonly float4 Accent = UiColor.Hex(0xEB7828);
+    static readonly float4 PanelBackground = Colors.Hex(0x15151C, 0.82f);
+    static readonly float4 PanelBorder = Colors.Hex(0xEB7828, 0.9f);
+    static readonly float4 Muted = Colors.Hex(0x9A9AA8);
+    static readonly float4 Accent = Colors.Hex(0xEB7828);
 
-    public UiRoot Ui { get; } = new();
+    public Root Ui { get; } = new();
 
     /// <summary>
     /// Seconds of animation shown so far; stands still while paused.
@@ -55,7 +55,7 @@ sealed class Hud
         _frameRate = AddRow(stats, body, "Frame rate");
         AddRow(stats, body, "Texture", texturePath is null ? "Checkerboard" : Path.GetFileName(texturePath));
 
-        var buttons = stats.Add(new Panel { Direction = UiDirection.Horizontal, Spacing = 8 });
+        var buttons = stats.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
         _pause = buttons.Add(new Button(body, "Pause") { MinSize = new float2(84, 0), FocusColor = Accent });
         _reset = buttons.Add(new Button(body, "Reset") { MinSize = new float2(84, 0), FocusColor = Accent });
         _pause.Clicked += _ =>
@@ -72,7 +72,7 @@ sealed class Hud
         var logPanel = Ui.Add(
             new Panel
             {
-                Anchor = UiAnchor.TopRight,
+                Anchor = Anchor.TopRight,
                 Position = new float2(16, 16),
                 Padding = 12,
                 Spacing = 6,
@@ -116,7 +116,7 @@ sealed class Hud
         var hint = Ui.Add(
             new Panel
             {
-                Anchor = UiAnchor.BottomRight,
+                Anchor = Anchor.BottomRight,
                 Position = new float2(16, 16),
                 Padding = 8,
                 Background = PanelBackground,
@@ -141,7 +141,7 @@ sealed class Hud
     /// </summary>
     static Label AddRow(Panel parent, Font font, string name, string value = "")
     {
-        var row = parent.Add(new Panel { Direction = UiDirection.Horizontal, Spacing = 8 });
+        var row = parent.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
         row.Add(new Label(font, name) { Color = Muted });
         return row.Add(new Label(font, value) { Color = Accent });
     }

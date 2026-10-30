@@ -12,7 +12,7 @@ namespace Brutality.UI;
 /// double-click to select a word and triple-click to select everything. Text wider than the box glides sideways to
 /// keep the caret in view (see <see cref="SmoothScrolling"/>).
 /// </summary>
-sealed class TextBox(Font font) : UiElement
+sealed class TextBox(Font font) : Element
 {
     const long CARET_BLINK_MS = 530;
 
@@ -33,12 +33,12 @@ sealed class TextBox(Font font) : UiElement
     public float Padding { get; set; } = 6;
     public int MaxLength { get; set; } = 256;
 
-    public float4 Background { get; set; } = UiColor.Hex(0x0E0E13);
-    public float4 BorderColor { get; set; } = UiColor.Hex(0x3A3A48);
-    public float4 FocusColor { get; set; } = UiColor.Hex(0x7AB8FF);
-    public float4 TextColor { get; set; } = UiColor.White;
-    public float4 PlaceholderColor { get; set; } = UiColor.Hex(0x6A6A78);
-    public float4 SelectionColor { get; set; } = UiColor.Hex(0x3D6FB8, 0.7f);
+    public float4 Background { get; set; } = Colors.Hex(0x0E0E13);
+    public float4 BorderColor { get; set; } = Colors.Hex(0x3A3A48);
+    public float4 FocusColor { get; set; } = Colors.Hex(0x7AB8FF);
+    public float4 TextColor { get; set; } = Colors.White;
+    public float4 PlaceholderColor { get; set; } = Colors.Hex(0x6A6A78);
+    public float4 SelectionColor { get; set; } = Colors.Hex(0x3D6FB8, 0.7f);
 
     /// <summary>
     /// Glide sideways to follow the caret rather than jumping. On by default.
@@ -233,7 +233,7 @@ sealed class TextBox(Font font) : UiElement
     public override bool IsInteractive => true;
     public override bool IsFocusable => true;
     public override bool CapturesKeyboard => true;
-    public override UiCursor Cursor => UiCursor.Text;
+    public override Cursor Cursor => Cursor.Text;
 
     const float BORDER = 1;
     float Inset => Padding + BORDER;
@@ -260,12 +260,12 @@ sealed class TextBox(Font font) : UiElement
 
         // The first layout lands in place; after that, glide.
         var first = double.IsNaN(_lastScrollStep);
-        var dt = UiClock.Delta(ref _lastScrollStep);
-        _scroll = UiClock.Approach(_scroll, _scrollTarget, dt, SmoothScrolling && !first ? SmoothScrollTime : 0);
+        var dt = Clock.Delta(ref _lastScrollStep);
+        _scroll = Clock.Approach(_scroll, _scrollTarget, dt, SmoothScrolling && !first ? SmoothScrollTime : 0);
         _scroll = Math.Clamp(_scroll, 0, maxScroll);
     }
 
-    public override void Draw(UiBatch batch)
+    public override void Draw(Batch batch)
     {
         batch.AddRect(ScreenPosition, Size, Background);
         batch.AddBorder(ScreenPosition, Size, IsFocused ? 2 : BORDER, IsFocused ? FocusColor : BorderColor);
@@ -424,17 +424,17 @@ sealed class TextBox(Font font) : UiElement
                 break;
             case Key.C when shortcut:
                 if (HasSelection)
-                    UiClipboard.SetText(SelectedText);
+                    Clipboard.SetText(SelectedText);
                 break;
             case Key.X when shortcut:
                 if (HasSelection)
                 {
-                    UiClipboard.SetText(SelectedText);
+                    Clipboard.SetText(SelectedText);
                     DeleteSelection();
                 }
                 break;
             case Key.V when shortcut:
-                Insert(UiClipboard.GetText() ?? "", EditKind.None);
+                Insert(Clipboard.GetText() ?? "", EditKind.None);
                 edits = true;
                 break;
 

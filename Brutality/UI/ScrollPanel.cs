@@ -42,10 +42,10 @@ sealed class ScrollPanel : Panel
     /// </summary>
     public float ScrollbarHitWidth { get; set; } = 12;
 
-    public float4 ScrollbarTrack { get; set; } = UiColor.Hex(0xFFFFFF, 0.06f);
-    public float4 ScrollbarThumb { get; set; } = UiColor.Hex(0xFFFFFF, 0.3f);
-    public float4 ScrollbarThumbHover { get; set; } = UiColor.Hex(0xFFFFFF, 0.45f);
-    public float4 ScrollbarThumbDragging { get; set; } = UiColor.Hex(0xFFFFFF, 0.6f);
+    public float4 ScrollbarTrack { get; set; } = Colors.Hex(0xFFFFFF, 0.06f);
+    public float4 ScrollbarThumb { get; set; } = Colors.Hex(0xFFFFFF, 0.3f);
+    public float4 ScrollbarThumbHover { get; set; } = Colors.Hex(0xFFFFFF, 0.45f);
+    public float4 ScrollbarThumbDragging { get; set; } = Colors.Hex(0xFFFFFF, 0.6f);
 
     /// <summary>
     /// Animate wheel and page moves rather than jumping. On by default.
@@ -105,7 +105,7 @@ sealed class ScrollPanel : Panel
     /// </summary>
     public override bool IsInteractive => CanScroll;
 
-    public override UiCursor Cursor => UiCursor.Arrow;
+    public override Cursor Cursor => Cursor.Arrow;
 
     /// <summary>
     /// Scrolling the log shouldn't take you out of the note box, say.
@@ -122,7 +122,7 @@ sealed class ScrollPanel : Panel
     float2 _target;
 
     /// <summary>
-    /// When the animation last stepped, from <see cref="UiClock"/>; NaN before the first layout.
+    /// When the animation last stepped, from <see cref="Clock"/>; NaN before the first layout.
     /// </summary>
     double _lastStep = double.NaN;
 
@@ -148,7 +148,7 @@ sealed class ScrollPanel : Panel
     /// </summary>
     float BarSpace => ScrollbarWidth + Padding;
 
-    public ScrollPanel() => Direction = UiDirection.Vertical;
+    public ScrollPanel() => Direction = Direction.Vertical;
 
     static float Along(float2 v, Axis axis) => axis == Axis.X ? v.X : v.Y;
 
@@ -235,18 +235,18 @@ sealed class ScrollPanel : Panel
     }
 
     /// <summary>
-    /// Moves the offset a frame's worth towards the target (see <see cref="UiClock.Approach"/>).
+    /// Moves the offset a frame's worth towards the target (see <see cref="Clock.Approach"/>).
     /// </summary>
     void StepAnimation()
     {
         var first = double.IsNaN(_lastStep);
-        var dt = UiClock.Delta(ref _lastStep);
+        var dt = Clock.Delta(ref _lastStep);
 
         // The first layout has nothing to animate from, so it lands where it should be.
         var time = SmoothScrolling && !first ? SmoothScrollTime : 0;
         _offset = new float2(
-            UiClock.Approach(_offset.X, _target.X, dt, time),
-            UiClock.Approach(_offset.Y, _target.Y, dt, time)
+            Clock.Approach(_offset.X, _target.X, dt, time),
+            Clock.Approach(_offset.Y, _target.Y, dt, time)
         );
         _offset = float2.Clamp(_offset, float2.Zero, MaxScroll);
     }
@@ -258,7 +258,7 @@ sealed class ScrollPanel : Panel
         ArrangeChildren(position + new float2(Inset - MathF.Round(ScrollOffset.X), Inset - MathF.Round(ScrollOffset.Y)));
     }
 
-    public override void Draw(UiBatch batch)
+    public override void Draw(Batch batch)
     {
         DrawFrame(batch);
 
@@ -295,7 +295,7 @@ sealed class ScrollPanel : Panel
         }
     }
 
-    public override UiElement? HitTest(float2 point)
+    public override Element? HitTest(float2 point)
     {
         if (!Contains(point))
             return null;

@@ -7,10 +7,10 @@ using Brutality.Rendering;
 namespace Brutality.UI;
 
 /// <summary>
-/// Draws a <see cref="UiRoot"/> over the scene: one alpha-blended pipeline for both text and solid
+/// Draws a <see cref="Root"/> over the scene: one alpha-blended pipeline for both text and solid
 /// rectangles, reading the font atlas, with vertices rebuilt every frame.
 /// </summary>
-sealed unsafe class UiRenderer : IDisposable
+sealed unsafe class OverlayRenderer : IDisposable
 {
     struct PushConstants
     {
@@ -28,7 +28,7 @@ sealed unsafe class UiRenderer : IDisposable
 
     readonly GpuContext _gpu;
     readonly DeviceEx _device;
-    readonly UiBatch _batch;
+    readonly Batch _batch;
 
     readonly GpuImage _atlasImage;
     readonly VkSampler _sampler;
@@ -43,13 +43,13 @@ sealed unsafe class UiRenderer : IDisposable
     /// <summary>
     /// Builds <paramref name="atlas"/> if it isn't already; add every font before this.
     /// </summary>
-    public UiRenderer(GpuContext gpu, FontAtlas atlas, VkFormat colorFormat, VkFormat depthFormat, int framesInFlight)
+    public OverlayRenderer(GpuContext gpu, FontAtlas atlas, VkFormat colorFormat, VkFormat depthFormat, int framesInFlight)
     {
         _gpu = gpu;
         _device = gpu.Device;
 
         atlas.Build();
-        _batch = new UiBatch(atlas);
+        _batch = new Batch(atlas);
         _atlasImage = UploadAtlas(gpu, atlas);
         _sampler = _device.CreateSampler(Presets.Sampler.SamplerLinearClamped, null);
 
@@ -181,7 +181,7 @@ sealed unsafe class UiRenderer : IDisposable
     VkPipeline CreatePipeline(VkFormat colorFormat, VkFormat depthFormat)
     {
         using var shaderStages = ShaderLoader.Load(_device, "ui.vert", "ui.frag");
-        var vertexInput = VertexInput.For<UiVertex>();
+        var vertexInput = VertexInput.For<Vertex>();
 
         var viewportState = new VkPipelineViewportStateCreateInfo { ViewportCount = 1, ScissorCount = 1 };
         var dynamicStates = stackalloc VkDynamicState[] { VkDynamicState.Viewport, VkDynamicState.Scissor };
@@ -224,7 +224,7 @@ sealed unsafe class UiRenderer : IDisposable
     /// Draws <paramref name="ui"/>, which must already be laid out, into the current rendering pass. The caller must
     /// have waited for <paramref name="frameIndex"/>'s previous use to finish on the GPU.
     /// </summary>
-    public void Record(CommandBuffer cmd, int frameIndex, VkExtent2D extent, UiRoot ui)
+    public void Record(CommandBuffer cmd, int frameIndex, VkExtent2D extent, Root ui)
     {
         var screen = new float2(extent.Width, extent.Height);
 
@@ -244,14 +244,14 @@ sealed unsafe class UiRenderer : IDisposable
             frame.Capacity = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(vertexCount, 1024));
             frame.Buffer = GpuBuffer.Create(
                 _gpu.Allocator,
-                ByteSize.Of<UiVertex>() * frame.Capacity,
+                ByteSize.Of<Vertex>() * frame.Capacity,
                 VkBufferUsageFlags.VertexBufferBit,
                 VmaAllocationCreateFlags.HostAccessSequentialWriteBit | VmaAllocationCreateFlags.MappedBit
             );
         }
 
-        vertices.CopyTo(new Span<UiVertex>((void*)frame.Buffer.Info.PMappedData, vertexCount));
-        _gpu.Allocator.FlushAllocation(frame.Buffer.Allocation, ByteSize.Zero, ByteSize.Of<UiVertex>() * vertexCount);
+        vertices.CopyTo(new Span<Vertex>((void*)frame.Buffer.Info.PMappedData, vertexCount));
+        _gpu.Allocator.FlushAllocation(frame.Buffer.Allocation, ByteSize.Zero, ByteSize.Of<Vertex>() * vertexCount);
 
         // The scene flips Y in its viewport; UI coordinates already point down, so this one doesn't.
         cmd.SetViewport(

@@ -4,10 +4,10 @@ using Brutality.Input;
 namespace Brutality.UI;
 
 /// <summary>
-/// Where a top-level element sits on screen. Its <see cref="UiElement.Position"/> is then the offset from that corner,
+/// Where a top-level element sits on screen. Its <see cref="Element.Position"/> is then the offset from that corner,
 /// measured inwards.
 /// </summary>
-enum UiAnchor
+enum Anchor
 {
     TopLeft,
     TopRight,
@@ -20,7 +20,7 @@ enum UiAnchor
 /// works out sizes from the bottom up, then <see cref="Arrange"/> places elements from the top down. Drawing and
 /// mouse hit testing both use the resulting <see cref="ScreenPosition"/> and <see cref="Size"/>.
 /// </summary>
-abstract class UiElement
+abstract class Element
 {
     /// <summary>
     /// For a top-level element, its offset from <see cref="Anchor"/>. Ignored inside a panel, which places its
@@ -28,7 +28,7 @@ abstract class UiElement
     /// </summary>
     public float2 Position { get; set; }
 
-    public UiAnchor Anchor { get; set; } = UiAnchor.TopLeft;
+    public Anchor Anchor { get; set; } = Anchor.TopLeft;
 
     /// <summary>
     /// Hidden elements take no space, draw nothing and ignore the mouse.
@@ -64,7 +64,7 @@ abstract class UiElement
     /// <summary>
     /// The cursor shown while the mouse is over this element, if it's interactive.
     /// </summary>
-    public virtual UiCursor Cursor => UiCursor.Hand;
+    public virtual Cursor Cursor => Cursor.Hand;
 
     /// <summary>
     /// Whether this element can take keyboard focus, by clicking it or with Tab.
@@ -92,7 +92,7 @@ abstract class UiElement
     /// <summary>
     /// The left button was pressed and released over this element, or the keyboard activated it.
     /// </summary>
-    public event Action<UiElement>? Clicked;
+    public event Action<Element>? Clicked;
 
     internal void RaiseClicked() => Clicked?.Invoke(this);
 
@@ -126,7 +126,7 @@ abstract class UiElement
     /// <summary>
     /// The visible children, in drawing order, for walking the tree.
     /// </summary>
-    internal virtual IEnumerable<UiElement> VisibleChildren => [];
+    internal virtual IEnumerable<Element> VisibleChildren => [];
 
     public bool Contains(float2 point) =>
         point.X >= ScreenPosition.X
@@ -149,29 +149,29 @@ abstract class UiElement
     /// </summary>
     protected void ArrangeSelf(float2 position) => ScreenPosition = position;
 
-    public abstract void Draw(UiBatch batch);
+    public abstract void Draw(Batch batch);
 
     /// <summary>
     /// The innermost interactive element under <paramref name="point"/>, or null.
     /// </summary>
-    public virtual UiElement? HitTest(float2 point) => IsInteractive && Contains(point) ? this : null;
+    public virtual Element? HitTest(float2 point) => IsInteractive && Contains(point) ? this : null;
 }
 
 /// <summary>
 /// A line (or several, split on '\n') of text in one font and colour.
 /// </summary>
-sealed class Label(Font font, string text = "") : UiElement
+sealed class Label(Font font, string text = "") : Element
 {
     public Font Font { get; set; } = font;
     public string Text { get; set; } = text;
-    public float4 Color { get; set; } = UiColor.White;
+    public float4 Color { get; set; } = Colors.White;
 
     public override float2 Measure() => Size = Font.Measure(Text);
 
-    public override void Draw(UiBatch batch) => batch.AddText(Font, Text, ScreenPosition, Color);
+    public override void Draw(Batch batch) => batch.AddText(Font, Text, ScreenPosition, Color);
 }
 
-enum UiDirection
+enum Direction
 {
     Vertical,
     Horizontal,
@@ -181,11 +181,11 @@ enum UiDirection
 /// A box with an optional background and border that stacks its children in a row or column. It sizes itself to fit
 /// them, but never smaller than <see cref="MinSize"/>.
 /// </summary>
-class Panel : UiElement
+class Panel : Element
 {
-    public List<UiElement> Children { get; } = [];
+    public List<Element> Children { get; } = [];
 
-    public UiDirection Direction { get; set; } = UiDirection.Vertical;
+    public Direction Direction { get; set; } = Direction.Vertical;
 
     /// <summary>
     /// Space between the border and the children, on every side.
@@ -199,8 +199,8 @@ class Panel : UiElement
 
     public float2 MinSize { get; set; }
 
-    public float4 Background { get; set; } = UiColor.Transparent;
-    public float4 BorderColor { get; set; } = UiColor.Transparent;
+    public float4 Background { get; set; } = Colors.Transparent;
+    public float4 BorderColor { get; set; } = Colors.Transparent;
     public float BorderWidth { get; set; }
 
     /// <summary>
@@ -212,7 +212,7 @@ class Panel : UiElement
     /// Adds a child and returns it, so a tree can be built and kept hold of in one go.
     /// </summary>
     public T Add<T>(T child)
-        where T : UiElement
+        where T : Element
     {
         Children.Add(child);
         return child;
@@ -240,14 +240,14 @@ class Panel : UiElement
 
             var size = child.Measure();
             content =
-                Direction == UiDirection.Vertical
+                Direction == Direction.Vertical
                     ? new float2(MathF.Max(content.X, size.X), content.Y + size.Y)
                     : new float2(content.X + size.X, MathF.Max(content.Y, size.Y));
             count++;
         }
 
         var gaps = Math.Max(0, count - 1) * Spacing;
-        return content + (Direction == UiDirection.Vertical ? new float2(0, gaps) : new float2(gaps, 0));
+        return content + (Direction == Direction.Vertical ? new float2(0, gaps) : new float2(gaps, 0));
     }
 
     public override void Arrange(float2 position)
@@ -268,13 +268,13 @@ class Panel : UiElement
                 continue;
 
             child.Arrange(cursor);
-            cursor += Direction == UiDirection.Vertical
+            cursor += Direction == Direction.Vertical
                 ? new float2(0, child.Size.Y + Spacing)
                 : new float2(child.Size.X + Spacing, 0);
         }
     }
 
-    public override void Draw(UiBatch batch)
+    public override void Draw(Batch batch)
     {
         DrawFrame(batch);
         DrawChildren(batch);
@@ -283,13 +283,13 @@ class Panel : UiElement
     /// <summary>
     /// The background and border.
     /// </summary>
-    protected void DrawFrame(UiBatch batch)
+    protected void DrawFrame(Batch batch)
     {
         batch.AddRect(ScreenPosition, Size, CurrentBackground);
         batch.AddBorder(ScreenPosition, Size, BorderWidth, BorderColor);
     }
 
-    protected void DrawChildren(UiBatch batch)
+    protected void DrawChildren(Batch batch)
     {
         foreach (var child in Children)
         {
@@ -298,12 +298,12 @@ class Panel : UiElement
         }
     }
 
-    internal override IEnumerable<UiElement> VisibleChildren => Children.Where(child => child.Visible);
+    internal override IEnumerable<Element> VisibleChildren => Children.Where(child => child.Visible);
 
     /// <summary>
     /// The visible child under <paramref name="point"/> that's drawn on top, or null.
     /// </summary>
-    internal UiElement? ChildAt(float2 point)
+    internal Element? ChildAt(float2 point)
     {
         for (var i = Children.Count - 1; i >= 0; i--)
         {
@@ -314,7 +314,7 @@ class Panel : UiElement
         return null;
     }
 
-    public override UiElement? HitTest(float2 point)
+    public override Element? HitTest(float2 point)
     {
         if (!Contains(point))
             return null;
@@ -333,7 +333,7 @@ class Panel : UiElement
 
 /// <summary>
 /// A clickable panel holding a label. It shows <see cref="HoverBackground"/> while the mouse is over it and
-/// <see cref="PressedBackground"/> while it's held down; subscribe to <see cref="UiElement.Clicked"/>.
+/// <see cref="PressedBackground"/> while it's held down; subscribe to <see cref="Element.Clicked"/>.
 /// </summary>
 sealed class Button : Panel
 {
@@ -343,9 +343,9 @@ sealed class Button : Panel
     {
         _label = Add(new Label(font, text));
         Padding = 6;
-        Background = UiColor.Hex(0x2A2A35);
-        HoverBackground = UiColor.Hex(0x3A3A48);
-        PressedBackground = UiColor.Hex(0x1E1E26);
+        Background = Colors.Hex(0x2A2A35);
+        HoverBackground = Colors.Hex(0x3A3A48);
+        PressedBackground = Colors.Hex(0x1E1E26);
     }
 
     public string Text
@@ -366,7 +366,7 @@ sealed class Button : Panel
     /// <summary>
     /// The ring drawn around the button while it has keyboard focus.
     /// </summary>
-    public float4 FocusColor { get; set; } = UiColor.Hex(0x7AB8FF);
+    public float4 FocusColor { get; set; } = Colors.Hex(0x7AB8FF);
 
     /// <summary>
     /// A disabled button draws faded and ignores the mouse and keyboard.
@@ -392,7 +392,7 @@ sealed class Button : Panel
         : IsHovered || IsPressed ? HoverBackground
         : Background;
 
-    public override void Draw(UiBatch batch)
+    public override void Draw(Batch batch)
     {
         var color = _label.Color;
         if (!Enabled)
