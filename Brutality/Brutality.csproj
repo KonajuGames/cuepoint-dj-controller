@@ -13,6 +13,7 @@
     <PackageReference Include="Ahwoo.BRUTAL.Collections" Version="2026.10.2" />
     <PackageReference Include="Ahwoo.BRUTAL.Concurrency" Version="2026.10.2" />
     <PackageReference Include="Ahwoo.BRUTAL.Core" Version="2026.10.4" />
+    <PackageReference Include="Ahwoo.BRUTAL.FreeType" Version="2026.10.2" />
     <PackageReference Include="Ahwoo.BRUTAL.Glfw" Version="2026.10.5" />
     <PackageReference Include="Ahwoo.BRUTAL.Ktx" Version="2026.10.2" />
     <PackageReference Include="Ahwoo.BRUTAL.Localization" Version="2026.10.3" />

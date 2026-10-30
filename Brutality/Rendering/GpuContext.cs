@@ -20,6 +20,7 @@ sealed unsafe class GpuContext : IDisposable
     public Queue Queue { get; }
     public int QueueFamily { get; }
     public VmaAllocator Allocator { get; }
+    public string DeviceName { get; }
 
     readonly VkDebugUtilsMessengerEXT _debugMessenger;
 
@@ -63,7 +64,8 @@ sealed unsafe class GpuContext : IDisposable
         Surface = new VkSurfaceKHR((nint)surfaceHandle);
 
         (PhysicalDevice, QueueFamily) = PickPhysicalDevice();
-        Console.WriteLine($"GPU: {VulkanDeviceInfo.GetDeviceName(PhysicalDevice)}, validation {(enableValidation ? "on" : "off")}");
+        DeviceName = VulkanDeviceInfo.GetDeviceName(PhysicalDevice);
+        Console.WriteLine($"GPU: {DeviceName}, validation {(enableValidation ? "on" : "off")}");
 
         var deviceExtensions = new HashSet<string>();
         VulkanHelpers.AddSwapchainExtensions(deviceExtensions);

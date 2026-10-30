@@ -1,0 +1,22 @@
+#version 450
+
+// Matches UiRenderer.PushConstants.
+layout(push_constant) uniform PushConstants
+{
+    vec2 screenSize;
+} pc;
+
+layout(location = 0) in vec2 inPosition; // Pixels from the top-left corner.
+layout(location = 1) in vec2 inUv;
+layout(location = 2) in vec4 inColor;
+
+layout(location = 0) out vec2 uv;
+layout(location = 1) out vec4 color;
+
+void main()
+{
+    // Vulkan's clip space already has +Y pointing down, so pixels map straight across with an unflipped viewport.
+    gl_Position = vec4(inPosition / pc.screenSize * 2.0 - 1.0, 0.0, 1.0);
+    uv = inUv;
+    color = inColor;
+}

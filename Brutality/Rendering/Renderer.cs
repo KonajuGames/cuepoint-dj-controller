@@ -1,14 +1,15 @@
 using Brutal.GlfwApi;
 using Brutal.Numerics;
 using Brutal.Render.Mesh;
-using Brutal.ShaderCApi;
 using Brutal.VulkanApi;
 using Brutal.VulkanApi.Abstractions;
+using Brutality.UI;
 
 namespace Brutality.Rendering;
 
 /// <summary>
-/// Draws a spinning, textured, lit cube and sphere side by side with dynamic rendering, keeping two frames in flight.
+/// Draws a spinning, textured, lit cube and sphere side by side, with UI on top, using dynamic rendering and keeping
+/// two frames in flight.
 /// </summary>
 sealed unsafe class Renderer : IDisposable
 {
@@ -41,6 +42,7 @@ sealed unsafe class Renderer : IDisposable
     readonly GpuMesh _cube;
     readonly GpuMesh _sphere;
     readonly Texture _texture;
+    readonly UiRenderer _ui;
 
     readonly VkDescriptorSetLayout _descriptorSetLayout;
     readonly VkDescriptorPool _descriptorPool;
@@ -52,7 +54,7 @@ sealed unsafe class Renderer : IDisposable
     readonly Frame[] _frames = new Frame[FRAMES_IN_FLIGHT];
     int _frameIndex;
 
-    public Renderer(GpuContext gpu, GlfwWindow window, string? texturePath)
+    public Renderer(GpuContext gpu, GlfwWindow window, string? texturePath, FontAtlas fonts)
     {
         _gpu = gpu;
         _window = window;
@@ -133,6 +135,7 @@ sealed unsafe class Renderer : IDisposable
             null
         );
         _pipeline = CreatePipeline();
+        _ui = new UiRenderer(gpu, fonts, _swapchain.Format, _depthFormat, FRAMES_IN_FLIGHT);
 
         _commandPool = _device.CreateCommandPool(
             new VkCommandPoolCreateInfo
@@ -158,26 +161,8 @@ sealed unsafe class Renderer : IDisposable
 
     VkPipeline CreatePipeline()
     {
-        using var compiler = ShaderC.CreateCompiler();
-        using var options = ShaderC.CreateCompilerOptions();
-
-        VkShaderModule Compile(string fileName)
-        {
-            var path = Path.Combine(AppContext.BaseDirectory, "Shaders", fileName);
-            using var spirv = compiler.CompileFile(path, ShaderC.InferShaderKind(fileName), "main", options);
-            return ShaderModuleExtensions.FromSpirv(
-                _device,
-                new ReadOnlySpan<byte>(spirv.GetBytes(), (int)spirv.GetLength()),
-                null
-            );
-        }
-
-        // Owns the modules and destroys them on Dispose; the pipeline doesn't need them once it's built.
-        using var shaderStages = new ShaderStages(
-            _device,
-            [Presets.ShaderStage.Vertex(Compile("mesh.vert")), Presets.ShaderStage.Fragment(Compile("mesh.frag"))],
-            null
-        );
+        // The pipeline doesn't need the shader modules once it's built.
+        using var shaderStages = ShaderLoader.Load(_device, "mesh.vert", "mesh.frag");
 
         var vertexInput = VertexInput.For<MeshVertex>();
 
@@ -250,7 +235,7 @@ sealed unsafe class Renderer : IDisposable
     /// <summary>
     /// Records, submits and presents one frame. Call only while the window has a non-zero framebuffer.
     /// </summary>
-    public void DrawFrame(float time)
+    public void DrawFrame(float time, IEnumerable<UiElement> ui)
     {
         if (_swapchainStale && !TryRecreateSwapchain())
             return;
@@ -285,7 +270,7 @@ sealed unsafe class Renderer : IDisposable
         var commandBuffer = frame.CommandBuffer;
         commandBuffer.Reset();
         commandBuffer.Begin(VkCommandBufferUsageFlags.OneTimeSubmitBit);
-        Record(commandBuffer, imageIndex, time);
+        Record(commandBuffer, imageIndex, time, ui);
         commandBuffer.End();
 
         var renderFinished = _swapchain.RenderFinished[imageIndex];
@@ -321,7 +306,7 @@ sealed unsafe class Renderer : IDisposable
         _frameIndex = (_frameIndex + 1) % FRAMES_IN_FLIGHT;
     }
 
-    void Record(CommandBuffer cmd, int imageIndex, float time)
+    void Record(CommandBuffer cmd, int imageIndex, float time, IEnumerable<UiElement> ui)
     {
         var image = _swapchain.Images[imageIndex];
         var depth = _swapchain.Depth;
@@ -422,6 +407,8 @@ sealed unsafe class Renderer : IDisposable
         );
         DrawMesh(_sphere, float4x4.CreateRotationY(time * 0.5f) * float4x4.CreateTranslation(0.9f, 0, 0));
 
+        _ui.Record(cmd, _frameIndex, extent, ui);
+
         cmd.EndRendering();
 
         cmd.TransitionImage(
@@ -452,6 +439,7 @@ sealed unsafe class Renderer : IDisposable
         _device.DestroyDescriptorPool(_descriptorPool, null);
         _device.DestroyDescriptorSetLayout(_descriptorSetLayout, null);
 
+        _ui.Dispose();
         _texture.Dispose();
         _sphere.Dispose();
         _cube.Dispose();
