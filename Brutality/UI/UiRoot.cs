@@ -87,6 +87,16 @@ static class UiClipboard
 }
 
 /// <summary>
+/// The time animations run on, in seconds from an arbitrary start. Replace it to drive them from a game clock, or
+/// step them exactly in tests.
+/// </summary>
+static class UiClock
+{
+    public static Func<double> Seconds { get; set; } =
+        () => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency;
+}
+
+/// <summary>
 /// The top-level elements on screen, plus the input state that ties them together: lays them out, works out what's
 /// under the cursor, turns presses and releases into clicks, and routes keys and typing to the focused element.
 /// Platform-neutral; see <see cref="GlfwUiInput"/> for feeding it a window's events.

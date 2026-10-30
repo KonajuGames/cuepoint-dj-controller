@@ -6,7 +6,8 @@ namespace Brutality.UI;
 /// A vertical panel that grows to fit its children up to <see cref="MaxWidth"/> and <see cref="MaxHeight"/>, then
 /// clips them and scrolls on whichever axis overflows. Each overflowing axis gets a scrollbar, on the right for
 /// vertical and along the bottom for horizontal: scroll with the mouse wheel (a tilt wheel, a sideways touchpad swipe
-/// or Shift+wheel for horizontal), drag a thumb, or click a track beside its thumb to move a page.
+/// or Shift+wheel for horizontal), drag a thumb, or click a track beside its thumb to move a page. Wheel and page
+/// moves glide to where they're going (see <see cref="SmoothScrolling"/>); dragging a thumb follows the mouse exactly.
 /// </summary>
 sealed class ScrollPanel : Panel
 {
@@ -46,9 +47,42 @@ sealed class ScrollPanel : Panel
     public float4 ScrollbarThumbDragging { get; set; } = UiColor.Hex(0xFFFFFF, 0.6f);
 
     /// <summary>
-    /// How far the content is scrolled left (X) and up (Y), in pixels; kept within <see cref="MaxScroll"/> by layout.
+    /// Animate wheel and page moves rather than jumping. On by default.
     /// </summary>
-    public float2 ScrollOffset { get; set; }
+    public bool SmoothScrolling { get; set; } = true;
+
+    /// <summary>
+    /// How quickly a smooth scroll settles: the time to cover about two thirds of the remaining distance. Most of a
+    /// move is done in three times this.
+    /// </summary>
+    public float SmoothScrollTime { get; set; } = 0.035f;
+
+    /// <summary>
+    /// How far the content is scrolled left (X) and up (Y), in pixels, right now; kept within
+    /// <see cref="MaxScroll"/> by layout. Setting it jumps straight there; use <see cref="ScrollTo"/> to glide.
+    /// </summary>
+    public float2 ScrollOffset
+    {
+        get => _offset;
+        set => _offset = _target = value;
+    }
+
+    /// <summary>
+    /// Where a smooth scroll is heading; equal to <see cref="ScrollOffset"/> once it settles.
+    /// </summary>
+    public float2 ScrollTarget => _target;
+
+    public bool IsAnimating => _offset != _target;
+
+    /// <summary>
+    /// Scrolls to <paramref name="offset"/>, gliding there if <see cref="SmoothScrolling"/> is on.
+    /// </summary>
+    public void ScrollTo(float2 offset)
+    {
+        _target = float2.Clamp(offset, float2.Zero, MaxScroll);
+        if (!SmoothScrolling)
+            _offset = _target;
+    }
 
     /// <summary>
     /// The offsets that show the right and bottom ends of the content; zero on an axis whose content fits.
@@ -82,6 +116,14 @@ sealed class ScrollPanel : Panel
         X,
         Y,
     }
+
+    float2 _offset;
+    float2 _target;
+
+    /// <summary>
+    /// When the animation last stepped, from <see cref="UiClock"/>; NaN before the first layout.
+    /// </summary>
+    double _lastStep = double.NaN;
 
     float2 _content;
 
@@ -155,8 +197,9 @@ sealed class ScrollPanel : Panel
 
     public override float2 Measure()
     {
-        // Decided before this measure changes the extents, so a log that was at its end stays there.
-        var wasAtEnd = ScrollOffset.Y >= MaxScroll.Y - 0.5f;
+        // Decided before this measure changes the extents, so a log that was at (or heading for) its end stays
+        // there.
+        var wasAtEnd = _target.Y >= MaxScroll.Y - 0.5f;
 
         _content = MeasureChildren();
 
@@ -182,11 +225,41 @@ sealed class ScrollPanel : Panel
         Size = size;
 
         // A drag in progress owns the offset, so new log lines don't yank the thumb out from under the mouse.
-        var offset = float2.Clamp(ScrollOffset, float2.Zero, MaxScroll);
+        _target = float2.Clamp(_target, float2.Zero, MaxScroll);
         if (StickToEnd && wasAtEnd && !IsDraggingThumb)
-            offset = new float2(offset.X, MaxScroll.Y);
-        ScrollOffset = offset;
+            _target = new float2(_target.X, MaxScroll.Y);
+
+        StepAnimation();
         return Size;
+    }
+
+    /// <summary>
+    /// Moves the offset towards the target, easing out: each frame covers the same fraction of what's left, so it
+    /// starts quickly and settles gently, and a new wheel notch mid-glide just carries on from wherever it is.
+    /// </summary>
+    void StepAnimation()
+    {
+        var now = UiClock.Seconds();
+        var first = double.IsNaN(_lastStep);
+        // Capped so a long stall (a minimised window, a breakpoint) finishes the move rather than overshooting.
+        var dt = first ? 0 : Math.Clamp(now - _lastStep, 0, 0.1);
+        _lastStep = now;
+
+        // The first layout has nothing to animate from, so it lands where it should be.
+        if (!SmoothScrolling || first || SmoothScrollTime <= 0)
+            _offset = _target;
+        else
+        {
+            var keep = (float)Math.Exp(-dt / SmoothScrollTime);
+            _offset = _target + (_offset - _target) * keep;
+        }
+
+        // Within half a pixel draws the same as arriving, so arrive.
+        if (MathF.Abs(_offset.X - _target.X) < 0.5f)
+            _offset = new float2(_target.X, _offset.Y);
+        if (MathF.Abs(_offset.Y - _target.Y) < 0.5f)
+            _offset = new float2(_offset.X, _target.Y);
+        _offset = float2.Clamp(_offset, float2.Zero, MaxScroll);
     }
 
     public override void Arrange(float2 position)
@@ -270,8 +343,9 @@ sealed class ScrollPanel : Panel
 
         // On the track: a page towards the click, keeping a little overlap so the reader keeps their place.
         var page = MathF.Max(ScrollStep, Along(_viewport, axis) - ScrollStep / 2);
-        var target = Along(ScrollOffset, axis) + (along < thumbOffset ? -page : page);
-        ScrollOffset = WithAxis(ScrollOffset, axis, Math.Clamp(target, 0, Along(MaxScroll, axis)));
+        // Paging from the target, so clicking again mid-glide goes a further page rather than a partial one.
+        var target = Along(_target, axis) + (along < thumbOffset ? -page : page);
+        ScrollTo(WithAxis(_target, axis, target));
     }
 
     public override void PointerDrag(float2 point)
@@ -294,10 +368,11 @@ sealed class ScrollPanel : Panel
     /// </summary>
     public bool ScrollByWheel(float2 notches)
     {
-        var target = float2.Clamp(ScrollOffset - notches * ScrollStep, float2.Zero, MaxScroll);
-        if (MathF.Abs(target.X - ScrollOffset.X) < 0.01f && MathF.Abs(target.Y - ScrollOffset.Y) < 0.01f)
+        // From the target, so quick notches add up to the full distance instead of each cutting the last one short.
+        var target = float2.Clamp(_target - notches * ScrollStep, float2.Zero, MaxScroll);
+        if (MathF.Abs(target.X - _target.X) < 0.01f && MathF.Abs(target.Y - _target.Y) < 0.01f)
             return false;
-        ScrollOffset = target;
+        ScrollTo(target);
         return true;
     }
 }
