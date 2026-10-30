@@ -7,7 +7,7 @@ using Brutality.Rendering;
 namespace Brutality.UI;
 
 /// <summary>
-/// Draws a tree of <see cref="UiElement"/>s over the scene: one alpha-blended pipeline for both text and solid
+/// Draws a <see cref="UiRoot"/> over the scene: one alpha-blended pipeline for both text and solid
 /// rectangles, reading the font atlas, with vertices rebuilt every frame.
 /// </summary>
 sealed unsafe class UiRenderer : IDisposable
@@ -221,29 +221,15 @@ sealed unsafe class UiRenderer : IDisposable
     }
 
     /// <summary>
-    /// Lays out and draws <paramref name="roots"/>, back to front, into the current rendering pass. The caller must
+    /// Draws <paramref name="ui"/>, which must already be laid out, into the current rendering pass. The caller must
     /// have waited for <paramref name="frameIndex"/>'s previous use to finish on the GPU.
     /// </summary>
-    public void Record(CommandBuffer cmd, int frameIndex, VkExtent2D extent, IEnumerable<UiElement> roots)
+    public void Record(CommandBuffer cmd, int frameIndex, VkExtent2D extent, UiRoot ui)
     {
         var screen = new float2(extent.Width, extent.Height);
 
         _batch.Clear();
-        foreach (var root in roots)
-        {
-            if (!root.Visible)
-                continue;
-
-            var size = root.Measure();
-            var position = root.Anchor switch
-            {
-                UiAnchor.TopRight => new float2(screen.X - size.X - root.Position.X, root.Position.Y),
-                UiAnchor.BottomLeft => new float2(root.Position.X, screen.Y - size.Y - root.Position.Y),
-                UiAnchor.BottomRight => screen - size - root.Position,
-                _ => root.Position,
-            };
-            root.Draw(_batch, position);
-        }
+        ui.Draw(_batch);
 
         var vertices = _batch.Vertices;
         var vertexCount = vertices.Length;

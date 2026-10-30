@@ -235,7 +235,7 @@ sealed unsafe class Renderer : IDisposable
     /// <summary>
     /// Records, submits and presents one frame. Call only while the window has a non-zero framebuffer.
     /// </summary>
-    public void DrawFrame(float time, IEnumerable<UiElement> ui)
+    public void DrawFrame(float time, UiRoot ui)
     {
         if (_swapchainStale && !TryRecreateSwapchain())
             return;
@@ -306,7 +306,7 @@ sealed unsafe class Renderer : IDisposable
         _frameIndex = (_frameIndex + 1) % FRAMES_IN_FLIGHT;
     }
 
-    void Record(CommandBuffer cmd, int imageIndex, float time, IEnumerable<UiElement> ui)
+    void Record(CommandBuffer cmd, int imageIndex, float time, UiRoot ui)
     {
         var image = _swapchain.Images[imageIndex];
         var depth = _swapchain.Depth;

@@ -66,8 +66,10 @@ static void Run(string? texturePath)
     using var renderer = new Renderer(gpu, window, texturePath, fonts);
 
     var hud = new Hud(bodyFont, titleFont, gpu.DeviceName, texturePath);
+    using var input = new GlfwUiInput(window, hud.Ui);
 
     var clock = Stopwatch.StartNew();
+    var lastTime = 0.0;
     while (!window.ShouldClose)
     {
         Glfw.PollEvents();
@@ -81,8 +83,12 @@ static void Run(string? texturePath)
         }
 
         var time = clock.Elapsed.TotalSeconds;
-        hud.Update(time, size);
-        renderer.DrawFrame((float)time, hud.Roots);
+        hud.Update(time, time - lastTime, size);
+        lastTime = time;
+
+        hud.Ui.Layout(new float2(size.X, size.Y));
+        input.UpdateCursor();
+        renderer.DrawFrame((float)hud.SceneTime, hud.Ui);
     }
 }
 
@@ -92,7 +98,8 @@ static string FindFont(bool bold) =>
     ?? throw new FileNotFoundException("No usable system font found; install DejaVu Sans or Liberation Sans");
 
 /// <summary>
-/// The on-screen overlay: a stats panel in the top-left and a controls hint in the bottom-right.
+/// The on-screen overlay: a stats panel with playback buttons in the top-left and a controls hint in the
+/// bottom-right. It also owns the scene's clock, which the buttons pause and reset.
 /// </summary>
 sealed class Hud
 {
@@ -101,42 +108,58 @@ sealed class Hud
     static readonly float4 Muted = UiColor.Hex(0x9A9AA8);
     static readonly float4 Accent = UiColor.Hex(0xEB7828);
 
-    public IReadOnlyList<UiElement> Roots { get; }
+    public UiRoot Ui { get; } = new();
+
+    /// <summary>
+    /// Seconds of animation shown so far; stands still while paused.
+    /// </summary>
+    public double SceneTime { get; private set; }
 
     readonly Label _resolution;
     readonly Label _frameRate;
+    readonly Button _pause;
+    readonly Button _reset;
+    bool _paused;
 
     double _sampleStart;
     int _framesSinceSample;
 
     public Hud(Font body, Font title, string deviceName, string? texturePath)
     {
-        var stats = new Panel
-        {
-            Position = new float2(16, 16),
-            Padding = 12,
-            Spacing = 4,
-            Background = PanelBackground,
-            BorderColor = PanelBorder,
-            BorderWidth = 1,
-            MinSize = new float2(260, 0),
-        };
+        var stats = Ui.Add(
+            new Panel
+            {
+                Position = new float2(16, 16),
+                Padding = 12,
+                Spacing = 4,
+                Background = PanelBackground,
+                BorderColor = PanelBorder,
+                BorderWidth = 1,
+                MinSize = new float2(260, 0),
+            }
+        );
         stats.Add(new Label(title, "Hello BRUTAL"));
         stats.Add(new Label(body, deviceName) { Color = Muted });
         _resolution = AddRow(stats, body, "Resolution");
         _frameRate = AddRow(stats, body, "Frame rate");
         AddRow(stats, body, "Texture", texturePath is null ? "Checkerboard" : Path.GetFileName(texturePath));
 
-        var hint = new Panel
-        {
-            Anchor = UiAnchor.BottomRight,
-            Position = new float2(16, 16),
-            Padding = 8,
-            Background = PanelBackground,
-        };
-        hint.Add(new Label(body, "Esc  Quit") { Color = Muted });
+        var buttons = stats.Add(new Panel { Direction = UiDirection.Horizontal, Spacing = 8 });
+        _pause = buttons.Add(new Button(body, "Pause") { MinSize = new float2(84, 0) });
+        _reset = buttons.Add(new Button(body, "Reset") { MinSize = new float2(84, 0) });
+        _pause.Clicked += _ => _paused = !_paused;
+        _reset.Clicked += _ => SceneTime = 0;
 
-        Roots = [stats, hint];
+        var hint = Ui.Add(
+            new Panel
+            {
+                Anchor = UiAnchor.BottomRight,
+                Position = new float2(16, 16),
+                Padding = 8,
+                Background = PanelBackground,
+            }
+        );
+        hint.Add(new Label(body, "Esc  Quit") { Color = Muted });
     }
 
     /// <summary>
@@ -149,8 +172,13 @@ sealed class Hud
         return row.Add(new Label(font, value) { Color = Accent });
     }
 
-    public void Update(double time, int2 framebufferSize)
+    public void Update(double time, double deltaTime, int2 framebufferSize)
     {
+        if (!_paused)
+            SceneTime += deltaTime;
+        _pause.Text = _paused ? "Resume" : "Pause";
+        _reset.Enabled = SceneTime > 0;
+
         _resolution.Text = $"{framebufferSize.X} × {framebufferSize.Y}";
 
         // Averaged over half a second, so the number is readable.
