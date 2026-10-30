@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- No console window on Windows. Program attaches to the launching terminal's console when there is one. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Ahwoo.BRUTAL.Collections" Version="2026.10.2" />
+    <PackageReference Include="Ahwoo.BRUTAL.Concurrency" Version="2026.10.2" />
+    <PackageReference Include="Ahwoo.BRUTAL.Core" Version="2026.10.4" />
+    <PackageReference Include="Ahwoo.BRUTAL.Glfw" Version="2026.10.5" />
+    <PackageReference Include="Ahwoo.BRUTAL.Ktx" Version="2026.10.2" />
+    <PackageReference Include="Ahwoo.BRUTAL.Localization" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Logging" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Maths" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Memory" Version="2026.10.2" />
+    <PackageReference Include="Ahwoo.BRUTAL.Numerics" Version="2026.10.2" />
+    <PackageReference Include="Ahwoo.BRUTAL.Render.Mesh" Version="2026.10.2" />
+    <PackageReference Include="Ahwoo.BRUTAL.ShaderC" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Stb" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Strings" Version="2026.10.2" />
+    <PackageReference Include="Ahwoo.BRUTAL.Texture" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Texture.Abstractions" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Vulkan.Abstractions" Version="2026.10.3" />
+    <PackageReference Include="Ahwoo.BRUTAL.Vulkan.Vma" Version="2026.10.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- GLSL is compiled to SPIR-V at startup, so the sources ship next to the executable. -->
+    <None Include="Shaders\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ByteSize, ElementCount, Ptr and friends. -->
+    <Using Include="Brutal" />
+  </ItemGroup>
+
+</Project>
