@@ -3,12 +3,18 @@ using Brutal.Numerics;
 namespace Brutality.UI;
 
 /// <summary>
-/// A vertical panel that grows to fit its children up to <see cref="MaxHeight"/>, then clips them and scrolls. A
-/// scrollbar shows on the right while there's more content than fits: scroll with the mouse wheel, drag the thumb,
-/// or click the track above or below it to move a page.
+/// A vertical panel that grows to fit its children up to <see cref="MaxWidth"/> and <see cref="MaxHeight"/>, then
+/// clips them and scrolls on whichever axis overflows. Each overflowing axis gets a scrollbar, on the right for
+/// vertical and along the bottom for horizontal: scroll with the mouse wheel (a tilt wheel, a sideways touchpad swipe
+/// or Shift+wheel for horizontal), drag a thumb, or click a track beside its thumb to move a page.
 /// </summary>
 sealed class ScrollPanel : Panel
 {
+    /// <summary>
+    /// The widest the panel gets, border and padding included, before it scrolls sideways. Unlimited by default.
+    /// </summary>
+    public float MaxWidth { get; set; } = float.PositiveInfinity;
+
     /// <summary>
     /// The tallest the panel gets, border and padding included, before it starts scrolling.
     /// </summary>
@@ -24,10 +30,13 @@ sealed class ScrollPanel : Panel
     /// </summary>
     public bool StickToEnd { get; set; }
 
+    /// <summary>
+    /// The scrollbars' thickness: width of the vertical one, height of the horizontal one.
+    /// </summary>
     public float ScrollbarWidth { get; set; } = 6;
 
     /// <summary>
-    /// How wide the strip that takes the mouse is, centred on the scrollbar; wider than the bar so it's easy to grab.
+    /// How thick the strip that takes the mouse is, centred on each scrollbar; more than the bar so it's easy to grab.
     /// </summary>
     public float ScrollbarHitWidth { get; set; } = 12;
 
@@ -37,24 +46,26 @@ sealed class ScrollPanel : Panel
     public float4 ScrollbarThumbDragging { get; set; } = UiColor.Hex(0xFFFFFF, 0.6f);
 
     /// <summary>
-    /// How far the content is scrolled up, in pixels; kept within <see cref="MaxScroll"/> by layout.
+    /// How far the content is scrolled left (X) and up (Y), in pixels; kept within <see cref="MaxScroll"/> by layout.
     /// </summary>
-    public float ScrollOffset { get; set; }
+    public float2 ScrollOffset { get; set; }
 
     /// <summary>
-    /// The scroll offset that shows the end of the content, or 0 if it all fits.
+    /// The offsets that show the right and bottom ends of the content; zero on an axis whose content fits.
     /// </summary>
-    public float MaxScroll => MathF.Max(0, _contentHeight - ViewportHeight);
+    public float2 MaxScroll => float2.Max(float2.Zero, _content - _viewport);
 
-    public bool CanScroll => MaxScroll > 0;
+    public bool CanScrollX => MaxScroll.X > 0;
+    public bool CanScrollY => MaxScroll.Y > 0;
+    public bool CanScroll => CanScrollX || CanScrollY;
 
     /// <summary>
-    /// The thumb is being dragged.
+    /// A thumb is being dragged.
     /// </summary>
-    public bool IsDraggingThumb => _thumbGrab is not null && IsPressed;
+    public bool IsDraggingThumb => _drag is not null && IsPressed;
 
     /// <summary>
-    /// Only the scrollbar takes the mouse, and only while there's something to scroll; everywhere else, clicks reach
+    /// Only the scrollbars take the mouse, and only while there's something to scroll; everywhere else, clicks reach
     /// the children.
     /// </summary>
     public override bool IsInteractive => CanScroll;
@@ -66,60 +77,115 @@ sealed class ScrollPanel : Panel
     /// </summary>
     public override bool KeepsFocusOnClick => true;
 
-    float _contentHeight;
+    enum Axis
+    {
+        X,
+        Y,
+    }
+
+    float2 _content;
 
     /// <summary>
-    /// While dragging the thumb, how far below its top it was grabbed.
+    /// The area the content shows through, inside the border, padding and any scrollbars.
     /// </summary>
-    float? _thumbGrab;
+    float2 _viewport;
 
     /// <summary>
-    /// Gap between the content and the scrollbar.
+    /// While dragging a thumb: which one, and how far along it it was grabbed.
     /// </summary>
-    float Gutter => CanScroll ? ScrollbarWidth + Padding : 0;
+    (Axis Axis, float Grab)? _drag;
 
-    float ViewportHeight => MathF.Max(0, Size.Y - 2 * Inset);
+    /// <summary>
+    /// The scrollbar the mouse was last over, from hit testing, for its hover colour.
+    /// </summary>
+    Axis? _hoverAxis;
+
+    /// <summary>
+    /// The room a scrollbar takes from the content: the bar plus a padding-sized gap before it.
+    /// </summary>
+    float BarSpace => ScrollbarWidth + Padding;
 
     public ScrollPanel() => Direction = UiDirection.Vertical;
 
+    static float Along(float2 v, Axis axis) => axis == Axis.X ? v.X : v.Y;
+
+    static float2 WithAxis(float2 v, Axis axis, float value) =>
+        axis == Axis.X ? new float2(value, v.Y) : new float2(v.X, value);
+
     /// <summary>
-    /// The track's top-left corner and height, and the thumb's offset down it and height, in screen pixels.
+    /// A scrollbar's track (top-left corner and length) and its thumb (offset along the track and length), in screen
+    /// pixels.
     /// </summary>
-    (float2 TrackPosition, float TrackHeight, float ThumbY, float ThumbHeight) Scrollbar()
+    (float2 TrackPosition, float TrackLength, float ThumbOffset, float ThumbLength) Scrollbar(Axis axis)
     {
-        var trackPosition = new float2(ScreenPosition.X + Size.X - Inset - ScrollbarWidth, ScreenPosition.Y + Inset);
-        var trackHeight = ViewportHeight;
-        var thumbHeight = MathF.Max(MathF.Min(16, trackHeight), trackHeight * ViewportHeight / _contentHeight);
-        var thumbY = MaxScroll > 0 ? (trackHeight - thumbHeight) * (ScrollOffset / MaxScroll) : 0;
-        return (trackPosition, trackHeight, thumbY, thumbHeight);
+        var trackPosition =
+            axis == Axis.Y
+                ? new float2(ScreenPosition.X + Size.X - Inset - ScrollbarWidth, ScreenPosition.Y + Inset)
+                : new float2(ScreenPosition.X + Inset, ScreenPosition.Y + Size.Y - Inset - ScrollbarWidth);
+        var trackLength = Along(_viewport, axis);
+        var content = Along(_content, axis);
+        var max = Along(MaxScroll, axis);
+        var thumbLength = MathF.Max(MathF.Min(16, trackLength), trackLength * trackLength / MathF.Max(content, 1));
+        var thumbOffset = max > 0 ? (trackLength - thumbLength) * (Along(ScrollOffset, axis) / max) : 0;
+        return (trackPosition, trackLength, thumbOffset, thumbLength);
     }
 
-    bool OnScrollbar(float2 point)
+    bool CanScrollOn(Axis axis) => axis == Axis.X ? CanScrollX : CanScrollY;
+
+    /// <summary>
+    /// Which scrollbar <paramref name="point"/> is on, if any.
+    /// </summary>
+    Axis? ScrollbarAt(float2 point)
     {
-        if (!CanScroll)
-            return false;
-        var (track, trackHeight, _, _) = Scrollbar();
-        var centre = track.X + ScrollbarWidth / 2;
-        var halfWidth = MathF.Max(ScrollbarWidth, ScrollbarHitWidth) / 2;
-        return MathF.Abs(point.X - centre) <= halfWidth && point.Y >= track.Y && point.Y < track.Y + trackHeight;
+        var halfThickness = MathF.Max(ScrollbarWidth, ScrollbarHitWidth) / 2;
+        foreach (var axis in (ReadOnlySpan<Axis>)[Axis.Y, Axis.X])
+        {
+            if (!CanScrollOn(axis))
+                continue;
+
+            var (track, length, _, _) = Scrollbar(axis);
+            var centre = axis == Axis.Y ? track.X + ScrollbarWidth / 2 : track.Y + ScrollbarWidth / 2;
+            var across = axis == Axis.Y ? point.X : point.Y;
+            var along = Along(point, axis) - Along(track, axis);
+            if (MathF.Abs(across - centre) <= halfThickness && along >= 0 && along < length)
+                return axis;
+        }
+        return null;
     }
 
     public override float2 Measure()
     {
         // Decided before this measure changes the extents, so a log that was at its end stays there.
-        var wasAtEnd = ScrollOffset >= MaxScroll - 0.5f;
+        var wasAtEnd = ScrollOffset.Y >= MaxScroll.Y - 0.5f;
 
-        var content = MeasureChildren();
-        _contentHeight = content.Y;
+        _content = MeasureChildren();
 
-        var height = MathF.Min(content.Y + 2 * Inset, MathF.Max(MaxHeight, 2 * Inset));
-        Size = float2.Max(new float2(content.X + 2 * Inset, height), MinSize);
+        // Each scrollbar takes room from the other axis, which can make that axis overflow too, so settle it in a
+        // few passes; it can only add bars, so it converges at once in practice.
+        bool barX = false, barY = false;
+        var size = float2.Zero;
+        for (var pass = 0; pass < 3; pass++)
+        {
+            var bars = new float2(barY ? BarSpace : 0, barX ? BarSpace : 0);
+            size = float2.Max(
+                float2.Min(_content + new float2(2 * Inset, 2 * Inset) + bars, new float2(MaxWidth, MaxHeight)),
+                MinSize
+            );
+            _viewport = float2.Max(float2.Zero, size - new float2(2 * Inset, 2 * Inset) - bars);
 
-        // The gutter depends on whether it overflows, which needs the height first.
-        Size = new float2(MathF.Max(Size.X, content.X + 2 * Inset + Gutter), Size.Y);
+            var needX = _content.X > _viewport.X + 0.5f;
+            var needY = _content.Y > _viewport.Y + 0.5f;
+            if (needX == barX && needY == barY)
+                break;
+            (barX, barY) = (needX || barX, needY || barY);
+        }
+        Size = size;
 
         // A drag in progress owns the offset, so new log lines don't yank the thumb out from under the mouse.
-        ScrollOffset = StickToEnd && wasAtEnd && !IsDraggingThumb ? MaxScroll : Math.Clamp(ScrollOffset, 0, MaxScroll);
+        var offset = float2.Clamp(ScrollOffset, float2.Zero, MaxScroll);
+        if (StickToEnd && wasAtEnd && !IsDraggingThumb)
+            offset = new float2(offset.X, MaxScroll.Y);
+        ScrollOffset = offset;
         return Size;
     }
 
@@ -127,36 +193,55 @@ sealed class ScrollPanel : Panel
     {
         ArrangeSelf(position);
         // Whole pixels keep text sharp mid-scroll.
-        ArrangeChildren(position + new float2(Inset, Inset - MathF.Round(ScrollOffset)));
+        ArrangeChildren(position + new float2(Inset - MathF.Round(ScrollOffset.X), Inset - MathF.Round(ScrollOffset.Y)));
     }
 
     public override void Draw(UiBatch batch)
     {
         DrawFrame(batch);
 
-        batch.PushClip(ScreenPosition + new float2(BorderWidth, BorderWidth), Size - new float2(2 * BorderWidth, 2 * BorderWidth));
+        // Inside the border, and short of any scrollbar, so scrolled content never draws under one.
+        var clipSize =
+            Size
+            - new float2(2 * BorderWidth, 2 * BorderWidth)
+            - new float2(CanScrollY ? BarSpace : 0, CanScrollX ? BarSpace : 0);
+        batch.PushClip(ScreenPosition + new float2(BorderWidth, BorderWidth), clipSize);
         DrawChildren(batch);
         batch.PopClip();
 
-        if (!CanScroll)
-            return;
+        foreach (var axis in (ReadOnlySpan<Axis>)[Axis.Y, Axis.X])
+        {
+            if (!CanScrollOn(axis))
+                continue;
 
-        var (track, trackHeight, thumbY, thumbHeight) = Scrollbar();
-        batch.AddRect(track, new float2(ScrollbarWidth, trackHeight), ScrollbarTrack);
+            var (track, length, thumbOffset, thumbLength) = Scrollbar(axis);
+            var thumbColor =
+                IsDraggingThumb && _drag?.Axis == axis ? ScrollbarThumbDragging
+                : IsHovered && _hoverAxis == axis && !IsDraggingThumb ? ScrollbarThumbHover
+                : ScrollbarThumb;
 
-        var thumbColor =
-            IsDraggingThumb ? ScrollbarThumbDragging
-            : IsHovered ? ScrollbarThumbHover
-            : ScrollbarThumb;
-        batch.AddRect(track + new float2(0, thumbY), new float2(ScrollbarWidth, thumbHeight), thumbColor);
+            if (axis == Axis.Y)
+            {
+                batch.AddRect(track, new float2(ScrollbarWidth, length), ScrollbarTrack);
+                batch.AddRect(track + new float2(0, thumbOffset), new float2(ScrollbarWidth, thumbLength), thumbColor);
+            }
+            else
+            {
+                batch.AddRect(track, new float2(length, ScrollbarWidth), ScrollbarTrack);
+                batch.AddRect(track + new float2(thumbOffset, 0), new float2(thumbLength, ScrollbarWidth), thumbColor);
+            }
+        }
     }
 
     public override UiElement? HitTest(float2 point)
     {
         if (!Contains(point))
             return null;
-        if (OnScrollbar(point))
+        if (ScrollbarAt(point) is { } axis)
+        {
+            _hoverAxis = axis;
             return this;
+        }
 
         // Children are clipped to the panel, which Contains has already checked, so the rest is Panel's own walk
         // minus the panel itself taking the click.
@@ -171,43 +256,46 @@ sealed class ScrollPanel : Panel
 
     public override void PointerDown(float2 point, UiModifiers modifiers)
     {
-        var (track, trackHeight, thumbY, thumbHeight) = Scrollbar();
-        var y = point.Y - track.Y;
+        _drag = null;
+        if (ScrollbarAt(point) is not { } axis)
+            return;
 
-        if (y >= thumbY && y < thumbY + thumbHeight)
+        var (track, _, thumbOffset, thumbLength) = Scrollbar(axis);
+        var along = Along(point, axis) - Along(track, axis);
+        if (along >= thumbOffset && along < thumbOffset + thumbLength)
         {
-            _thumbGrab = y - thumbY;
+            _drag = (axis, along - thumbOffset);
             return;
         }
 
-        // On the track: a page towards the click, keeping a line of overlap so the reader keeps their place.
-        _thumbGrab = null;
-        var page = MathF.Max(ScrollStep, ViewportHeight - ScrollStep / 2);
-        ScrollOffset = Math.Clamp(ScrollOffset + (y < thumbY ? -page : page), 0, MaxScroll);
+        // On the track: a page towards the click, keeping a little overlap so the reader keeps their place.
+        var page = MathF.Max(ScrollStep, Along(_viewport, axis) - ScrollStep / 2);
+        var target = Along(ScrollOffset, axis) + (along < thumbOffset ? -page : page);
+        ScrollOffset = WithAxis(ScrollOffset, axis, Math.Clamp(target, 0, Along(MaxScroll, axis)));
     }
 
     public override void PointerDrag(float2 point)
     {
-        if (_thumbGrab is not { } grab)
+        if (_drag is not { } drag)
             return;
 
-        var (track, trackHeight, _, thumbHeight) = Scrollbar();
-        var travel = trackHeight - thumbHeight;
+        var (track, length, _, thumbLength) = Scrollbar(drag.Axis);
+        var travel = length - thumbLength;
         if (travel <= 0)
             return;
 
-        var thumbY = Math.Clamp(point.Y - track.Y - grab, 0, travel);
-        ScrollOffset = thumbY / travel * MaxScroll;
+        var thumbOffset = Math.Clamp(Along(point, drag.Axis) - Along(track, drag.Axis) - drag.Grab, 0, travel);
+        ScrollOffset = WithAxis(ScrollOffset, drag.Axis, thumbOffset / travel * Along(MaxScroll, drag.Axis));
     }
 
     /// <summary>
-    /// Scrolls by <paramref name="notches"/> of the wheel, positive meaning towards the top as GLFW reports it.
-    /// Returns false if already at that end, so the wheel can go to an outer scroll panel instead.
+    /// Scrolls by <paramref name="notches"/> of the wheel on each axis, positive meaning towards the left and top as
+    /// GLFW reports them. Returns false if neither axis could move, so the wheel can go to an outer scroll panel.
     /// </summary>
-    public bool ScrollByWheel(float notches)
+    public bool ScrollByWheel(float2 notches)
     {
-        var target = Math.Clamp(ScrollOffset - notches * ScrollStep, 0, MaxScroll);
-        if (MathF.Abs(target - ScrollOffset) < 0.01f)
+        var target = float2.Clamp(ScrollOffset - notches * ScrollStep, float2.Zero, MaxScroll);
+        if (MathF.Abs(target.X - ScrollOffset.X) < 0.01f && MathF.Abs(target.Y - ScrollOffset.Y) < 0.01f)
             return false;
         ScrollOffset = target;
         return true;

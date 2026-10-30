@@ -181,6 +181,8 @@ sealed class Hud
         _log = logPanel.Add(
             new ScrollPanel
             {
+                // Long lines (a texture path, a long note) scroll sideways rather than widening the panel.
+                MaxWidth = 280,
                 MaxHeight = 150,
                 MinSize = new float2(240, 0),
                 Spacing = 2,
@@ -189,7 +191,7 @@ sealed class Hud
         );
         Log($"GPU: {deviceName}");
         Log($"Texture: {texturePath ?? "generated checkerboard"}");
-        Log("Scroll here with the mouse wheel");
+        Log("Scroll here with the mouse wheel; Shift+wheel or a tilt wheel scrolls sideways");
 
         var note = logPanel.Add(
             new TextBox(body)

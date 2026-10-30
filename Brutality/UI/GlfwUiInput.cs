@@ -84,8 +84,18 @@ sealed class GlfwUiInput : IDisposable
         UpdateCursor();
     }
 
-    // Vertical only: Y is the wheel, X is a tilt wheel or sideways touchpad swipe.
-    void OnScroll(GlfwWindow window, double2 offset) => _ui.MouseWheel((float)offset.Y);
+    void OnScroll(GlfwWindow window, double2 offset)
+    {
+        // X comes from a tilt wheel or a sideways touchpad swipe. Holding Shift turns an ordinary wheel sideways,
+        // as in most apps; GLFW's scroll event carries no modifiers, so ask for Shift directly.
+        var notches = new float2((float)offset.X, (float)offset.Y);
+        var shift =
+            window.GetKey(GlfwKey.LeftShift) != GlfwKeyAction.Release
+            || window.GetKey(GlfwKey.RightShift) != GlfwKeyAction.Release;
+        if (shift && notches.X == 0)
+            notches = new float2(notches.Y, 0);
+        _ui.MouseWheel(notches);
+    }
 
     void OnKey(GlfwWindow window, GlfwKey key, int scancode, GlfwKeyAction action, GlfwModifier mods)
     {

@@ -207,12 +207,18 @@ sealed class UiRoot
     }
 
     /// <summary>
-    /// The wheel turned by <paramref name="notches"/>, positive towards the top. Scrolls the innermost scroll panel
-    /// under the cursor; once that's at its limit, the next one out. Returns whether anything scrolled.
+    /// A vertical wheel turned by <paramref name="notches"/>, positive towards the top.
     /// </summary>
-    public bool MouseWheel(float notches)
+    public bool MouseWheel(float notches) => MouseWheel(new float2(0, notches));
+
+    /// <summary>
+    /// The wheel moved by <paramref name="notches"/> on each axis, positive towards the left and top. Scrolls the
+    /// innermost scroll panel under the cursor that can move that way; once that's at its limit, the next one out.
+    /// Returns whether anything scrolled.
+    /// </summary>
+    public bool MouseWheel(float2 notches)
     {
-        if (_mouse is not { } mouse || notches == 0)
+        if (_mouse is not { } mouse || (notches.X == 0 && notches.Y == 0))
             return false;
 
         // The path from the topmost element under the cursor down to the deepest one.
