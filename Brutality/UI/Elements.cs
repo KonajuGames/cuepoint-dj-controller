@@ -61,11 +61,53 @@ abstract class UiElement
     public virtual bool IsInteractive => false;
 
     /// <summary>
-    /// The left button was pressed and released over this element.
+    /// The cursor shown while the mouse is over this element, if it's interactive.
+    /// </summary>
+    public virtual UiCursor Cursor => UiCursor.Hand;
+
+    /// <summary>
+    /// Whether this element can take keyboard focus, by clicking it or with Tab.
+    /// </summary>
+    public virtual bool IsFocusable => false;
+
+    /// <summary>
+    /// Whether, while focused, this element takes every key, so the app's own shortcuts don't fire as you type.
+    /// </summary>
+    public virtual bool CapturesKeyboard => false;
+
+    public bool IsFocused { get; internal set; }
+
+    /// <summary>
+    /// Focused, and the focus got here by keyboard, so a focus ring should show. Clicking focuses without one.
+    /// </summary>
+    public bool ShowFocus { get; internal set; }
+
+    /// <summary>
+    /// The left button was pressed and released over this element, or the keyboard activated it.
     /// </summary>
     public event Action<UiElement>? Clicked;
 
     internal void RaiseClicked() => Clicked?.Invoke(this);
+
+    /// <summary>
+    /// A key went down (or repeated) while this element had focus. Returns whether it was used.
+    /// </summary>
+    public virtual bool KeyDown(UiKey key, UiModifiers modifiers) => false;
+
+    /// <summary>
+    /// A character was typed while this element had focus.
+    /// </summary>
+    public virtual void TextInput(System.Text.Rune character) { }
+
+    /// <summary>
+    /// The left button went down at <paramref name="point"/>, over this element.
+    /// </summary>
+    public virtual void PointerDown(float2 point) { }
+
+    /// <summary>
+    /// The visible children, in drawing order, for walking the tree.
+    /// </summary>
+    internal virtual IEnumerable<UiElement> VisibleChildren => [];
 
     public bool Contains(float2 point) =>
         point.X >= ScreenPosition.X
@@ -237,6 +279,8 @@ class Panel : UiElement
         }
     }
 
+    internal override IEnumerable<UiElement> VisibleChildren => Children.Where(child => child.Visible);
+
     /// <summary>
     /// The visible child under <paramref name="point"/> that's drawn on top, or null.
     /// </summary>
@@ -301,11 +345,26 @@ sealed class Button : Panel
     public float4 PressedBackground { get; set; }
 
     /// <summary>
-    /// A disabled button draws faded and ignores the mouse.
+    /// The ring drawn around the button while it has keyboard focus.
+    /// </summary>
+    public float4 FocusColor { get; set; } = UiColor.Hex(0x7AB8FF);
+
+    /// <summary>
+    /// A disabled button draws faded and ignores the mouse and keyboard.
     /// </summary>
     public bool Enabled { get; set; } = true;
 
     public override bool IsInteractive => Enabled;
+
+    public override bool IsFocusable => Enabled;
+
+    public override bool KeyDown(UiKey key, UiModifiers modifiers)
+    {
+        if (key is not (UiKey.Enter or UiKey.Space))
+            return false;
+        RaiseClicked();
+        return true;
+    }
 
     // Pressed only shows while the mouse is still over the button, since releasing elsewhere won't click.
     protected override float4 CurrentBackground =>
@@ -322,5 +381,8 @@ sealed class Button : Panel
 
         base.Draw(batch);
         _label.Color = color;
+
+        if (ShowFocus)
+            batch.AddBorder(ScreenPosition, Size, 2, FocusColor);
     }
 }

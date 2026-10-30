@@ -46,12 +46,6 @@ static void Run(string? texturePath)
     // Declared first so it's disposed last, after the GPU objects that draw to it.
     using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Hello BRUTAL", Size = new int2(1280, 720) });
 
-    window.OnKey += (handle, key, _, _, _) =>
-    {
-        if (key == GlfwKey.Escape)
-            handle.ShouldClose = true;
-    };
-
 #if DEBUG
     const bool ENABLE_VALIDATION = true;
 #else
@@ -67,6 +61,13 @@ static void Run(string? texturePath)
 
     var hud = new Hud(bodyFont, titleFont, gpu.DeviceName, texturePath);
     using var input = new GlfwUiInput(window, hud.Ui);
+
+    // App shortcuts go through the UI first, so Escape in the note box only leaves the box.
+    input.UnhandledKey += (key, action, _) =>
+    {
+        if (key == GlfwKey.Escape && action == GlfwKeyAction.Press)
+            window.ShouldClose = true;
+    };
 
     var clock = Stopwatch.StartNew();
     var lastTime = 0.0;
@@ -98,8 +99,8 @@ static string FindFont(bool bold) =>
     ?? throw new FileNotFoundException("No usable system font found; install DejaVu Sans or Liberation Sans");
 
 /// <summary>
-/// The on-screen overlay: a stats panel with playback buttons in the top-left, a scrolling event log in the
-/// top-right and a controls hint in the bottom-right. It also owns the scene's clock, which the buttons pause and
+/// The on-screen overlay: a stats panel with playback buttons in the top-left, a scrolling event log with a note box
+/// in the top-right and a controls hint in the bottom-right. It also owns the scene's clock, which the buttons pause and
 /// reset.
 /// </summary>
 sealed class Hud
@@ -151,8 +152,8 @@ sealed class Hud
         AddRow(stats, body, "Texture", texturePath is null ? "Checkerboard" : Path.GetFileName(texturePath));
 
         var buttons = stats.Add(new Panel { Direction = UiDirection.Horizontal, Spacing = 8 });
-        _pause = buttons.Add(new Button(body, "Pause") { MinSize = new float2(84, 0) });
-        _reset = buttons.Add(new Button(body, "Reset") { MinSize = new float2(84, 0) });
+        _pause = buttons.Add(new Button(body, "Pause") { MinSize = new float2(84, 0), FocusColor = Accent });
+        _reset = buttons.Add(new Button(body, "Reset") { MinSize = new float2(84, 0), FocusColor = Accent });
         _pause.Clicked += _ =>
         {
             _paused = !_paused;
@@ -190,6 +191,22 @@ sealed class Hud
         Log($"Texture: {texturePath ?? "generated checkerboard"}");
         Log("Scroll here with the mouse wheel");
 
+        var note = logPanel.Add(
+            new TextBox(body)
+            {
+                Width = 240,
+                Placeholder = "Type a note, then Enter",
+                FocusColor = Accent,
+            }
+        );
+        note.Submitted += box =>
+        {
+            if (string.IsNullOrWhiteSpace(box.Text))
+                return;
+            Log($"Note: {box.Text.Trim()}");
+            box.Text = "";
+        };
+
         var hint = Ui.Add(
             new Panel
             {
@@ -199,7 +216,7 @@ sealed class Hud
                 Background = PanelBackground,
             }
         );
-        hint.Add(new Label(body, "Esc  Quit") { Color = Muted });
+        hint.Add(new Label(body, "Tab  Next control\nEnter  Press or submit\nEsc  Leave a box, or quit") { Color = Muted });
     }
 
     /// <summary>

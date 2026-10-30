@@ -38,6 +38,17 @@ sealed class Font
     internal Glyph GetGlyph(int codePoint) => Glyphs.GetValueOrDefault(codePoint, Fallback);
 
     /// <summary>
+    /// How far the pen moves drawing <paramref name="text"/> as one line: where a caret after it would sit.
+    /// </summary>
+    public float Advance(ReadOnlySpan<char> text)
+    {
+        float advance = 0;
+        foreach (var rune in text.EnumerateRunes())
+            advance += GetGlyph(rune.Value).Advance;
+        return advance;
+    }
+
+    /// <summary>
     /// The size of the box <paramref name="text"/> fills when drawn, with '\n' starting a new line.
     /// </summary>
     public float2 Measure(ReadOnlySpan<char> text)

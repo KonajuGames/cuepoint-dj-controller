@@ -1,29 +1,44 @@
+using System.Text;
 using Brutal.GlfwApi;
 using Brutal.Numerics;
 
 namespace Brutality.UI;
 
 /// <summary>
-/// Feeds a GLFW window's mouse events into a <see cref="UiRoot"/> and shows the cursor it asks for. Dispose before
-/// the window.
+/// Feeds a GLFW window's mouse, keyboard and text events into a <see cref="UiRoot"/>, shows the cursor it asks for
+/// and connects <see cref="UiClipboard"/> to the system clipboard. Dispose before the window.
 /// </summary>
 sealed class GlfwUiInput : IDisposable
 {
     readonly GlfwWindow _window;
     readonly UiRoot _ui;
     readonly GlfwCursor _handCursor;
+    readonly GlfwCursor _textCursor;
     UiCursor _shownCursor = UiCursor.Arrow;
+    readonly HashSet<GlfwKey> _keysHeldByUi = [];
+
+    /// <summary>
+    /// A key event the UI didn't use, releases included, for the app's own shortcuts. Subscribe to this instead of
+    /// the window's OnKey, so typing in a text box doesn't also trigger them.
+    /// </summary>
+    public event Action<GlfwKey, GlfwKeyAction, GlfwModifier>? UnhandledKey;
 
     public GlfwUiInput(GlfwWindow window, UiRoot ui)
     {
         _window = window;
         _ui = ui;
         _handCursor = Glfw.CreateCursor(GlfwStandardCursor.PointingHand);
+        _textCursor = Glfw.CreateCursor(GlfwStandardCursor.IBeam);
+
+        UiClipboard.GetText = () => Glfw.Clipboard;
+        UiClipboard.SetText = text => Glfw.Clipboard = text;
 
         window.OnCursorPos += OnCursorPos;
         window.OnCursorEnter += OnCursorEnter;
         window.OnMouseButton += OnMouseButton;
         window.OnScroll += OnScroll;
+        window.OnKey += OnKey;
+        window.OnChar += OnChar;
     }
 
     /// <summary>
@@ -72,6 +87,55 @@ sealed class GlfwUiInput : IDisposable
     // Vertical only: Y is the wheel, X is a tilt wheel or sideways touchpad swipe.
     void OnScroll(GlfwWindow window, double2 offset) => _ui.MouseWheel((float)offset.Y);
 
+    void OnKey(GlfwWindow window, GlfwKey key, int scancode, GlfwKeyAction action, GlfwModifier mods)
+    {
+        bool handled;
+        if (action == GlfwKeyAction.Release)
+        {
+            // The UI ignores releases, but one whose press it used shouldn't reach the app on its own.
+            handled = _keysHeldByUi.Remove(key);
+        }
+        else
+        {
+            handled = _ui.KeyDown(ToUiKey(key), (UiModifiers)((int)mods & 0xF));
+            if (handled)
+                _keysHeldByUi.Add(key);
+        }
+
+        if (!handled)
+            UnhandledKey?.Invoke(key, action, mods);
+    }
+
+    void OnChar(GlfwWindow window, uint codePoint)
+    {
+        if (Rune.TryCreate(codePoint, out var rune))
+            _ui.TextInput(rune);
+    }
+
+    static UiKey ToUiKey(GlfwKey key) =>
+        key switch
+        {
+            GlfwKey.Tab => UiKey.Tab,
+            GlfwKey.Enter or GlfwKey.KpEnter => UiKey.Enter,
+            GlfwKey.Escape => UiKey.Escape,
+            GlfwKey.Space => UiKey.Space,
+            GlfwKey.Backspace => UiKey.Backspace,
+            GlfwKey.Delete => UiKey.Delete,
+            GlfwKey.Left => UiKey.Left,
+            GlfwKey.Right => UiKey.Right,
+            GlfwKey.Up => UiKey.Up,
+            GlfwKey.Down => UiKey.Down,
+            GlfwKey.Home => UiKey.Home,
+            GlfwKey.End => UiKey.End,
+            GlfwKey.PageUp => UiKey.PageUp,
+            GlfwKey.PageDown => UiKey.PageDown,
+            GlfwKey.A => UiKey.A,
+            GlfwKey.C => UiKey.C,
+            GlfwKey.V => UiKey.V,
+            GlfwKey.X => UiKey.X,
+            _ => UiKey.Other,
+        };
+
     /// <summary>
     /// Applies the UI's cursor if it changed. Also call after <see cref="UiRoot.Layout"/>, since a layout change can
     /// move a button under a still cursor.
@@ -81,7 +145,14 @@ sealed class GlfwUiInput : IDisposable
         var wanted = _ui.Cursor;
         if (wanted == _shownCursor)
             return;
-        _window.SetCursor(wanted == UiCursor.Hand ? _handCursor : default);
+        _window.SetCursor(
+            wanted switch
+            {
+                UiCursor.Hand => _handCursor,
+                UiCursor.Text => _textCursor,
+                _ => default,
+            }
+        );
         _shownCursor = wanted;
     }
 
@@ -91,7 +162,12 @@ sealed class GlfwUiInput : IDisposable
         _window.OnCursorEnter -= OnCursorEnter;
         _window.OnMouseButton -= OnMouseButton;
         _window.OnScroll -= OnScroll;
+        _window.OnKey -= OnKey;
+        _window.OnChar -= OnChar;
         _window.SetCursor(default);
         _handCursor.Dispose();
+        _textCursor.Dispose();
+        UiClipboard.GetText = () => null;
+        UiClipboard.SetText = _ => { };
     }
 }
