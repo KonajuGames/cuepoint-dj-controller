@@ -32,6 +32,11 @@ sealed class Song
     public bool HasTags { get; internal set; }
 
     /// <summary>
+    /// Whether it's under the library's folder, rather than found browsing elsewhere.
+    /// </summary>
+    public bool InLibrary { get; internal set; }
+
+    /// <summary>
     /// Its beat grid, loudness and key, once analysed.
     /// </summary>
     public TrackAnalysis? Analysis { get; internal set; }
@@ -72,7 +77,8 @@ sealed class Song
 /// <summary>
 /// The audio files under a folder. Scanning the folder is quick, so it happens up front; reading every file's tags
 /// takes a while, so that happens on a worker thread, and <see cref="ApplyReadTags"/> brings the results onto the UI
-/// thread a frame at a time.
+/// thread a frame at a time. Songs in other folders can be had too, with <see cref="SongsIn"/>, for browsing; their
+/// tags are read ahead of the library's.
 /// </summary>
 sealed partial class MusicLibrary : IDisposable
 {
@@ -97,13 +103,22 @@ sealed partial class MusicLibrary : IDisposable
     public string? Error { get; }
 
     /// <summary>
-    /// How many songs have their tags so far.
+    /// How many of the library's songs have their tags so far.
     /// </summary>
     public int TaggedCount { get; private set; }
 
     public bool IsReadingTags => TaggedCount < Songs.Count && _reader is { IsCompleted: false };
 
+    /// <summary>
+    /// Every song known, in the library or not, by path. UI thread only.
+    /// </summary>
     readonly Dictionary<string, Song> _byPath = new(StringComparer.OrdinalIgnoreCase);
+
+    // Songs waiting for their tags: those found browsing first, since someone's looking at them.
+    readonly ConcurrentQueue<Song> _browsedToTag = new();
+    readonly ConcurrentQueue<Song> _libraryToTag = new();
+    readonly SemaphoreSlim _toTag = new(0);
+
     readonly ConcurrentQueue<(Song Song, SongTags Tags)> _readTags = new();
     readonly CancellationTokenSource _stop = new();
     readonly Task? _reader;
@@ -121,7 +136,11 @@ sealed partial class MusicLibrary : IDisposable
                 .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
                 .Select(file => Guess(root, file))
                 .ToList();
-            _byPath = Songs.ToDictionary(song => song.Path, StringComparer.OrdinalIgnoreCase);
+            foreach (var song in Songs)
+            {
+                song.InLibrary = true;
+                _byPath[song.Path] = song;
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -129,22 +148,74 @@ sealed partial class MusicLibrary : IDisposable
             Error = e.Message;
         }
 
-        if (OperatingSystem.IsWindows() && Songs.Count > 0)
+        if (OperatingSystem.IsWindows())
+        {
+            foreach (var song in Songs)
+                _libraryToTag.Enqueue(song);
+            if (Songs.Count > 0)
+                _toTag.Release(Songs.Count);
             _reader = StartReadingTags(_stop.Token);
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    Task StartReadingTags(CancellationToken stop) => Task.Run(() => ReadAllTags(stop));
+    Task StartReadingTags(CancellationToken stop) => Task.Run(() => ReadTags(stop));
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    void ReadAllTags(CancellationToken stop)
+    void ReadTags(CancellationToken stop)
     {
-        foreach (var song in Songs)
+        try
         {
-            if (stop.IsCancellationRequested)
-                return;
-            _readTags.Enqueue((song, WindowsTags.Read(song.Path)));
+            while (true)
+            {
+                _toTag.Wait(stop);
+                if (_browsedToTag.TryDequeue(out var song) || _libraryToTag.TryDequeue(out song))
+                    _readTags.Enqueue((song, WindowsTags.Read(song.Path)));
+            }
         }
+        catch (OperationCanceledException)
+        {
+            // Stopping.
+        }
+    }
+
+    /// <summary>
+    /// The audio files directly in <paramref name="folder"/>, in name order: the library's own songs where they're
+    /// in it, and new ones (named from the file until their tags arrive) where they aren't. Empty if the folder can't
+    /// be read. UI thread only.
+    /// </summary>
+    public IReadOnlyList<Song> SongsIn(string folder)
+    {
+        List<FileInfo> files;
+        try
+        {
+            files = new DirectoryInfo(folder)
+                .EnumerateFiles("*", new EnumerationOptions { IgnoreInaccessible = true })
+                .Where(file => Extensions.Contains(file.Extension))
+                .OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            return [];
+        }
+
+        var songs = new List<Song>(files.Count);
+        foreach (var file in files)
+        {
+            if (!_byPath.TryGetValue(file.FullName, out var song))
+            {
+                song = Guess(file.DirectoryName ?? folder, file);
+                _byPath[song.Path] = song;
+                if (OperatingSystem.IsWindows())
+                {
+                    _browsedToTag.Enqueue(song);
+                    _toTag.Release();
+                }
+            }
+            songs.Add(song);
+        }
+        return songs;
     }
 
     /// <summary>
@@ -166,13 +237,14 @@ sealed partial class MusicLibrary : IDisposable
             song.Duration = tags.Duration;
             song.HasTags = true;
             applied++;
+            if (song.InLibrary)
+                TaggedCount++;
         }
-        TaggedCount += applied;
         return applied;
     }
 
     /// <summary>
-    /// The song at <paramref name="path"/>, if it's in the library.
+    /// The song at <paramref name="path"/>, if it's in the library or has been browsed to.
     /// </summary>
     public Song? Find(string path) => _byPath.GetValueOrDefault(System.IO.Path.GetFullPath(path));
 
@@ -214,5 +286,6 @@ sealed partial class MusicLibrary : IDisposable
             // Stopping is all that matters here.
         }
         _stop.Dispose();
+        _toTag.Dispose();
     }
 }

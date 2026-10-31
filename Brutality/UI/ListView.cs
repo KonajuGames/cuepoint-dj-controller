@@ -16,6 +16,11 @@ sealed class ListColumn<T>(string title, float width, Func<T, string> text)
     /// Right-aligns the text, for numbers and times.
     /// </summary>
     public bool AlignRight { get; init; }
+
+    /// <summary>
+    /// A colour for an item's text in this column, in place of the list's own; null for the list's.
+    /// </summary>
+    public Func<T, float4?>? Color { get; init; }
 }
 
 /// <summary>
@@ -184,7 +189,7 @@ sealed class ListView<T> : Element
                 var textX = column.AlignRight ? cellLeft + cellWidth - Font.Advance(text) : cellLeft;
 
                 batch.PushClip(new float2(cellLeft, rowPosition.Y), new float2(cellWidth, RowHeight));
-                batch.AddText(Font, text, new float2(textX, rowPosition.Y + 3), TextColor);
+                batch.AddText(Font, text, new float2(textX, rowPosition.Y + 3), column.Color?.Invoke(_items[row]) ?? TextColor);
                 batch.PopClip();
                 x += column.Width;
             }

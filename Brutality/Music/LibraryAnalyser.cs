@@ -61,6 +61,11 @@ sealed class LibraryAnalyser : IDisposable
     /// </summary>
     readonly HashSet<Song> _requested = [];
 
+    /// <summary>
+    /// Songs already looked up in the database, so each is looked up once. UI thread only.
+    /// </summary>
+    readonly HashSet<Song> _lookedUp = [];
+
     readonly ConcurrentDictionary<Song, Job> _active = new();
     readonly ConcurrentQueue<(Song Song, TrackAnalysis? Analysis, string? Error)> _finished = new();
     readonly CancellationTokenSource _stop = new();
@@ -75,10 +80,7 @@ sealed class LibraryAnalyser : IDisposable
     {
         Database = database;
         foreach (var song in songs)
-        {
-            if (database.TryGet(song, out var analysis, out var error))
-                (song.Analysis, song.AnalysisError) = (analysis, error);
-        }
+            LookUp(song);
 
         // Below normal priority, so decoding four songs at once never gets in the way of drawing or the audio.
         _workers = Enumerable
@@ -113,6 +115,8 @@ sealed class LibraryAnalyser : IDisposable
             for (var i = songs.Count - 1; i >= 0; i--)
             {
                 var song = songs[i];
+                // Songs from outside the library may have been analysed in an earlier run.
+                LookUp(song);
                 if (song.Analysis is not null || song.AnalysisError is not null)
                     continue;
                 // Already asked for and not waiting means it's being analysed or just finished.
@@ -124,6 +128,15 @@ sealed class LibraryAnalyser : IDisposable
             if (added)
                 Monitor.PulseAll(_lock);
         }
+    }
+
+    /// <summary>
+    /// Puts what the database knows about <paramref name="song"/> on it, the first time it's seen.
+    /// </summary>
+    void LookUp(Song song)
+    {
+        if (_lookedUp.Add(song) && Database.TryGet(song, out var analysis, out var error))
+            (song.Analysis, song.AnalysisError) = (analysis, error);
     }
 
     /// <summary>

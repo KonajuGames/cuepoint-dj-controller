@@ -77,7 +77,7 @@ sealed class Font
 sealed unsafe class FontAtlas
 {
     /// <summary>
-    /// Printable ASCII and Latin-1, plus a little typographic punctuation.
+    /// Printable ASCII and Latin-1, plus a little typographic punctuation and a few shapes for icons.
     /// </summary>
     static readonly int[] DefaultCharacters =
     [
@@ -88,6 +88,9 @@ sealed unsafe class FontAtlas
         0x2018, 0x2019, 0x201C, 0x201D, // curly quotes
         0x2022, // bullet
         0x2026, // ellipsis
+        0x25A0, // black square
+        0x25B2, 0x25BA, 0x25BC, 0x25C4, // triangles pointing up, right, down and left
+        0x25CF, // black circle
         0xFFFD, // replacement character, used for anything missing
     ];
 

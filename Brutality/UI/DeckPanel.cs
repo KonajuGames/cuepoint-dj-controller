@@ -4,86 +4,77 @@ using Brutality.Audio;
 namespace Brutality.UI;
 
 /// <summary>
-/// A deck's controls and read-out: what's loaded, where it's up to and its cue point, its tempo, key and automatic
-/// gain once analysed, a waveform to seek with, Cue and Play/Pause buttons, and a volume fader. Call <see cref="Refresh"/> each frame to pick up the deck's
-/// position.
+/// A deck's controls and read-out, in the deck's colour: its letter, what's loaded, the tempo where it's playing and
+/// its key, how far in it is and how long's left, the whole song's waveform to see and seek in, and Cue and Play.
+/// Sized by whoever lays it out, with <see cref="Width"/>. Call <see cref="Refresh"/> once a frame.
 /// </summary>
 sealed class DeckPanel : Panel
 {
-    const float INFO_WIDTH = 300;
+    public const float HEIGHT = 160;
+    const float PAD = 10;
 
     readonly Deck _deck;
+    readonly float4 _color;
+    readonly Badge _badge;
     readonly Label _title;
     readonly Label _artist;
-    readonly Label _time;
-    readonly Label _analysis;
+    readonly Label _bpm;
+    readonly Label _key;
+    readonly Label _elapsed;
+    readonly Label _remaining;
+    readonly Label _gain;
+    readonly Label _cuePoint;
     readonly Label _loading;
-    readonly WaveformBar _progress;
+    readonly WaveformBar _overview;
     readonly Button _cue;
     readonly Button _playPause;
-    readonly Slider _volume;
 
-    public DeckPanel(Deck deck, Font body, Font heading, float4 muted, float4 accent)
+    public float Width { get; set; } = 480;
+
+    public DeckPanel(Deck deck, Font body, Font bold, Font big)
     {
         _deck = deck;
-        Direction = Direction.Horizontal;
-        Spacing = 14;
+        _color = Theme.DeckColor(deck.Name);
+        Background = Theme.Panel;
+        BorderColor = Theme.PanelBorder;
+        BorderWidth = 1;
 
-        var info = Add(new Panel { Spacing = 4, MinSize = new float2(INFO_WIDTH, 0) });
-        info.Add(new Label(heading, $"Deck {deck.Name}"));
-        _title = info.Add(new Label(body) { Color = Colors.White });
-        _artist = info.Add(new Label(body) { Color = muted });
-        _time = info.Add(new Label(body) { Color = accent });
-        _analysis = info.Add(new Label(body) { Color = muted });
-        // Always there, empty when not loading, so the panel doesn't change height as loads come and go.
-        _loading = info.Add(new Label(body) { Color = muted });
+        _badge = Add(new Badge(bold, deck.Name, _color, Theme.TitleBar, 30));
+        _title = Add(new Label(bold) { Color = Theme.Text });
+        _artist = Add(new Label(body) { Color = Theme.Muted });
+        _bpm = Add(new Label(big) { Color = Theme.Text });
+        _key = Add(new Label(bold));
+        _elapsed = Add(new Label(body) { Color = Theme.Text });
+        _remaining = Add(new Label(body) { Color = _color });
+        _gain = Add(new Label(body) { Color = Theme.Muted });
+        _cuePoint = Add(new Label(body) { Color = Theme.Muted });
+        _loading = Add(new Label(body) { Color = Theme.Muted });
 
         // The song's waveform, coloured as it plays, with a thin playhead and a mark at the cue point; click or drag
         // to seek.
-        _progress = info.Add(
+        _overview = Add(
             new WaveformBar
             {
-                Length = INFO_WIDTH,
-                Thickness = 40,
+                Thickness = 36,
                 TrackThickness = 6,
                 HandleLength = 2,
                 ShowFill = true,
-                FillColor = accent * new float4(1, 1, 1, 0.6f),
-                PlayedColor = accent,
+                FillColor = Theme.Fade(_color, 0.6f),
+                PlayedColor = _color,
+                UnplayedColor = Colors.Hex(0xFFFFFF, 0.3f),
                 HandleColor = Colors.White,
-                FocusColor = accent,
+                FocusColor = Theme.Focus,
             }
         );
-        _progress.Changed += slider => _deck.Seek(TimeSpan.FromSeconds(slider.Value));
-
-        var buttons = info.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
+        _overview.Changed += slider => _deck.Seek(TimeSpan.FromSeconds(slider.Value));
 
         // Cue acts on press and release rather than click, since holding it previews from the cue point.
-        _cue = buttons.Add(new Button(body, "Cue") { MinSize = new float2(84, 0), FocusColor = accent });
+        _cue = Add(new Button(bold, "CUE") { MinSize = new float2(72, 30), FocusColor = Theme.Focus });
         _cue.PressStarted += _ => _deck.CueDown();
         _cue.PressEnded += _ => _deck.CueUp();
 
-        _playPause = buttons.Add(new Button(body, "Play") { MinSize = new float2(84, 0), FocusColor = accent });
+        _playPause = Add(new Button(bold, "PLAY") { MinSize = new float2(96, 30), FocusColor = Theme.Focus });
         _playPause.Clicked += _ => _deck.TogglePlay();
-
-        // A channel fader: up is louder, and double-clicking puts it back to full.
-        var fader = Add(new Panel { Spacing = 6 });
-        fader.Add(new Label(body, "Vol") { Color = muted });
-        _volume = fader.Add(
-            new Slider
-            {
-                Orientation = Orientation.Vertical,
-                Length = 150,
-                Thickness = 22,
-                HandleLength = 12,
-                DefaultValue = 1,
-                Value = deck.Volume,
-                FillColor = accent,
-                ShowFill = true,
-                FocusColor = accent,
-            }
-        );
-        _volume.Changed += slider => _deck.Volume = slider.Value;
 
         Refresh();
     }
@@ -91,22 +82,25 @@ sealed class DeckPanel : Panel
     public void Refresh()
     {
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
-        if (!_volume.IsDragging)
-            _volume.Value = _deck.Volume;
 
         if (!_deck.IsLoaded)
         {
             _title.Text = _deck.IsLoading ? "Loading…" : "No track loaded";
             _artist.Text = "";
-            _time.Text = "";
-            _analysis.Text = "";
+            _bpm.Text = "";
+            _key.Text = "";
+            _elapsed.Text = "";
+            _remaining.Text = "";
+            _gain.Text = "";
+            _cuePoint.Text = "";
             _cue.Enabled = false;
             _playPause.Enabled = false;
-            _progress.Enabled = false;
-            _progress.Max = 1;
-            _progress.Value = 0;
-            _progress.Marks.Clear();
-            _progress.Waveform = null;
+            _playPause.Text = "PLAY";
+            _overview.Enabled = false;
+            _overview.Max = 1;
+            _overview.Value = 0;
+            _overview.Marks.Clear();
+            _overview.Waveform = null;
             return;
         }
 
@@ -114,29 +108,92 @@ sealed class DeckPanel : Panel
         _artist.Text = _deck.Artist;
 
         var position = _deck.Position;
-        var remaining = _deck.Duration - position;
-        _time.Text =
-            $"{Format(position)} / {Format(_deck.Duration)}   -{Format(remaining)}   Cue {Format(_deck.CuePoint)}";
+        _elapsed.Text = $"{Format(position)} / {Format(_deck.Duration)}";
+        _remaining.Text = $"-{Format(_deck.Duration - position)}";
+        _cuePoint.Text = $"Cue {Format(_deck.CuePoint)}";
 
         // The tempo where the deck is, which moves on through a song whose tempo varies; "~" says it does.
-        _analysis.Text = _deck.Analysis is { } analysis
-            ? $"{(analysis.Grid.IsVariable ? "~" : "")}{analysis.Grid.BpmAt(position.TotalSeconds):F2} BPM   "
-                + $"{analysis.Key.ShortName} ({analysis.Key.Camelot})   Gain {analysis.AutoGainDb:+0.0;-0.0;0.0} dB"
-            : "Analysing…";
+        if (_deck.Analysis is { } analysis)
+        {
+            _bpm.Text = $"{(analysis.Grid.IsVariable ? "~" : "")}{analysis.Grid.BpmAt(position.TotalSeconds):F2}";
+            _key.Text = $"{analysis.Key.Camelot}  {analysis.Key.ShortName}";
+            _key.Color = Theme.CamelotColor(analysis.Key.CamelotNumber);
+            _gain.Text = $"Auto gain {analysis.AutoGainDb:+0.0;-0.0;0.0} dB";
+        }
+        else
+        {
+            _bpm.Text = "";
+            _key.Text = "";
+            _gain.Text = "Analysing…";
+        }
 
-        _progress.Enabled = true;
-        _progress.Waveform = _deck.Waveform;
-        _progress.Max = (float)_deck.Duration.TotalSeconds;
+        _overview.Enabled = true;
+        _overview.Waveform = _deck.Waveform;
+        _overview.Max = (float)_deck.Duration.TotalSeconds;
         // While it's being dragged the slider leads and the deck follows, so don't pull it back.
-        if (!_progress.IsDragging)
-            _progress.Value = (float)position.TotalSeconds;
-        _progress.Marks.Clear();
-        _progress.Marks.Add((float)_deck.CuePoint.TotalSeconds);
+        if (!_overview.IsDragging)
+            _overview.Value = (float)position.TotalSeconds;
+        _overview.Marks.Clear();
+        _overview.Marks.Add((float)_deck.CuePoint.TotalSeconds);
 
         _cue.Enabled = true;
         _playPause.Enabled = true;
         // A cue preview is playing, but Play would latch it rather than pause, so it still offers Play.
-        _playPause.Text = _deck.IsPlaying && !_deck.IsCuePreviewing ? "Pause" : "Play";
+        var playing = _deck.IsPlaying && !_deck.IsCuePreviewing;
+        _playPause.Text = playing ? "PAUSE" : "PLAY";
+        _playPause.Background = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Colors.Hex(0x2A2A35);
+        _playPause.HoverBackground = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Colors.Hex(0x3A3A48);
+    }
+
+    public override float2 Measure()
+    {
+        // The title gets what the tempo and key on the right leave it.
+        _bpm.Measure();
+        _key.Measure();
+        var right = MathF.Max(MathF.Max(_bpm.Size.X, _key.Size.X), 90);
+        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, Width - 2 * PAD - 40 - right - 16);
+        _overview.Length = Width - 2 * PAD;
+        _loading.MaxWidth = Width - 2 * PAD - 72 - 96 - 24 - 90;
+
+        foreach (var child in Children)
+            child.Measure();
+        return Size = new float2(Width, HEIGHT);
+    }
+
+    public override void Arrange(float2 position)
+    {
+        ArrangeSelf(position);
+        var left = position.X + PAD;
+        var right = position.X + Width - PAD;
+        var top = position.Y + PAD;
+        void Place(Element child, float x, float y) => child.Arrange(new float2(MathF.Round(x), MathF.Round(y)));
+
+        Place(_badge, left, top + 2);
+        Place(_title, left + 40, top);
+        Place(_artist, left + 40, top + _title.Size.Y + 1);
+        Place(_bpm, right - _bpm.Size.X, top - 6);
+        Place(_key, right - _key.Size.X, top + _bpm.Size.Y - 6);
+
+        var timesY = top + 52;
+        Place(_elapsed, left, timesY);
+        Place(_remaining, left + _elapsed.Size.X + 12, timesY);
+        Place(_gain, right - _gain.Size.X, timesY);
+
+        Place(_overview, left, timesY + _elapsed.Size.Y + 4);
+
+        var buttonsY = position.Y + HEIGHT - PAD - _cue.Size.Y;
+        Place(_cue, left, buttonsY);
+        Place(_playPause, left + _cue.Size.X + 8, buttonsY);
+        Place(_loading, left + _cue.Size.X + 8 + _playPause.Size.X + 12, buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
+        Place(_cuePoint, right - _cuePoint.Size.X, buttonsY + (_cue.Size.Y - _cuePoint.Size.Y) / 2);
+    }
+
+    public override void Draw(Batch batch)
+    {
+        DrawFrame(batch);
+        // A strip of the deck's colour along the top, so which deck is which reads at a glance.
+        batch.AddRect(ScreenPosition, new float2(Size.X, 2), _color);
+        DrawChildren(batch);
     }
 
     static string Format(TimeSpan time) =>

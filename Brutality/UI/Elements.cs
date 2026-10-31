@@ -186,9 +186,26 @@ sealed class Label(Font font, string text = "") : Element
     public string Text { get; set; } = text;
     public float4 Color { get; set; } = Colors.White;
 
-    public override float2 Measure() => Size = Font.Measure(Text);
+    /// <summary>
+    /// The widest it takes up; longer text is cut off there.
+    /// </summary>
+    public float MaxWidth { get; set; } = float.PositiveInfinity;
 
-    public override void Draw(Batch batch) => batch.AddText(Font, Text, ScreenPosition, Color);
+    public override float2 Measure()
+    {
+        var size = Font.Measure(Text);
+        return Size = new float2(MathF.Min(size.X, MaxWidth), size.Y);
+    }
+
+    public override void Draw(Batch batch)
+    {
+        var clipped = Font.Measure(Text).X > Size.X;
+        if (clipped)
+            batch.PushClip(ScreenPosition, Size);
+        batch.AddText(Font, Text, ScreenPosition, Color);
+        if (clipped)
+            batch.PopClip();
+    }
 }
 
 enum Direction

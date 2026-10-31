@@ -28,4 +28,16 @@ struct Biquad(double b0, double b1, double b2, double a1, double a2)
         var a0 = 1 + alpha;
         return new Biquad((1 - cos) / 2 / a0, (1 - cos) / a0, (1 - cos) / 2 / a0, -2 * cos / a0, (1 - alpha) / a0);
     }
+
+    /// <summary>
+    /// The matching high-pass, from the same cookbook.
+    /// </summary>
+    public static Biquad HighPass(double cutoff, double q, int sampleRate)
+    {
+        var w = 2 * Math.PI * cutoff / sampleRate;
+        var alpha = Math.Sin(w) / (2 * q);
+        var cos = Math.Cos(w);
+        var a0 = 1 + alpha;
+        return new Biquad((1 + cos) / 2 / a0, -(1 + cos) / a0, (1 + cos) / 2 / a0, -2 * cos / a0, (1 - alpha) / a0);
+    }
 }

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Brutal.GlfwApi;
 using Brutal.Numerics;
 using Brutal.VulkanApi;
@@ -44,8 +43,11 @@ static void Run()
 {
     Glfw.WindowHint(GlfwWindowHint.ClientApi, Glfw.Constants.GLFW_NO_API);
 
-    // Declared first so it's disposed last, after the GPU objects that draw to it.
-    using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Cuepoint", Size = new int2(1280, 720) });
+    // Declared first so it's disposed last, after the GPU objects that draw to it. It opens maximised, as the screen
+    // is laid out to fill it, and can't be made too small for the decks and mixer to fit side by side.
+    using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Cuepoint", Size = new int2(1440, 860) });
+    window.SetSizeLimits(new int2(1120, 700), new int2(-1, -1));
+    window.Maximize();
 
 #if DEBUG
     const bool ENABLE_VALIDATION = true;
@@ -53,15 +55,19 @@ static void Run()
     const bool ENABLE_VALIDATION = false;
 #endif
 
-    var fonts = new FontAtlas();
-    var bodyFont = fonts.Add(FindFont(bold: false), 16);
-    var titleFont = fonts.Add(FindFont(bold: true), 22);
+    var atlas = new FontAtlas();
+    var regular = FindFont(bold: false);
+    var bold = FindFont(bold: true);
+    var fonts = new Fonts(
+        Small: atlas.Add(regular, 12),
+        Body: atlas.Add(regular, 14),
+        Bold: atlas.Add(bold, 14),
+        Heading: atlas.Add(bold, 18),
+        Big: atlas.Add(bold, 26)
+    );
 
     using var gpu = new GpuContext(window, ENABLE_VALIDATION);
-    using var renderer = new Renderer(gpu, window, fonts);
-
-    var hud = new Hud(bodyFont, titleFont, gpu.DeviceName);
-    using var input = new GlfwUiInput(window, hud.Ui);
+    using var renderer = new Renderer(gpu, window, atlas);
 
     const string MUSIC_FOLDER = "F:/Music";
 
@@ -69,46 +75,68 @@ static void Run()
     using var deckA = audio.CreateDeck("A", CrossfaderSide.Left);
     using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
     Deck[] decks = [deckA, deckB];
-    hud.Log($"Audio decoders: {string.Join(", ", audio.Decoders)}");
 
     // The library scans now and reads tags in the background; songs load onto decks in the background too.
     using var library = new MusicLibrary(MUSIC_FOLDER);
-    hud.Log(library.Error is { } error ? $"Library: {error}" : $"Library: {library.Songs.Count} songs in {MUSIC_FOLDER}");
 
     // Songs are analysed as they come into view in the list, and the results kept between runs.
     var database = LibraryDatabase.Load(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "library.json")
     );
     using var analyser = new LibraryAnalyser(library.Songs, database);
-    hud.Log(
-        database.LoadError is { } loadError
-            ? $"Database: couldn't read {database.FilePath}, starting afresh: {loadError}"
-            : $"Database: {library.Songs.Count(song => song.Analysis is not null)} songs already analysed"
-    );
-    var browser = hud.AddBrowser(library, analyser, decks.Select(deck => deck.Name));
 
-    // Left to right: deck A, the crossfader, deck B.
-    hud.AddDeck(deckA);
-    hud.AddCrossfader(audio);
-    hud.AddDeck(deckB);
+    // What's been loaded onto a deck this run, oldest first, for the History folder.
+    var history = new List<Song>();
+    var folders = LibraryTree.Build(library, decks, history);
+
+    var ui = new Root();
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts));
+    using var input = new GlfwUiInput(window, ui);
+    var browser = screen.Browser;
+
+    // The library's own folder is what shows to begin with, with the lists and filters open below the drives.
+    screen.FolderTree.SetExpanded(folders[2], true);
+    screen.FolderTree.SetExpanded(folders[3], true);
+    screen.FolderTree.Select(folders[0]);
+
+    screen.Log(
+        library.Error is { } error ? $"Couldn't read {MUSIC_FOLDER}: {error}"
+        : database.LoadError is { } loadError ? $"Couldn't read {database.FilePath}, so starting afresh: {loadError}"
+        : $"{library.Songs.Count} songs in {MUSIC_FOLDER}, {library.Songs.Count(song => song.Analysis is not null)} analysed"
+    );
+
+    // The window's own buttons, and dragging it by the title bar, which Windows does once told where it is.
+    screen.TitleBar.IsMaximized = () => window.IsMaximised;
+    screen.TitleBar.MinimizeClicked += window.Iconify;
+    screen.TitleBar.MaximizeClicked += () =>
+    {
+        if (window.IsMaximised)
+            window.Restore();
+        else
+            window.Maximize();
+    };
+    screen.TitleBar.CloseClicked += () => window.ShouldClose = true;
+    screen.TitleBar.OptionsClicked += screen.Options.Open;
+    if (OperatingSystem.IsWindows())
+        WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
 
     foreach (var deck in decks)
     {
         deck.Loaded += loaded =>
         {
-            hud.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
+            screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
             loaded.Analysis = loaded.FilePath is { } path ? library.Find(path)?.Analysis : null;
         };
         // A missing or unsupported file leaves the deck as it was rather than stopping the app.
         deck.LoadFailed += (failed, path, e) =>
-            hud.Log($"Deck {failed.Name}: couldn't load {Path.GetFileName(path)}: {e.Message}");
+            screen.Log($"Deck {failed.Name}: couldn't load {Path.GetFileName(path)}: {e.Message}");
     }
 
     // A song analysed while it's on a deck takes its gain then. Most finish before the deck has decoded.
     analyser.Analysed += song =>
     {
         if (song.AnalysisError is { } analysisError)
-            hud.Log($"Couldn't analyse {Path.GetFileName(song.Path)}: {analysisError}");
+            screen.Log($"Couldn't analyse {Path.GetFileName(song.Path)}: {analysisError}");
         foreach (var deck in decks)
         {
             if (string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase))
@@ -121,7 +149,8 @@ static void Run()
         // Analysis goes to the front of the queue, so the deck has its gain and tempo as soon as possible.
         analyser.Request(song);
         deck.BeginLoad(song.Path, $"{song.Artist} - {song.Title}");
-        hud.Log($"Deck {deck.Name}: loading {song.Artist} - {song.Title}");
+        history.Add(song);
+        screen.Log($"Deck {deck.Name}: loading {song.Artist} - {song.Title}");
     }
 
     browser.LoadRequested += (song, deckName) => Load(song, decks.First(deck => deck.Name == deckName));
@@ -136,11 +165,12 @@ static void Run()
         if (target is not null)
             Load(song, target);
         else
-            hud.Log("Both decks are playing; use Load to A or B to replace one");
+            screen.Log("Both decks are playing; use Load A or Load B to replace one");
     };
 
-    // App shortcuts go through the UI first, so Escape in the note box only leaves the box, and typing there
-    // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored.
+    // App shortcuts go through the UI first, so Escape in the search box only leaves the box, and typing there
+    // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored. Escape no longer
+    // quits, now there's a close button, since a stray press mid-set would be a disaster.
     input.UnhandledKey += (key, action, _) =>
     {
         if (action == GlfwKeyAction.Repeat)
@@ -150,7 +180,7 @@ static void Run()
         switch (key)
         {
             case GlfwKey.Escape when pressed:
-                window.ShouldClose = true;
+                screen.Options.Close();
                 break;
             case GlfwKey.Number1 when pressed && browser.SelectedSong is { } song:
                 Load(song, deckA);
@@ -179,7 +209,6 @@ static void Run()
         }
     };
 
-    var clock = Stopwatch.StartNew();
     while (!window.ShouldClose)
     {
         Glfw.PollEvents();
@@ -200,14 +229,21 @@ static void Run()
         var saveError = analyser.SaveError;
         analyser.Update();
         if (analyser.SaveError is { } newSaveError && newSaveError != saveError)
-            hud.Log($"Database: couldn't save {database.FilePath}: {newSaveError}");
+            screen.Log($"Couldn't save {database.FilePath}: {newSaveError}");
 
-        hud.Update(clock.Elapsed.TotalSeconds, size);
+        // New tags can change what matches a search.
+        if (library.ApplyReadTags() > 0)
+            browser.Refilter();
 
-        hud.Ui.Layout(new float2(size.X, size.Y));
+        screen.ScreenSize = new float2(size.X, size.Y);
+        screen.Update();
+        ui.Layout(screen.ScreenSize);
         input.UpdateCursor();
-        renderer.DrawFrame(hud.Ui);
+        renderer.DrawFrame(ui);
     }
+
+    if (OperatingSystem.IsWindows())
+        WindowChrome.Remove();
 }
 
 static string FindFont(bool bold) =>

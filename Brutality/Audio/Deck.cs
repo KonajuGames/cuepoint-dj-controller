@@ -20,7 +20,8 @@ sealed class Deck : IDisposable
         string Title,
         string Artist,
         TimeSpan Duration,
-        Waveform Waveform
+        Waveform Waveform,
+        DetailWaveform Detail
     );
 
     public string Name { get; }
@@ -40,6 +41,11 @@ sealed class Deck : IDisposable
     /// The loaded song's overview, for drawing; null when nothing's loaded.
     /// </summary>
     public Waveform? Waveform { get; private set; }
+
+    /// <summary>
+    /// The loaded song's waveform in detail, with its frequency content, for drawing scrolling past.
+    /// </summary>
+    public DetailWaveform? Detail { get; private set; }
 
     public bool IsLoaded => !_audio.IsNull();
 
@@ -87,6 +93,10 @@ sealed class Deck : IDisposable
         _engine = engine;
         _side = side;
         _track = engine.Mixer.CreateTrack();
+        unsafe
+        {
+            SdlMixer.PInvoke.SetTrackCookedCallback(_track, &AudioMeter.MeasureTrack, Meter.UserData);
+        }
         ApplyGain();
     }
 
@@ -136,7 +146,13 @@ sealed class Deck : IDisposable
     /// What the deck plays at: the song's automatic gain, then its fader through an audio taper, times what the
     /// crossfader lets through.
     /// </summary>
-    public float Gain => (_analysis?.AutoGain ?? 1) * VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
+    public float Gain =>
+        (_engine.AutoGain ? _analysis?.AutoGain ?? 1 : 1) * VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
+
+    /// <summary>
+    /// The deck's level as it plays, after its gain and the crossfader.
+    /// </summary>
+    public AudioMeter Meter { get; } = new();
 
     /// <summary>
     /// Fader position to gain. Squared, so the fader's travel feels even to the ear: halfway is about -12 dB rather
@@ -229,13 +245,15 @@ sealed class Deck : IDisposable
         }
 
         var waveform = Waveform.From(pcm);
+        var detail = DetailWaveform.From(pcm);
         return new DecodedSong(
             path,
             pcm.ToMixAudio(engine.Mixer),
             string.IsNullOrEmpty(title) ? System.IO.Path.GetFileNameWithoutExtension(path) : title,
             artist ?? "",
             pcm.Duration,
-            waveform
+            waveform,
+            detail
         );
     }
 
@@ -254,6 +272,7 @@ sealed class Deck : IDisposable
         Artist = song.Artist;
         Duration = song.Duration;
         Waveform = song.Waveform;
+        Detail = song.Detail;
         Analysis = null;
 
         // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
@@ -388,8 +407,9 @@ sealed class Deck : IDisposable
 
         _engine.Remove(this);
 
-        // The track first, so nothing is still reading the audio when it's freed.
+        // The track first, so nothing is still reading the audio or measuring it when they're freed.
         _track.Dispose();
         _audio.Dispose();
+        Meter.Dispose();
     }
 }

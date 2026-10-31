@@ -21,14 +21,30 @@ readonly record struct MusicalKey(int Tonic, bool IsMinor)
     /// The key's place on the Camelot wheel DJs mix by, "8A" for A minor: keys a number apart, or the same number
     /// in the other letter, mix in harmony.
     /// </summary>
-    public string Camelot
+    public string Camelot => $"{CamelotNumber}{(IsMinor ? 'A' : 'B')}";
+
+    /// <summary>
+    /// The number part of <see cref="Camelot"/>, from 1 to 12.
+    /// </summary>
+    public int CamelotNumber
     {
         get
         {
             // Round the circle of fifths, C major is 8B and A minor 8A; each fifth up adds one.
             var number = (Tonic * 7 + (IsMinor ? 5 : 8)) % 12;
-            return $"{(number == 0 ? 12 : number)}{(IsMinor ? 'A' : 'B')}";
+            return number == 0 ? 12 : number;
         }
+    }
+
+    /// <summary>
+    /// Whether the two mix in harmony by the Camelot rules: the same key, one step round the wheel either way, or
+    /// its relative major or minor.
+    /// </summary>
+    public bool MixesWith(MusicalKey other)
+    {
+        var apart = Math.Abs(CamelotNumber - other.CamelotNumber);
+        apart = Math.Min(apart, 12 - apart);
+        return IsMinor == other.IsMinor ? apart <= 1 : apart == 0;
     }
 
     public override string ToString() => Name;

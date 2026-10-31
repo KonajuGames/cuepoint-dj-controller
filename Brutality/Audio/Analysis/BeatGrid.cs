@@ -61,6 +61,41 @@ sealed class BeatGrid : IEquatable<BeatGrid>
     }
 
     /// <summary>
+    /// How many beats <paramref name="seconds"/> is from the first marker, counting through every tempo change:
+    /// 2.5 is halfway between the third beat and the fourth. Negative before the first marker. Bars are counted in
+    /// fours from the first marker's beat, since where the downbeat falls isn't known.
+    /// </summary>
+    public double BeatNumberAt(double seconds)
+    {
+        var beats = 0.0;
+        for (var i = 0; i < Markers.Count; i++)
+        {
+            var marker = Markers[i];
+            if (i + 1 == Markers.Count || seconds < Markers[i + 1].Time)
+                return beats + (seconds - marker.Time) / marker.BeatSeconds;
+            beats += Math.Round((Markers[i + 1].Time - marker.Time) / marker.BeatSeconds);
+        }
+        return beats;
+    }
+
+    /// <summary>
+    /// When beat <paramref name="beat"/> falls, counting as <see cref="BeatNumberAt"/> does; the reverse of it.
+    /// </summary>
+    public double TimeOfBeat(double beat)
+    {
+        var start = 0.0;
+        for (var i = 0; i < Markers.Count; i++)
+        {
+            var marker = Markers[i];
+            var beats = i + 1 < Markers.Count ? Math.Round((Markers[i + 1].Time - marker.Time) / marker.BeatSeconds) : double.MaxValue;
+            if (beat < start + beats || i + 1 == Markers.Count)
+                return marker.Time + (beat - start) * marker.BeatSeconds;
+            start += beats;
+        }
+        return Markers[^1].Time;
+    }
+
+    /// <summary>
     /// The tempo that covers most of the song, for showing as its tempo: for a song that drifts, the middle of its
     /// tempos, weighted by how long each lasts.
     /// </summary>

@@ -25,6 +25,11 @@ sealed unsafe class AudioEngine : IDisposable
     internal MixMixer Mixer { get; }
 
     /// <summary>
+    /// The level of the final mix, as it goes to the speakers.
+    /// </summary>
+    public AudioMeter Meter { get; } = new();
+
+    /// <summary>
     /// The decoders SDL_mixer was built with, such as DRMP3 or WAV; a file in any other format won't load.
     /// </summary>
     public IReadOnlyList<string> Decoders { get; }
@@ -37,6 +42,7 @@ sealed unsafe class AudioEngine : IDisposable
         {
             // Null takes the device's own format, so SDL doesn't convert on the way out.
             Mixer = SdlMixer.CreateMixerDevice(DEFAULT_PLAYBACK_DEVICE, null);
+            SdlMixer.PInvoke.SetPostMixCallback(Mixer, &AudioMeter.MeasureMix, Meter.UserData);
 
             var decoders = new string[SdlMixer.GetNumAudioDecoders()];
             for (var i = 0; i < decoders.Length; i++)
@@ -53,6 +59,21 @@ sealed unsafe class AudioEngine : IDisposable
 
     readonly List<Deck> _decks = [];
     float _crossfader = 0.5f;
+    bool _autoGain = true;
+
+    /// <summary>
+    /// Whether decks play each song at its analysed automatic gain, so every song comes out about as loud.
+    /// </summary>
+    public bool AutoGain
+    {
+        get => _autoGain;
+        set
+        {
+            _autoGain = value;
+            foreach (var deck in _decks)
+                deck.ApplyGain();
+        }
+    }
 
     public Deck CreateDeck(string name, CrossfaderSide side = CrossfaderSide.None)
     {
@@ -92,7 +113,9 @@ sealed unsafe class AudioEngine : IDisposable
 
     public void Dispose()
     {
+        // The mixer first, which stops its callback, so nothing is still measuring when the meter goes.
         Mixer.Dispose();
+        Meter.Dispose();
         SdlMixer.Quit();
         Sdl.Init.Quit();
     }
