@@ -1,4 +1,5 @@
 using Brutal.Numerics;
+using Brutality.Audio;
 
 namespace Brutality.UI;
 
@@ -27,6 +28,8 @@ sealed class Hud
     readonly Button _reset;
     readonly ScrollPanel _log;
     readonly Font _body;
+    readonly Font _title;
+    readonly List<DeckPanel> _decks = [];
     bool _paused;
     int2 _lastFramebufferSize;
 
@@ -36,6 +39,7 @@ sealed class Hud
     public Hud(Font body, Font title, string deviceName, string? texturePath)
     {
         _body = body;
+        _title = title;
 
         var stats = Ui.Add(
             new Panel
@@ -122,7 +126,32 @@ sealed class Hud
                 Background = PanelBackground,
             }
         );
-        hint.Add(new Label(body, "Tab  Next control\nEnter  Press or submit\nEsc  Leave a box, or quit") { Color = Muted });
+        hint.Add(
+            new Label(body, "Space  Play/pause deck A\nTab  Next control\nEnter  Press or submit\nEsc  Leave a box, or quit")
+            {
+                Color = Muted,
+            }
+        );
+    }
+
+    /// <summary>
+    /// Shows <paramref name="deck"/>'s controls in the bottom-left, kept up to date by <see cref="Update"/>.
+    /// </summary>
+    public void AddDeck(Deck deck)
+    {
+        var panel = Ui.Add(
+            new DeckPanel(deck, _body, _title, Muted, Accent)
+            {
+                Anchor = Anchor.BottomLeft,
+                Position = new float2(16, 16),
+                Padding = 12,
+                Background = PanelBackground,
+                BorderColor = PanelBorder,
+                BorderWidth = 1,
+                MinSize = new float2(320, 0),
+            }
+        );
+        _decks.Add(panel);
     }
 
     /// <summary>
@@ -154,6 +183,8 @@ sealed class Hud
         _reset.Enabled = SceneTime > 0;
 
         _resolution.Text = $"{framebufferSize.X} × {framebufferSize.Y}";
+        foreach (var deck in _decks)
+            deck.Refresh();
         if (framebufferSize != _lastFramebufferSize)
         {
             Log($"Framebuffer is {framebufferSize.X} × {framebufferSize.Y}");

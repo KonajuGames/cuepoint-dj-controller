@@ -3,6 +3,7 @@ using Brutal.GlfwApi;
 using Brutal.Numerics;
 using Brutal.VulkanApi;
 using Brutality;
+using Brutality.Audio;
 using Brutality.Input;
 using Brutality.Rendering;
 using Brutality.UI;
@@ -63,11 +64,36 @@ static void Run(string? texturePath)
     var hud = new Hud(bodyFont, titleFont, gpu.DeviceName, texturePath);
     using var input = new GlfwUiInput(window, hud.Ui);
 
-    // App shortcuts go through the UI first, so Escape in the note box only leaves the box.
+    // Step 1 of the DJ app: one deck with a fixed track. A song list replaces this in step 3.
+    const string DECK_A_TRACK =
+        "F:/Music/_CDs/2 Unlimited/Maximum Overdrive/01. 2 Unlimited - Maximum Overdrive (radio edit).mp3";
+
+    using var audio = new AudioEngine();
+    using var deckA = audio.CreateDeck("A");
+    hud.AddDeck(deckA);
+    hud.Log($"Audio decoders: {string.Join(", ", audio.Decoders)}");
+    try
+    {
+        var loading = Stopwatch.StartNew();
+        deckA.Load(DECK_A_TRACK);
+        hud.Log($"Deck A: loaded {deckA.Artist} - {deckA.Title} in {loading.ElapsedMilliseconds} ms");
+    }
+    catch (Exception e)
+    {
+        // A missing or unsupported file leaves the deck empty rather than stopping the app.
+        hud.Log($"Deck A: couldn't load {Path.GetFileName(DECK_A_TRACK)}: {e.Message}");
+    }
+
+    // App shortcuts go through the UI first, so Escape in the note box only leaves the box, and Space on a focused
+    // button presses the button rather than the deck.
     input.UnhandledKey += (key, action, _) =>
     {
-        if (key == GlfwKey.Escape && action == GlfwKeyAction.Press)
+        if (action != GlfwKeyAction.Press)
+            return;
+        if (key == GlfwKey.Escape)
             window.ShouldClose = true;
+        else if (key == GlfwKey.Space)
+            deckA.TogglePlay();
     };
 
     var clock = Stopwatch.StartNew();
