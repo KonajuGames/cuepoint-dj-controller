@@ -13,6 +13,7 @@ sealed class DeckPanel : Panel
     readonly Label _title;
     readonly Label _artist;
     readonly Label _time;
+    readonly Label _loading;
     readonly Button _cue;
     readonly Button _playPause;
 
@@ -25,6 +26,8 @@ sealed class DeckPanel : Panel
         _title = Add(new Label(body) { Color = Colors.White });
         _artist = Add(new Label(body) { Color = muted });
         _time = Add(new Label(body) { Color = accent });
+        // Always there, empty when not loading, so the panel doesn't change height as loads come and go.
+        _loading = Add(new Label(body) { Color = muted });
 
         var buttons = Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
 
@@ -41,9 +44,12 @@ sealed class DeckPanel : Panel
 
     public void Refresh()
     {
+        // Loading happens in the background, and whatever's on the deck carries on meanwhile.
+        _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
+
         if (!_deck.IsLoaded)
         {
-            _title.Text = "No track loaded";
+            _title.Text = _deck.IsLoading ? "Loading…" : "No track loaded";
             _artist.Text = "";
             _time.Text = "";
             _cue.Enabled = false;

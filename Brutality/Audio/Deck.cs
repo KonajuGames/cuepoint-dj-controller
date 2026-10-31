@@ -4,14 +4,20 @@ using Brutal.SdlApi.Mixer;
 namespace Brutality.Audio;
 
 /// <summary>
-/// One player: a song loaded onto an SDL_mixer track, with play/pause and a position. Get one from
-/// <see cref="AudioEngine.CreateDeck"/>.
+/// One player: a song loaded onto an SDL_mixer track, with play/pause, cue and a position. Get one from
+/// <see cref="AudioEngine.CreateDeck"/>. Everything except decoding happens on the thread that calls it, which
+/// should be the UI thread; call <see cref="Update"/> once a frame to finish background loads.
 /// </summary>
 sealed class Deck : IDisposable
 {
     // SDL_mixer's metadata property names. The bindings only mention them in doc comments, so they're spelled out.
     const string TITLE_PROPERTY = "SDL_mixer.metadata.title";
     const string ARTIST_PROPERTY = "SDL_mixer.metadata.artist";
+
+    /// <summary>
+    /// A decoded song, ready to put on a deck: done off the UI thread, so loading doesn't stall the screen.
+    /// </summary>
+    sealed record DecodedSong(string Path, MixAudio Audio, string Title, string Artist, TimeSpan Duration);
 
     public string Name { get; }
 
@@ -28,15 +34,49 @@ sealed class Deck : IDisposable
 
     public bool IsLoaded => !_audio.IsNull();
 
+    /// <summary>
+    /// A song is decoding in the background; what's loaded now carries on until it's ready.
+    /// </summary>
+    public bool IsLoading => _pending is not null;
+
+    /// <summary>
+    /// The file being loaded, while <see cref="IsLoading"/>.
+    /// </summary>
+    public string? LoadingPath => _pending?.Path;
+
+    /// <summary>
+    /// What to call the song being loaded, while <see cref="IsLoading"/>: the name given to
+    /// <see cref="BeginLoad"/>, or the file name.
+    /// </summary>
+    public string? LoadingName => _pending is { } pending ? pending.Name : null;
+
+    /// <summary>
+    /// A background load finished and the song is on the deck. Raised from <see cref="Update"/>.
+    /// </summary>
+    public event Action<Deck>? Loaded;
+
+    /// <summary>
+    /// A background load failed; the deck keeps what it had. Raised from <see cref="Update"/>.
+    /// </summary>
+    public event Action<Deck, string, Exception>? LoadFailed;
+
     readonly AudioEngine _engine;
     readonly MixTrack _track;
     MixAudio _audio;
 
+    /// <summary>
+    /// The background load in progress, if any. A newer load replaces it; the older one's result is thrown away.
+    /// </summary>
+    (string Path, string Name, Task<DecodedSong> Task)? _pending;
+
+    long _cueFrames;
+    bool _previewing;
+
     internal Deck(AudioEngine engine, string name)
     {
         Name = name;
-        _track = engine.Mixer.CreateTrack();
         _engine = engine;
+        _track = engine.Mixer.CreateTrack();
     }
 
     /// <summary>
@@ -48,63 +88,139 @@ sealed class Deck : IDisposable
     public bool IsPlaying => IsLoaded && _track.Playing() && !_track.Paused();
 
     /// <summary>
-    /// Decodes <paramref name="path"/> into memory and leaves the deck paused at the start. Decoding up front costs
-    /// a moment and some memory, but makes seeking and cueing instant. Throws if neither SDL_mixer nor (on Windows)
-    /// Media Foundation can decode the file; the deck keeps whatever it had.
+    /// Decodes <paramref name="path"/> and puts it on the deck, paused at the start, before returning. Decoding up
+    /// front costs a moment (more for .m4a) and some memory, but makes seeking and cueing instant. Throws if neither
+    /// SDL_mixer nor (on Windows) Media Foundation can decode the file; the deck keeps whatever it had. See
+    /// <see cref="BeginLoad"/> to do the decoding in the background.
     /// </summary>
-    public void Load(string path)
+    public void Load(string path) => Apply(Decode(_engine, path));
+
+    /// <summary>
+    /// Starts decoding <paramref name="path"/> on a worker thread. Whatever is on the deck keeps playing until the
+    /// new song is ready, when <see cref="Update"/> swaps it in and raises <see cref="Loaded"/> (or
+    /// <see cref="LoadFailed"/>). Starting another load before then replaces this one. <paramref name="name"/> is
+    /// what to show meanwhile, such as the library's title for it.
+    /// </summary>
+    public void BeginLoad(string path, string? name = null)
     {
-        var audio = Decode(path);
+        if (_pending is { } older)
+            DiscardWhenDone(older.Task);
 
-        _track.Stop(0);
-        _track.SetAudio(audio);
-        _audio.Dispose();
-        _audio = audio;
+        var engine = _engine;
+        _pending = (path, name ?? System.IO.Path.GetFileNameWithoutExtension(path), Task.Run(() => Decode(engine, path)));
+    }
 
-        FilePath = path;
-        var properties = audio.GetProperties();
-        var title = Sdl.PInvoke.GetStringProperty(properties, TITLE_PROPERTY, "");
-        var artist = Sdl.PInvoke.GetStringProperty(properties, ARTIST_PROPERTY, "");
+    /// <summary>
+    /// Finishes a background load that's done. Call once a frame from the UI thread.
+    /// </summary>
+    public void Update()
+    {
+        if (_pending is not { Task.IsCompleted: true } done)
+            return;
+        _pending = null;
 
-        // Media Foundation decodes but brings no tags, and SDL_mixer can't read .m4a tags, so ask Windows.
-        if (string.IsNullOrEmpty(title) && OperatingSystem.IsWindows())
-            (title, artist) = WindowsTags.Read(path);
+        if (done.Task.IsCompletedSuccessfully)
+        {
+            Apply(done.Task.Result);
+            Loaded?.Invoke(this);
+        }
+        else
+            LoadFailed?.Invoke(this, done.Path, done.Task.Exception?.GetBaseException() ?? new Exception("Load failed"));
+    }
 
-        Title = string.IsNullOrEmpty(title) ? Path.GetFileNameWithoutExtension(path) : title;
-        Artist = artist ?? "";
-        Duration = TimeSpan.FromMilliseconds(audio.FramesToMS(audio.GetDuration()));
+    /// <summary>
+    /// Frees the audio from a load whose result is no longer wanted, whenever it finishes.
+    /// </summary>
+    static void DiscardWhenDone(Task<DecodedSong> task) =>
+        task.ContinueWith(
+            t =>
+            {
+                if (t.IsCompletedSuccessfully)
+                    t.Result.Audio.Dispose();
+            },
+            TaskScheduler.Default
+        );
 
-        // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
-        _track.Play(0);
-        _track.Pause();
-        _cueFrames = 0;
-        _previewing = false;
+    /// <summary>
+    /// Decodes and reads tags; safe on any thread, since it touches nothing on the deck.
+    /// </summary>
+    static DecodedSong Decode(AudioEngine engine, string path)
+    {
+        var audio = DecodeAudio(engine, path);
+        try
+        {
+            var properties = audio.GetProperties();
+            var title = Sdl.PInvoke.GetStringProperty(properties, TITLE_PROPERTY, "");
+            var artist = Sdl.PInvoke.GetStringProperty(properties, ARTIST_PROPERTY, "");
+
+            // Media Foundation decodes but brings no tags, and SDL_mixer can't read .m4a tags, so ask Windows.
+            if (string.IsNullOrEmpty(title) && OperatingSystem.IsWindows())
+            {
+                var tags = WindowsTags.Read(path);
+                (title, artist) = (tags.Title, tags.Artist);
+            }
+
+            return new DecodedSong(
+                path,
+                audio,
+                string.IsNullOrEmpty(title) ? System.IO.Path.GetFileNameWithoutExtension(path) : title,
+                artist ?? "",
+                TimeSpan.FromMilliseconds(audio.FramesToMS(audio.GetDuration()))
+            );
+        }
+        catch
+        {
+            audio.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
     /// SDL_mixer decodes MP3, WAV, FLAC and OGG itself. Anything it can't (AAC in .m4a, chiefly) goes to Windows'
     /// Media Foundation instead, when on Windows.
     /// </summary>
-    MixAudio Decode(string path)
+    static MixAudio DecodeAudio(AudioEngine engine, string path)
     {
         try
         {
-            return _engine.Mixer.LoadAudio(path, true);
+            return engine.Mixer.LoadAudio(path, true);
         }
         catch (SdlException sdlError) when (OperatingSystem.IsWindows() && File.Exists(path))
         {
             try
             {
-                return MediaFoundationDecoder.Load(_engine.Mixer, path);
+                return MediaFoundationDecoder.Load(engine.Mixer, path);
             }
             catch (Exception mfError)
             {
                 throw new InvalidOperationException(
-                    $"Couldn't decode {Path.GetFileName(path)}. SDL_mixer: {sdlError.Message} Media Foundation: {mfError.Message}",
+                    $"Couldn't decode {System.IO.Path.GetFileName(path)}. SDL_mixer: {sdlError.Message} Media Foundation: {mfError.Message}",
                     mfError
                 );
             }
         }
+    }
+
+    /// <summary>
+    /// Puts a decoded song on the deck, paused at the start with the cue point there.
+    /// </summary>
+    void Apply(DecodedSong song)
+    {
+        _track.Stop(0);
+        _track.SetAudio(song.Audio);
+        _audio.Dispose();
+        _audio = song.Audio;
+
+        FilePath = song.Path;
+        Title = song.Title;
+        Artist = song.Artist;
+        Duration = song.Duration;
+
+        // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
+        _track.Play(0);
+        _track.Pause();
+        _cueFrames = 0;
+        _previewing = false;
     }
 
     public void Play()
@@ -146,9 +262,6 @@ sealed class Deck : IDisposable
     /// Cue is held down on a paused deck, so it's playing from the cue point until <see cref="CueUp"/>.
     /// </summary>
     public bool IsCuePreviewing => _previewing;
-
-    long _cueFrames;
-    bool _previewing;
 
     /// <summary>
     /// The Cue button went down. While playing, it jumps back to the cue point and pauses. While paused, it sets the
@@ -199,6 +312,21 @@ sealed class Deck : IDisposable
 
     public void Dispose()
     {
+        // A load still decoding would hand back audio from a mixer that's about to go, so wait for it and free it.
+        if (_pending is { } pending)
+        {
+            try
+            {
+                pending.Task.Wait();
+                pending.Task.Result.Audio.Dispose();
+            }
+            catch (AggregateException)
+            {
+                // It failed; there's nothing to free.
+            }
+            _pending = null;
+        }
+
         // The track first, so nothing is still reading the audio when it's freed.
         _track.Dispose();
         _audio.Dispose();

@@ -352,6 +352,27 @@ sealed class ScrollPanel : Panel
     }
 
     /// <summary>
+    /// The size of the area the content shows through, inside the border, padding and any scrollbars.
+    /// </summary>
+    public float2 ViewportSize => _viewport;
+
+    /// <summary>
+    /// Scrolls vertically just far enough to show content from <paramref name="top"/> to <paramref name="bottom"/>,
+    /// measured from the top of the content: a list keeping its selected row in view, say. Does nothing if it's
+    /// already visible.
+    /// </summary>
+    public void ScrollToShow(float top, float bottom)
+    {
+        var target = _target.Y;
+        if (bottom > target + _viewport.Y)
+            target = bottom - _viewport.Y;
+        if (top < target)
+            target = top;
+        if (target != _target.Y)
+            ScrollTo(new float2(_target.X, target));
+    }
+
+    /// <summary>
     /// Scrolls by <paramref name="notches"/> of the wheel on each axis, positive meaning towards the left and top as
     /// GLFW reports them. Returns false if neither axis could move, so the wheel can go to an outer scroll panel.
     /// </summary>

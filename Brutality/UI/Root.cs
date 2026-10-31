@@ -170,6 +170,7 @@ sealed class Root
 
         // The pressed element follows the mouse until release, even outside itself (to drag a text selection, say).
         Pressed?.PointerDrag(position);
+        Hovered?.PointerMove(position);
     }
 
     /// <summary>

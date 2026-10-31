@@ -5,6 +5,7 @@ using Brutal.VulkanApi;
 using Brutality;
 using Brutality.Audio;
 using Brutality.Input;
+using Brutality.Music;
 using Brutality.Rendering;
 using Brutality.UI;
 
@@ -64,34 +65,48 @@ static void Run(string? texturePath)
     var hud = new Hud(bodyFont, titleFont, gpu.DeviceName, texturePath);
     using var input = new GlfwUiInput(window, hud.Ui);
 
-    // Fixed tracks until the song list (step 3): an MP3 on A, and an .m4a on B, which goes through Media Foundation.
-    const string DECK_A_TRACK =
-        "F:/Music/_CDs/2 Unlimited/Maximum Overdrive/01. 2 Unlimited - Maximum Overdrive (radio edit).mp3";
-    const string DECK_B_TRACK = "F:/Music/5 Seconds of Summer/Teeth - Single/01 Teeth.m4a";
+    const string MUSIC_FOLDER = "F:/Music";
 
     using var audio = new AudioEngine();
     using var deckA = audio.CreateDeck("A");
     using var deckB = audio.CreateDeck("B");
-    hud.AddDeck(deckA);
-    hud.AddDeck(deckB);
+    Deck[] decks = [deckA, deckB];
     hud.Log($"Audio decoders: {string.Join(", ", audio.Decoders)}");
-    LoadDeck(deckA, DECK_A_TRACK);
-    LoadDeck(deckB, DECK_B_TRACK);
 
-    void LoadDeck(Deck deck, string path)
+    // The library scans now and reads tags in the background; songs load onto decks in the background too.
+    using var library = new MusicLibrary(MUSIC_FOLDER);
+    var browser = hud.AddBrowser(library, decks.Select(deck => deck.Name));
+    hud.Log(library.Error is { } error ? $"Library: {error}" : $"Library: {library.Songs.Count} songs in {MUSIC_FOLDER}");
+
+    foreach (var deck in decks)
     {
-        try
-        {
-            var loading = Stopwatch.StartNew();
-            deck.Load(path);
-            hud.Log($"Deck {deck.Name}: loaded {deck.Artist} - {deck.Title} in {loading.ElapsedMilliseconds} ms");
-        }
-        catch (Exception e)
-        {
-            // A missing or unsupported file leaves the deck empty rather than stopping the app.
-            hud.Log($"Deck {deck.Name}: couldn't load {Path.GetFileName(path)}: {e.Message}");
-        }
+        hud.AddDeck(deck);
+        deck.Loaded += loaded => hud.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
+        // A missing or unsupported file leaves the deck as it was rather than stopping the app.
+        deck.LoadFailed += (failed, path, e) =>
+            hud.Log($"Deck {failed.Name}: couldn't load {Path.GetFileName(path)}: {e.Message}");
     }
+
+    void Load(Song song, Deck deck)
+    {
+        deck.BeginLoad(song.Path, $"{song.Artist} - {song.Title}");
+        hud.Log($"Deck {deck.Name}: loading {song.Artist} - {song.Title}");
+    }
+
+    browser.LoadRequested += (song, deckName) => Load(song, decks.First(deck => deck.Name == deckName));
+
+    // Double-click or Enter picks a deck for you: an empty one if there is one, otherwise one that's paused. Never a
+    // playing one, so a load can't cut off the song you're playing out.
+    browser.SongActivated += song =>
+    {
+        var target =
+            decks.FirstOrDefault(deck => !deck.IsLoaded && !deck.IsLoading)
+            ?? decks.FirstOrDefault(deck => !deck.IsPlaying);
+        if (target is not null)
+            Load(song, target);
+        else
+            hud.Log("Both decks are playing; use Load to A or B to replace one");
+    };
 
     // App shortcuts go through the UI first, so Escape in the note box only leaves the box, and typing there
     // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored.
@@ -105,6 +120,12 @@ static void Run(string? texturePath)
         {
             case GlfwKey.Escape when pressed:
                 window.ShouldClose = true;
+                break;
+            case GlfwKey.Number1 when pressed && browser.SelectedSong is { } song:
+                Load(song, deckA);
+                break;
+            case GlfwKey.Number2 when pressed && browser.SelectedSong is { } song:
+                Load(song, deckB);
                 break;
             case GlfwKey.Z:
                 if (pressed)
@@ -140,6 +161,10 @@ static void Run(string? texturePath)
             Glfw.WaitEvents();
             continue;
         }
+
+        // Finishes any background loads, raising their Loaded events here on the UI thread.
+        foreach (var deck in decks)
+            deck.Update();
 
         var time = clock.Elapsed.TotalSeconds;
         hud.Update(time, time - lastTime, size);

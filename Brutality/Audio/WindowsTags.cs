@@ -4,8 +4,14 @@ using System.Runtime.Versioning;
 namespace Brutality.Audio;
 
 /// <summary>
-/// Reads a file's title and artist from the Windows property system, the same place File Explorer gets them. It
-/// covers tag formats SDL_mixer doesn't read, such as the iTunes-style tags in .m4a files.
+/// A song's details as tagged; each is null if the file doesn't have it.
+/// </summary>
+readonly record struct SongTags(string? Title, string? Artist, string? Album, TimeSpan? Duration);
+
+/// <summary>
+/// Reads a file's tags from the Windows property system, the same place File Explorer gets them. It covers tag
+/// formats SDL_mixer doesn't read, such as the iTunes-style tags in .m4a files, and gives a length without decoding.
+/// Safe to call from any thread.
 /// </summary>
 [SupportedOSPlatform("windows")]
 static unsafe class WindowsTags
@@ -21,6 +27,12 @@ static unsafe class WindowsTags
     static readonly PropertyKey Title = new(new Guid("F29F85E0-4FF9-1068-AB91-08002B27B3D9"), 2);
     static readonly PropertyKey Artist = new(new Guid("56A3372E-CE9C-11D2-9F0E-006097C686F6"), 2);
     static readonly PropertyKey AlbumArtist = new(new Guid("56A3372E-CE9C-11D2-9F0E-006097C686F6"), 13);
+    static readonly PropertyKey Album = new(new Guid("56A3372E-CE9C-11D2-9F0E-006097C686F6"), 4);
+
+    /// <summary>
+    /// A UInt64 in 100-nanosecond units, the same as a TimeSpan's ticks.
+    /// </summary>
+    static readonly PropertyKey Duration = new(new Guid("64440490-4C8B-11D1-8B70-080036B11A03"), 3);
 
     [ComImport]
     [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
@@ -65,13 +77,16 @@ static unsafe class WindowsTags
     [DllImport("propsys.dll", ExactSpelling = true)]
     static extern int PropVariantToStringAlloc(IntPtr value, out IntPtr text);
 
+    [DllImport("propsys.dll", ExactSpelling = true)]
+    static extern int PropVariantToUInt64(IntPtr value, out ulong number);
+
     [DllImport("ole32.dll", ExactSpelling = true)]
     static extern int PropVariantClear(IntPtr value);
 
     /// <summary>
-    /// The title and artist, each null if the file doesn't have one or can't be read.
+    /// The file's tags; all null if it can't be read.
     /// </summary>
-    public static (string? Title, string? Artist) Read(string path)
+    public static SongTags Read(string path)
     {
         // The shell wants a full path with backslashes.
         var hr = SHGetPropertyStoreFromParsingName(
@@ -82,11 +97,17 @@ static unsafe class WindowsTags
             out var store
         );
         if (hr < 0)
-            return (null, null);
+            return default;
 
         try
         {
-            return (GetString(store, Title), GetString(store, Artist) ?? GetString(store, AlbumArtist));
+            var ticks = GetValue(store, Duration, ToTicks);
+            return new SongTags(
+                GetValue(store, Title, ToText),
+                GetValue(store, Artist, ToText) ?? GetValue(store, AlbumArtist, ToText),
+                GetValue(store, Album, ToText),
+                ticks is > 0 ? TimeSpan.FromTicks(ticks.Value) : null
+            );
         }
         finally
         {
@@ -94,28 +115,21 @@ static unsafe class WindowsTags
         }
     }
 
-    static string? GetString(IPropertyStore store, PropertyKey key)
+    /// <summary>
+    /// Reads one property and converts it with <paramref name="convert"/>; null if it's missing or won't convert.
+    /// </summary>
+    static T? GetValue<T>(IPropertyStore store, PropertyKey key, Func<IntPtr, T?> convert)
     {
         var value = Marshal.AllocCoTaskMem(PROPVARIANT_SIZE);
         try
         {
             new Span<byte>((void*)value, PROPVARIANT_SIZE).Clear();
             if (store.GetValue(key, value) < 0)
-                return null;
+                return default;
 
             try
             {
-                if (PropVariantToStringAlloc(value, out var text) < 0)
-                    return null;
-                try
-                {
-                    var result = Marshal.PtrToStringUni(text);
-                    return string.IsNullOrWhiteSpace(result) ? null : result;
-                }
-                finally
-                {
-                    Marshal.FreeCoTaskMem(text);
-                }
+                return convert(value);
             }
             finally
             {
@@ -127,4 +141,21 @@ static unsafe class WindowsTags
             Marshal.FreeCoTaskMem(value);
         }
     }
+
+    static string? ToText(IntPtr value)
+    {
+        if (PropVariantToStringAlloc(value, out var text) < 0)
+            return null;
+        try
+        {
+            var result = Marshal.PtrToStringUni(text);
+            return string.IsNullOrWhiteSpace(result) ? null : result;
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(text);
+        }
+    }
+
+    static long? ToTicks(IntPtr value) => PropVariantToUInt64(value, out var ticks) < 0 ? null : (long)ticks;
 }

@@ -31,6 +31,7 @@ sealed class Hud
     readonly Font _title;
     readonly List<DeckPanel> _decks = [];
     Panel? _deckRow;
+    SongBrowser? _browser;
     bool _paused;
     int2 _lastFramebufferSize;
 
@@ -130,7 +131,8 @@ sealed class Hud
         hint.Add(
             new Label(
                 body,
-                "Z / X  Cue / Play deck A\nN / M  Cue / Play deck B\nTab  Next control\nEnter  Press or submit\nEsc  Leave a box, or quit"
+                "1 / 2  Load selected song to deck A / B\nZ / X  Cue / Play deck A\nN / M  Cue / Play deck B\n"
+                    + "Tab  Next control\nEnter  Press, submit or load\nEsc  Leave a box, or quit"
             )
             {
                 Color = Muted,
@@ -141,6 +143,25 @@ sealed class Hud
     /// <summary>
     /// Shows <paramref name="deck"/>'s controls in the bottom-left, kept up to date by <see cref="Update"/>.
     /// </summary>
+    /// <summary>
+    /// Shows <paramref name="library"/> as a song browser at the top, between the stats panel and the event log,
+    /// with a "Load to" button for each named deck.
+    /// </summary>
+    public SongBrowser AddBrowser(Music.MusicLibrary library, IEnumerable<string> deckNames)
+    {
+        _browser = Ui.Add(
+            new SongBrowser(library, deckNames, _body, _title, Muted, Accent, listHeight: 300)
+            {
+                Position = new float2(292, 16),
+                Padding = 12,
+                Background = PanelBackground,
+                BorderColor = PanelBorder,
+                BorderWidth = 1,
+            }
+        );
+        return _browser;
+    }
+
     public void AddDeck(Deck deck)
     {
         // Decks sit side by side, left to right in the order they're added.
@@ -198,6 +219,7 @@ sealed class Hud
         _resolution.Text = $"{framebufferSize.X} × {framebufferSize.Y}";
         foreach (var deck in _decks)
             deck.Refresh();
+        _browser?.Update();
         if (framebufferSize != _lastFramebufferSize)
         {
             Log($"Framebuffer is {framebufferSize.X} × {framebufferSize.Y}");

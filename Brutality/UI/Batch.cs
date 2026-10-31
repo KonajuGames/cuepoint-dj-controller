@@ -84,6 +84,12 @@ sealed class Batch
 
     public void PopClip() => _clips.Pop();
 
+    /// <summary>
+    /// The clip rectangle in effect as (min, max) corners, or null if nothing is clipped. Elements with many parts,
+    /// such as a long list, use it to skip drawing what can't be seen.
+    /// </summary>
+    public (float2 Min, float2 Max)? ClipBounds => _clips.TryPeek(out var clip) ? clip : null;
+
     public void AddRect(float2 position, float2 size, float4 color)
     {
         if (color.W <= 0 || size.X <= 0 || size.Y <= 0)

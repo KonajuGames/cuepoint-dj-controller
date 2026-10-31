@@ -132,6 +132,12 @@ abstract class Element
     public virtual void PointerDrag(float2 point) { }
 
     /// <summary>
+    /// The mouse moved to <paramref name="point"/> while over this element (it's <see cref="Root.Hovered"/>), for
+    /// elements that highlight a part of themselves, such as a list's rows.
+    /// </summary>
+    public virtual void PointerMove(float2 point) { }
+
+    /// <summary>
     /// This element just took focus, by keyboard (Tab) if <paramref name="byKeyboard"/>, otherwise by a click or
     /// code.
     /// </summary>
