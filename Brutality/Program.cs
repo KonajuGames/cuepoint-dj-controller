@@ -9,8 +9,6 @@ using Brutality.Music;
 using Brutality.Rendering;
 using Brutality.UI;
 
-// Usage: Brutality [texture file]. Any format TextureLoader reads (PNG, JPG, KTX2, DDS, ...); defaults to a checkerboard.
-
 WindowsShell.AttachParentConsole();
 
 try
@@ -26,7 +24,7 @@ try
 
     try
     {
-        Run(args.FirstOrDefault());
+        Run();
     }
     finally
     {
@@ -42,7 +40,7 @@ catch (Exception e)
 
 return 0;
 
-static void Run(string? texturePath)
+static void Run()
 {
     Glfw.WindowHint(GlfwWindowHint.ClientApi, Glfw.Constants.GLFW_NO_API);
 
@@ -60,9 +58,9 @@ static void Run(string? texturePath)
     var titleFont = fonts.Add(FindFont(bold: true), 22);
 
     using var gpu = new GpuContext(window, ENABLE_VALIDATION);
-    using var renderer = new Renderer(gpu, window, texturePath, fonts);
+    using var renderer = new Renderer(gpu, window, fonts);
 
-    var hud = new Hud(bodyFont, titleFont, gpu.DeviceName, texturePath);
+    var hud = new Hud(bodyFont, titleFont, gpu.DeviceName);
     using var input = new GlfwUiInput(window, hud.Ui);
 
     const string MUSIC_FOLDER = "F:/Music";
@@ -149,7 +147,6 @@ static void Run(string? texturePath)
     };
 
     var clock = Stopwatch.StartNew();
-    var lastTime = 0.0;
     while (!window.ShouldClose)
     {
         Glfw.PollEvents();
@@ -166,13 +163,11 @@ static void Run(string? texturePath)
         foreach (var deck in decks)
             deck.Update();
 
-        var time = clock.Elapsed.TotalSeconds;
-        hud.Update(time, time - lastTime, size);
-        lastTime = time;
+        hud.Update(clock.Elapsed.TotalSeconds, size);
 
         hud.Ui.Layout(new float2(size.X, size.Y));
         input.UpdateCursor();
-        renderer.DrawFrame((float)hud.SceneTime, hud.Ui);
+        renderer.DrawFrame(hud.Ui);
     }
 }
 

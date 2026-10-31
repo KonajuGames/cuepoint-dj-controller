@@ -4,9 +4,8 @@ using Brutality.Audio;
 namespace Brutality.UI;
 
 /// <summary>
-/// The on-screen overlay: a stats panel with playback buttons in the top-left, a scrolling event log with a note box
-/// in the top-right and a controls hint in the bottom-right. It also owns the scene's clock, which the buttons pause and
-/// reset.
+/// The on-screen overlay: a stats panel in the top-left, the song browser beside it, a scrolling event log with a note
+/// box in the top-right, the decks in the bottom-left and a controls hint in the bottom-right.
 /// </summary>
 sealed class Hud
 {
@@ -17,28 +16,20 @@ sealed class Hud
 
     public Root Ui { get; } = new();
 
-    /// <summary>
-    /// Seconds of animation shown so far; stands still while paused.
-    /// </summary>
-    public double SceneTime { get; private set; }
-
     readonly Label _resolution;
     readonly Label _frameRate;
-    readonly Button _pause;
-    readonly Button _reset;
     readonly ScrollPanel _log;
     readonly Font _body;
     readonly Font _title;
     readonly List<DeckPanel> _decks = [];
     Panel? _deckRow;
     SongBrowser? _browser;
-    bool _paused;
     int2 _lastFramebufferSize;
 
     double _sampleStart;
     int _framesSinceSample;
 
-    public Hud(Font body, Font title, string deviceName, string? texturePath)
+    public Hud(Font body, Font title, string deviceName)
     {
         _body = body;
         _title = title;
@@ -59,21 +50,6 @@ sealed class Hud
         stats.Add(new Label(body, deviceName) { Color = Muted });
         _resolution = AddRow(stats, body, "Resolution");
         _frameRate = AddRow(stats, body, "Frame rate");
-        AddRow(stats, body, "Texture", texturePath is null ? "Checkerboard" : Path.GetFileName(texturePath));
-
-        var buttons = stats.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
-        _pause = buttons.Add(new Button(body, "Pause") { MinSize = new float2(84, 0), FocusColor = Accent });
-        _reset = buttons.Add(new Button(body, "Reset") { MinSize = new float2(84, 0), FocusColor = Accent });
-        _pause.Clicked += _ =>
-        {
-            _paused = !_paused;
-            Log(_paused ? $"Paused at {SceneTime:F1} s" : "Resumed");
-        };
-        _reset.Clicked += _ =>
-        {
-            SceneTime = 0;
-            Log("Reset the scene clock");
-        };
 
         var logPanel = Ui.Add(
             new Panel
@@ -91,7 +67,7 @@ sealed class Hud
         _log = logPanel.Add(
             new ScrollPanel
             {
-                // Long lines (a texture path, a long note) scroll sideways rather than widening the panel.
+                // Long lines (an error, a long note) scroll sideways rather than widening the panel.
                 MaxWidth = 280,
                 MaxHeight = 150,
                 MinSize = new float2(240, 0),
@@ -100,7 +76,6 @@ sealed class Hud
             }
         );
         Log($"GPU: {deviceName}");
-        Log($"Texture: {texturePath ?? "generated checkerboard"}");
         Log("Scroll here with the mouse wheel; Shift+wheel or a tilt wheel scrolls sideways");
 
         var note = logPanel.Add(
@@ -209,13 +184,8 @@ sealed class Hud
         return row.Add(new Label(font, value) { Color = Accent });
     }
 
-    public void Update(double time, double deltaTime, int2 framebufferSize)
+    public void Update(double time, int2 framebufferSize)
     {
-        if (!_paused)
-            SceneTime += deltaTime;
-        _pause.Text = _paused ? "Resume" : "Pause";
-        _reset.Enabled = SceneTime > 0;
-
         _resolution.Text = $"{framebufferSize.X} × {framebufferSize.Y}";
         foreach (var deck in _decks)
             deck.Refresh();

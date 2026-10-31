@@ -7,7 +7,7 @@ using Brutality.Rendering;
 namespace Brutality.UI;
 
 /// <summary>
-/// Draws a <see cref="Root"/> over the scene: one alpha-blended pipeline for both text and solid
+/// Draws a <see cref="Root"/> into the current rendering pass: one alpha-blended pipeline for both text and solid
 /// rectangles, reading the font atlas, with vertices rebuilt every frame.
 /// </summary>
 sealed unsafe class OverlayRenderer : IDisposable
@@ -43,7 +43,7 @@ sealed unsafe class OverlayRenderer : IDisposable
     /// <summary>
     /// Builds <paramref name="atlas"/> if it isn't already; add every font before this.
     /// </summary>
-    public OverlayRenderer(GpuContext gpu, FontAtlas atlas, VkFormat colorFormat, VkFormat depthFormat, int framesInFlight)
+    public OverlayRenderer(GpuContext gpu, FontAtlas atlas, VkFormat colorFormat, int framesInFlight)
     {
         _gpu = gpu;
         _device = gpu.Device;
@@ -115,7 +115,7 @@ sealed unsafe class OverlayRenderer : IDisposable
             ],
             null
         );
-        _pipeline = CreatePipeline(colorFormat, depthFormat);
+        _pipeline = CreatePipeline(colorFormat);
 
         _frames = new FrameVertices[framesInFlight];
         for (var i = 0; i < framesInFlight; i++)
@@ -178,7 +178,7 @@ sealed unsafe class OverlayRenderer : IDisposable
         return image;
     }
 
-    VkPipeline CreatePipeline(VkFormat colorFormat, VkFormat depthFormat)
+    VkPipeline CreatePipeline(VkFormat colorFormat)
     {
         using var shaderStages = ShaderLoader.Load(_device, "ui.vert", "ui.frag");
         var vertexInput = VertexInput.For<Vertex>();
@@ -191,13 +191,7 @@ sealed unsafe class OverlayRenderer : IDisposable
             DynamicStates = dynamicStates,
         };
 
-        // Drawn inside the scene's rendering pass, so the formats must match it even though depth isn't used.
-        var rendering = new VkPipelineRenderingCreateInfo
-        {
-            ColorAttachmentCount = 1,
-            ColorAttachmentFormats = &colorFormat,
-            DepthAttachmentFormat = depthFormat,
-        };
+        var rendering = new VkPipelineRenderingCreateInfo { ColorAttachmentCount = 1, ColorAttachmentFormats = &colorFormat };
 
         return _device.CreateGraphicsPipeline(
             VkPipelineCache.NullHandle,
@@ -253,7 +247,7 @@ sealed unsafe class OverlayRenderer : IDisposable
         vertices.CopyTo(new Span<Vertex>((void*)frame.Buffer.Info.PMappedData, vertexCount));
         _gpu.Allocator.FlushAllocation(frame.Buffer.Allocation, ByteSize.Zero, ByteSize.Of<Vertex>() * vertexCount);
 
-        // The scene flips Y in its viewport; UI coordinates already point down, so this one doesn't.
+        // An unflipped viewport: UI coordinates already point down, as Vulkan's clip space does.
         cmd.SetViewport(
             0,
             [

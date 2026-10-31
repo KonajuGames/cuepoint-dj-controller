@@ -5,8 +5,8 @@ using Brutal.VulkanApi.Abstractions;
 namespace Brutality.Rendering;
 
 /// <summary>
-/// The swapchain, a view and a "render finished" semaphore per image, and a depth buffer to match. Rebuilt whole
-/// whenever the window's framebuffer changes size.
+/// The swapchain, with a view and a "render finished" semaphore per image. Rebuilt whole whenever the window's
+/// framebuffer changes size.
 /// </summary>
 sealed class Swapchain : IDisposable
 {
@@ -22,11 +22,9 @@ sealed class Swapchain : IDisposable
     /// </summary>
     public VkSemaphore[] RenderFinished { get; }
 
-    public GpuImage Depth { get; }
-
     readonly Device _device;
 
-    public Swapchain(GpuContext gpu, int2 framebufferSize, VkFormat depthFormat, Swapchain? previous)
+    public Swapchain(GpuContext gpu, int2 framebufferSize, Swapchain? previous)
     {
         _device = gpu.Device;
         var physicalDevice = gpu.PhysicalDevice;
@@ -97,15 +95,6 @@ sealed class Swapchain : IDisposable
             );
             RenderFinished[i] = _device.CreateSemaphore(new VkSemaphoreCreateInfo(), null);
         }
-
-        Depth = new GpuImage(
-            gpu,
-            depthFormat,
-            extent,
-            1,
-            VkImageUsageFlags.DepthStencilAttachmentBit,
-            depthFormat.GetAspectMask()
-        );
     }
 
     /// <summary>
@@ -130,7 +119,6 @@ sealed class Swapchain : IDisposable
 
     public void Dispose()
     {
-        Depth.Dispose();
         foreach (var semaphore in RenderFinished)
             _device.DestroySemaphore(semaphore, null);
         foreach (var view in ImageViews)

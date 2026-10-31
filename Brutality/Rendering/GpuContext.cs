@@ -191,19 +191,6 @@ sealed unsafe class GpuContext : IDisposable
         return buffer;
     }
 
-    /// <summary>
-    /// Creates a device-local buffer and fills it with <paramref name="data"/> through a staging buffer.
-    /// </summary>
-    public GpuBuffer CreateDeviceBuffer<T>(ReadOnlySpan<T> data, VkBufferUsageFlags usage)
-        where T : unmanaged
-    {
-        var size = ByteSize.Of(data);
-        using var staging = CreateStagingBuffer(data);
-        var buffer = GpuBuffer.Create(Allocator, size, usage | VkBufferUsageFlags.TransferDstBit);
-        SubmitAndWait(cmd => cmd.CopyBuffer(staging.Buffer, buffer.Buffer, size));
-        return buffer;
-    }
-
     public void Dispose()
     {
         // Reverse creation order: everything made from the device has already been destroyed by its owner.
