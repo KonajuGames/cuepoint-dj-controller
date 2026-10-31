@@ -1,6 +1,5 @@
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using Brutal.SdlApi;
-using Brutal.SdlApi.Mixer;
 using NAudio.Wave;
 
 namespace Brutality.Audio;
@@ -8,16 +7,15 @@ namespace Brutality.Audio;
 /// <summary>
 /// Decodes audio with Windows' own Media Foundation codecs, for the formats SDL_mixer has no decoder for: chiefly
 /// AAC in .m4a files, but also WMA and anything else Windows can play. NAudio's MediaFoundationReader does the COM
-/// work; this turns its output into an SDL_mixer audio clip.
+/// work; this collects its output as float samples.
 /// </summary>
 [SupportedOSPlatform("windows")]
-static unsafe class MediaFoundationDecoder
+static class MediaFoundationDecoder
 {
     /// <summary>
-    /// Decodes all of <paramref name="path"/> to 32-bit float samples and hands them to <paramref name="mixer"/>,
-    /// which keeps its own copy.
+    /// Decodes all of <paramref name="path"/> to 32-bit float samples.
     /// </summary>
-    public static MixAudio Load(MixMixer mixer, string path)
+    public static PcmAudio Decode(string path)
     {
         using var reader = new MediaFoundationReader(
             path,
@@ -30,36 +28,22 @@ static unsafe class MediaFoundationDecoder
                 $"Media Foundation gave {format.Encoding} at {format.BitsPerSample} bits, not 32-bit float"
             );
 
-        var samples = ReadAll(reader);
-        var spec = new SdlAudioSpec
-        {
-            format = SdlAudioFormat.F32,
-            channels = format.Channels,
-            freq = format.SampleRate,
-        };
-
-        fixed (byte* data = samples.AsSpan())
-            return mixer.LoadRawAudio(data, (nuint)samples.Count, &spec);
-    }
-
-    /// <summary>
-    /// Reads to the end. Length is only an estimate for compressed files, so it sizes the first buffer rather than
-    /// limiting the read.
-    /// </summary>
-    static ArraySegment<byte> ReadAll(MediaFoundationReader reader)
-    {
-        var buffer = new byte[Math.Max(reader.Length, 1 << 20)];
+        // Length is only an estimate for compressed files, so it sizes the first buffer rather than limiting the read.
+        var bytes = new byte[Math.Max(reader.Length, 1 << 20)];
         var filled = 0;
         while (true)
         {
-            if (filled == buffer.Length)
-                Array.Resize(ref buffer, buffer.Length * 2);
+            if (filled == bytes.Length)
+                Array.Resize(ref bytes, bytes.Length * 2);
 
-            var read = reader.Read(buffer.AsSpan(filled));
+            var read = reader.Read(bytes.AsSpan(filled));
             if (read == 0)
                 break;
             filled += read;
         }
-        return new ArraySegment<byte>(buffer, 0, filled);
+
+        var frameBytes = sizeof(float) * format.Channels;
+        var samples = MemoryMarshal.Cast<byte, float>(bytes.AsSpan(0, filled - filled % frameBytes)).ToArray();
+        return new PcmAudio(samples, format.Channels, format.SampleRate);
     }
 }

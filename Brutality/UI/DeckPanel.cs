@@ -17,7 +17,7 @@ sealed class DeckPanel : Panel
     readonly Label _artist;
     readonly Label _time;
     readonly Label _loading;
-    readonly Slider _progress;
+    readonly WaveformBar _progress;
     readonly Button _cue;
     readonly Button _playPause;
     readonly Slider _volume;
@@ -36,16 +36,18 @@ sealed class DeckPanel : Panel
         // Always there, empty when not loading, so the panel doesn't change height as loads come and go.
         _loading = info.Add(new Label(body) { Color = muted });
 
-        // Fills as the song plays, with a thin playhead and a mark at the cue point; click or drag to seek.
+        // The song's waveform, coloured as it plays, with a thin playhead and a mark at the cue point; click or drag
+        // to seek.
         _progress = info.Add(
-            new Slider
+            new WaveformBar
             {
                 Length = INFO_WIDTH,
-                Thickness = 14,
+                Thickness = 40,
                 TrackThickness = 6,
-                HandleLength = 3,
+                HandleLength = 2,
                 ShowFill = true,
                 FillColor = accent * new float4(1, 1, 1, 0.6f),
+                PlayedColor = accent,
                 HandleColor = Colors.White,
                 FocusColor = accent,
             }
@@ -101,6 +103,7 @@ sealed class DeckPanel : Panel
             _progress.Max = 1;
             _progress.Value = 0;
             _progress.Marks.Clear();
+            _progress.Waveform = null;
             return;
         }
 
@@ -113,6 +116,7 @@ sealed class DeckPanel : Panel
             $"{Format(position)} / {Format(_deck.Duration)}   -{Format(remaining)}   Cue {Format(_deck.CuePoint)}";
 
         _progress.Enabled = true;
+        _progress.Waveform = _deck.Waveform;
         _progress.Max = (float)_deck.Duration.TotalSeconds;
         // While it's being dragged the slider leads and the deck follows, so don't pull it back.
         if (!_progress.IsDragging)

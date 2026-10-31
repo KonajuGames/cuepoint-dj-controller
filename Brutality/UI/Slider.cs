@@ -19,7 +19,7 @@ enum Orientation
 /// arrows nudge it, Page Up/Down move a tenth, and Home/End go to the ends. <see cref="Changed"/> fires only for
 /// those, not when code sets <see cref="Value"/>, so a slider can mirror something that also changes by itself.
 /// </summary>
-sealed class Slider : Element
+class Slider : Element
 {
     const long DOUBLE_CLICK_MS = 500;
 
@@ -88,22 +88,22 @@ sealed class Slider : Element
     public override bool IsInteractive => Enabled;
     public override bool IsFocusable => Enabled;
 
-    bool IsVertical => Orientation == Orientation.Vertical;
+    protected bool IsVertical => Orientation == Orientation.Vertical;
 
-    float Fraction => Max == Min ? 0 : (_value - Min) / (Max - Min);
+    protected float Fraction => Max == Min ? 0 : (_value - Min) / (Max - Min);
 
     public override float2 Measure() => Size = IsVertical ? new float2(Thickness, Length) : new float2(Length, Thickness);
 
     /// <summary>
     /// How far along the handle can travel, in pixels: the length less the handle's own.
     /// </summary>
-    float Travel => MathF.Max(1, Length - HandleLength);
+    protected float Travel => MathF.Max(1, Length - HandleLength);
 
     /// <summary>
     /// Pixels from the start of the track (top-left, or bottom for vertical) to the handle's leading edge for
     /// <paramref name="fraction"/>.
     /// </summary>
-    float OffsetOf(float fraction) => fraction * Travel;
+    protected float OffsetOf(float fraction) => fraction * Travel;
 
     /// <summary>
     /// How far along the track <paramref name="point"/> is, in pixels, measured the way values increase.
@@ -121,25 +121,8 @@ sealed class Slider : Element
 
     public override void Draw(Batch batch)
     {
-        var alpha = Enabled ? 1f : 0.4f;
-        float4 Faded(float4 c) => c * new float4(1, 1, 1, alpha);
-
-        // The track runs centre to centre of the handle's travel, so its ends line up with the handle at Min and Max.
         var half = HandleLength / 2;
-        var trackStart = IsVertical
-            ? new float2(ScreenPosition.X + (Size.X - TrackThickness) / 2, ScreenPosition.Y + half)
-            : new float2(ScreenPosition.X + half, ScreenPosition.Y + (Size.Y - TrackThickness) / 2);
-        var trackSize = IsVertical ? new float2(TrackThickness, Travel) : new float2(Travel, TrackThickness);
-        batch.AddRect(trackStart, trackSize, Faded(TrackColor));
-
-        if (ShowFill)
-        {
-            var fill = OffsetOf(Fraction);
-            if (IsVertical)
-                batch.AddRect(trackStart + new float2(0, Travel - fill), new float2(TrackThickness, fill), Faded(FillColor));
-            else
-                batch.AddRect(trackStart, new float2(fill, TrackThickness), Faded(FillColor));
-        }
+        DrawTrack(batch);
 
         foreach (var mark in Marks)
         {
@@ -160,6 +143,35 @@ sealed class Slider : Element
 
         if (ShowFocus)
             batch.AddBorder(ScreenPosition - new float2(2, 2), Size + new float2(4, 4), 2, FocusColor);
+    }
+
+    /// <summary>
+    /// Colours are drawn faded while disabled.
+    /// </summary>
+    protected float4 Faded(float4 color) => Enabled ? color : color * new float4(1, 1, 1, 0.4f);
+
+    /// <summary>
+    /// The track and its fill, under the marks and handle. Override to draw something else there, such as a
+    /// waveform.
+    /// </summary>
+    protected virtual void DrawTrack(Batch batch)
+    {
+        // The track runs centre to centre of the handle's travel, so its ends line up with the handle at Min and Max.
+        var half = HandleLength / 2;
+        var trackStart = IsVertical
+            ? new float2(ScreenPosition.X + (Size.X - TrackThickness) / 2, ScreenPosition.Y + half)
+            : new float2(ScreenPosition.X + half, ScreenPosition.Y + (Size.Y - TrackThickness) / 2);
+        var trackSize = IsVertical ? new float2(TrackThickness, Travel) : new float2(Travel, TrackThickness);
+        batch.AddRect(trackStart, trackSize, Faded(TrackColor));
+
+        if (ShowFill)
+        {
+            var fill = OffsetOf(Fraction);
+            if (IsVertical)
+                batch.AddRect(trackStart + new float2(0, Travel - fill), new float2(TrackThickness, fill), Faded(FillColor));
+            else
+                batch.AddRect(trackStart, new float2(fill, TrackThickness), Faded(FillColor));
+        }
     }
 
     public override void PointerDown(float2 point, Modifiers modifiers)

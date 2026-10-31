@@ -10,14 +10,17 @@ namespace Brutality.Audio;
 /// </summary>
 sealed class Deck : IDisposable
 {
-    // SDL_mixer's metadata property names. The bindings only mention them in doc comments, so they're spelled out.
-    const string TITLE_PROPERTY = "SDL_mixer.metadata.title";
-    const string ARTIST_PROPERTY = "SDL_mixer.metadata.artist";
-
     /// <summary>
     /// A decoded song, ready to put on a deck: done off the UI thread, so loading doesn't stall the screen.
     /// </summary>
-    sealed record DecodedSong(string Path, MixAudio Audio, string Title, string Artist, TimeSpan Duration);
+    sealed record DecodedSong(
+        string Path,
+        MixAudio Audio,
+        string Title,
+        string Artist,
+        TimeSpan Duration,
+        Waveform Waveform
+    );
 
     public string Name { get; }
 
@@ -31,6 +34,11 @@ sealed class Deck : IDisposable
     public string Artist { get; private set; } = "";
 
     public TimeSpan Duration { get; private set; }
+
+    /// <summary>
+    /// The loaded song's overview, for drawing; null when nothing's loaded.
+    /// </summary>
+    public Waveform? Waveform { get; private set; }
 
     public bool IsLoaded => !_audio.IsNull();
 
@@ -188,54 +196,46 @@ sealed class Deck : IDisposable
         );
 
     /// <summary>
-    /// Decodes and reads tags; safe on any thread, since it touches nothing on the deck.
+    /// Decodes to samples, builds the waveform from them, then hands them to SDL_mixer; reads tags too. Safe on any
+    /// thread, since it touches nothing on the deck.
     /// </summary>
     static DecodedSong Decode(AudioEngine engine, string path)
     {
-        var audio = DecodeAudio(engine, path);
-        try
-        {
-            var properties = audio.GetProperties();
-            var title = Sdl.PInvoke.GetStringProperty(properties, TITLE_PROPERTY, "");
-            var artist = Sdl.PInvoke.GetStringProperty(properties, ARTIST_PROPERTY, "");
+        var (pcm, title, artist) = DecodePcm(path);
 
-            // Media Foundation decodes but brings no tags, and SDL_mixer can't read .m4a tags, so ask Windows.
-            if (string.IsNullOrEmpty(title) && OperatingSystem.IsWindows())
-            {
-                var tags = WindowsTags.Read(path);
-                (title, artist) = (tags.Title, tags.Artist);
-            }
-
-            return new DecodedSong(
-                path,
-                audio,
-                string.IsNullOrEmpty(title) ? System.IO.Path.GetFileNameWithoutExtension(path) : title,
-                artist ?? "",
-                TimeSpan.FromMilliseconds(audio.FramesToMS(audio.GetDuration()))
-            );
-        }
-        catch
+        // Media Foundation decodes but brings no tags, and SDL_mixer can't read .m4a tags, so ask Windows.
+        if (string.IsNullOrEmpty(title) && OperatingSystem.IsWindows())
         {
-            audio.Dispose();
-            throw;
+            var tags = WindowsTags.Read(path);
+            (title, artist) = (tags.Title, tags.Artist);
         }
+
+        var waveform = Waveform.From(pcm);
+        return new DecodedSong(
+            path,
+            pcm.ToMixAudio(engine.Mixer),
+            string.IsNullOrEmpty(title) ? System.IO.Path.GetFileNameWithoutExtension(path) : title,
+            artist ?? "",
+            pcm.Duration,
+            waveform
+        );
     }
 
     /// <summary>
     /// SDL_mixer decodes MP3, WAV, FLAC and OGG itself. Anything it can't (AAC in .m4a, chiefly) goes to Windows'
     /// Media Foundation instead, when on Windows.
     /// </summary>
-    static MixAudio DecodeAudio(AudioEngine engine, string path)
+    static (PcmAudio Audio, string? Title, string? Artist) DecodePcm(string path)
     {
         try
         {
-            return engine.Mixer.LoadAudio(path, true);
+            return SdlPcmDecoder.Decode(path);
         }
         catch (SdlException sdlError) when (OperatingSystem.IsWindows() && File.Exists(path))
         {
             try
             {
-                return MediaFoundationDecoder.Load(engine.Mixer, path);
+                return (MediaFoundationDecoder.Decode(path), null, null);
             }
             catch (Exception mfError)
             {
@@ -261,6 +261,7 @@ sealed class Deck : IDisposable
         Title = song.Title;
         Artist = song.Artist;
         Duration = song.Duration;
+        Waveform = song.Waveform;
 
         // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
         _track.Play(0);
