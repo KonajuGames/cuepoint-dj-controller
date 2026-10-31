@@ -46,7 +46,7 @@ sealed class Hud
                 MinSize = new float2(260, 0),
             }
         );
-        stats.Add(new Label(title, "Hello BRUTAL"));
+        stats.Add(new Label(title, "System"));
         stats.Add(new Label(body, deviceName) { Color = Muted });
         _resolution = AddRow(stats, body, "Resolution");
         _frameRate = AddRow(stats, body, "Frame rate");
