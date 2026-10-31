@@ -72,12 +72,58 @@ sealed class Deck : IDisposable
     long _cueFrames;
     bool _previewing;
 
-    internal Deck(AudioEngine engine, string name)
+    internal Deck(AudioEngine engine, string name, CrossfaderSide side)
     {
         Name = name;
         _engine = engine;
+        _side = side;
         _track = engine.Mixer.CreateTrack();
+        ApplyGain();
     }
+
+    float _volume = 1;
+    CrossfaderSide _side;
+
+    /// <summary>
+    /// The deck's volume fader, from 0 (silent) to 1 (full).
+    /// </summary>
+    public float Volume
+    {
+        get => _volume;
+        set
+        {
+            _volume = Math.Clamp(value, 0, 1);
+            ApplyGain();
+        }
+    }
+
+    public CrossfaderSide Side
+    {
+        get => _side;
+        set
+        {
+            _side = value;
+            ApplyGain();
+        }
+    }
+
+    /// <summary>
+    /// What the deck plays at: its fader through an audio taper, times what the crossfader lets through.
+    /// </summary>
+    public float Gain => VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
+
+    /// <summary>
+    /// Fader position to gain. Squared, so the fader's travel feels even to the ear: halfway is about -12 dB rather
+    /// than the barely-quieter -6 dB a straight line gives, and the bottom of the travel isn't wasted on near-silence.
+    /// </summary>
+    public static float VolumeTaper(float position) => position * position;
+
+    internal void ApplyGain() => _track.SetGain(Gain);
+
+    /// <summary>
+    /// The gain SDL_mixer has for the track, read back, for checking that <see cref="Gain"/> reached it.
+    /// </summary>
+    internal float AppliedGain => _track.GetGain();
 
     /// <summary>
     /// Where playback is, from SDL_mixer's audio thread, so it moves on between calls while playing.
@@ -300,6 +346,25 @@ sealed class Deck : IDisposable
     }
 
     /// <summary>
+    /// Jumps to <paramref name="position"/> in the song, which keeps playing or stays paused. A cue preview carries on
+    /// from the new place. The cue point doesn't move.
+    /// </summary>
+    public void Seek(TimeSpan position)
+    {
+        if (!IsLoaded)
+            return;
+
+        var clamped = TimeSpan.FromTicks(Math.Clamp(position.Ticks, 0, Duration.Ticks));
+        var frames = _track.MSToFrames((long)clamped.TotalMilliseconds);
+
+        // A song that played to the end has stopped and needs restarting (paused) before it has a position to set.
+        if (!_track.Playing() && !_track.Paused())
+            PauseAt(frames);
+        else
+            _track.SetPlaybackPosition(frames);
+    }
+
+    /// <summary>
     /// Pauses at <paramref name="frames"/> into the song, from any state, including stopped at the end.
     /// </summary>
     void PauseAt(long frames)
@@ -326,6 +391,8 @@ sealed class Deck : IDisposable
             }
             _pending = null;
         }
+
+        _engine.Remove(this);
 
         // The track first, so nothing is still reading the audio when it's freed.
         _track.Dispose();

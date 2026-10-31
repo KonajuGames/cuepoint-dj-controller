@@ -125,7 +125,7 @@ sealed class Hud
     public SongBrowser AddBrowser(Music.MusicLibrary library, IEnumerable<string> deckNames)
     {
         _browser = Ui.Add(
-            new SongBrowser(library, deckNames, _body, _title, Muted, Accent, listHeight: 300)
+            new SongBrowser(library, deckNames, _body, _title, Muted, Accent, listHeight: 280)
             {
                 Position = new float2(292, 16),
                 Padding = 12,
@@ -137,9 +137,48 @@ sealed class Hud
         return _browser;
     }
 
-    public void AddDeck(Deck deck)
+    /// <summary>
+    /// Adds the crossfader to the deck row, after any decks added so far; call it between the left and right decks.
+    /// </summary>
+    public void AddCrossfader(AudioEngine engine)
     {
-        // Decks sit side by side, left to right in the order they're added.
+        var panel = DeckRow.Add(
+            new Panel
+            {
+                Padding = 12,
+                Spacing = 10,
+                Background = PanelBackground,
+                BorderColor = PanelBorder,
+                BorderWidth = 1,
+            }
+        );
+        panel.Add(new Label(_title, "Mix"));
+        panel.Add(new Label(_body, "Crossfader") { Color = Muted });
+
+        var row = panel.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
+        row.Add(new Label(_body, "A") { Color = Muted });
+        var slider = row.Add(
+            new Slider
+            {
+                Length = 140,
+                Thickness = 22,
+                HandleLength = 12,
+                DefaultValue = 0.5f,
+                Value = engine.Crossfader,
+                FocusColor = Accent,
+            }
+        );
+        slider.Marks.Add(0.5f);
+        slider.Changed += s => engine.Crossfader = s.Value;
+        row.Add(new Label(_body, "B") { Color = Muted });
+
+        panel.Add(new Label(_body, "Double-click to centre") { Color = Muted });
+    }
+
+    /// <summary>
+    /// The decks and the crossfader, side by side along the bottom-left in the order they're added.
+    /// </summary>
+    Panel DeckRow =>
         _deckRow ??= Ui.Add(
             new Panel
             {
@@ -150,14 +189,15 @@ sealed class Hud
             }
         );
 
-        var panel = _deckRow.Add(
+    public void AddDeck(Deck deck)
+    {
+        var panel = DeckRow.Add(
             new DeckPanel(deck, _body, _title, Muted, Accent)
             {
                 Padding = 12,
                 Background = PanelBackground,
                 BorderColor = PanelBorder,
                 BorderWidth = 1,
-                MinSize = new float2(320, 0),
             }
         );
         _decks.Add(panel);

@@ -66,8 +66,8 @@ static void Run()
     const string MUSIC_FOLDER = "F:/Music";
 
     using var audio = new AudioEngine();
-    using var deckA = audio.CreateDeck("A");
-    using var deckB = audio.CreateDeck("B");
+    using var deckA = audio.CreateDeck("A", CrossfaderSide.Left);
+    using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
     Deck[] decks = [deckA, deckB];
     hud.Log($"Audio decoders: {string.Join(", ", audio.Decoders)}");
 
@@ -76,9 +76,13 @@ static void Run()
     var browser = hud.AddBrowser(library, decks.Select(deck => deck.Name));
     hud.Log(library.Error is { } error ? $"Library: {error}" : $"Library: {library.Songs.Count} songs in {MUSIC_FOLDER}");
 
+    // Left to right: deck A, the crossfader, deck B.
+    hud.AddDeck(deckA);
+    hud.AddCrossfader(audio);
+    hud.AddDeck(deckB);
+
     foreach (var deck in decks)
     {
-        hud.AddDeck(deck);
         deck.Loaded += loaded => hud.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
         // A missing or unsupported file leaves the deck as it was rather than stopping the app.
         deck.LoadFailed += (failed, path, e) =>

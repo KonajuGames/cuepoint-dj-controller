@@ -4,8 +4,19 @@ using Brutal.SdlApi.Mixer;
 namespace Brutality.Audio;
 
 /// <summary>
-/// SDL's audio subsystem and one SDL_mixer mixer on the default output device. Decks play through it. Only one
-/// should exist at a time, since it starts and stops SDL's audio for the whole process.
+/// Which end of the crossfader a deck is on. A deck on neither side plays regardless of the crossfader.
+/// </summary>
+enum CrossfaderSide
+{
+    None,
+    Left,
+    Right,
+}
+
+/// <summary>
+/// SDL's audio subsystem and one SDL_mixer mixer on the default output device, plus the crossfader between its decks.
+/// Decks play through it. Only one should exist at a time, since it starts and stops SDL's audio for the whole
+/// process.
 /// </summary>
 sealed unsafe class AudioEngine : IDisposable
 {
@@ -40,7 +51,44 @@ sealed unsafe class AudioEngine : IDisposable
         }
     }
 
-    public Deck CreateDeck(string name) => new(this, name);
+    readonly List<Deck> _decks = [];
+    float _crossfader = 0.5f;
+
+    public Deck CreateDeck(string name, CrossfaderSide side = CrossfaderSide.None)
+    {
+        var deck = new Deck(this, name, side);
+        _decks.Add(deck);
+        return deck;
+    }
+
+    internal void Remove(Deck deck) => _decks.Remove(deck);
+
+    /// <summary>
+    /// The crossfader: 0 is all the way to the left-hand decks, 1 all the way right, 0.5 the middle.
+    /// </summary>
+    public float Crossfader
+    {
+        get => _crossfader;
+        set
+        {
+            _crossfader = Math.Clamp(value, 0, 1);
+            foreach (var deck in _decks)
+                deck.ApplyGain();
+        }
+    }
+
+    /// <summary>
+    /// How loud the crossfader lets a deck on <paramref name="side"/> through, from 0 to 1. A constant-power curve:
+    /// in the middle each side is at about 0.707 (-3 dB), so the two together sound as loud as either alone and a
+    /// blend doesn't swell as it passes the centre.
+    /// </summary>
+    public float CrossfaderGain(CrossfaderSide side) =>
+        side switch
+        {
+            CrossfaderSide.Left => MathF.Cos(_crossfader * MathF.PI / 2),
+            CrossfaderSide.Right => MathF.Sin(_crossfader * MathF.PI / 2),
+            _ => 1,
+        };
 
     public void Dispose()
     {
