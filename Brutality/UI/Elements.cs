@@ -94,7 +94,21 @@ abstract class Element
     /// </summary>
     public event Action<Element>? Clicked;
 
+    /// <summary>
+    /// The left button went down on this element, or the keyboard activated it. Always followed by
+    /// <see cref="PressEnded"/>, for controls that act while held, such as a deck's cue button.
+    /// </summary>
+    public event Action<Element>? PressStarted;
+
+    /// <summary>
+    /// The press from <see cref="PressStarted"/> is over: the button came up (wherever the mouse is, unlike
+    /// <see cref="Clicked"/>), or the element was disabled or hidden while held.
+    /// </summary>
+    public event Action<Element>? PressEnded;
+
     internal void RaiseClicked() => Clicked?.Invoke(this);
+    internal void RaisePressStarted() => PressStarted?.Invoke(this);
+    internal void RaisePressEnded() => PressEnded?.Invoke(this);
 
     /// <summary>
     /// A key went down (or repeated) while this element had focus. Returns whether it was used.
@@ -381,6 +395,10 @@ sealed class Button : Panel
     {
         if (key is not (Key.Enter or Key.Space))
             return false;
+
+        // A complete press, so anything listening for press and release sees the same as from a mouse click.
+        RaisePressStarted();
+        RaisePressEnded();
         RaiseClicked();
         return true;
     }

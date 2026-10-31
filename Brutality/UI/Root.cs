@@ -242,6 +242,7 @@ sealed class Root
             Pressed.IsPressed = true;
             if (_mouse is { } mouse)
                 Pressed.PointerDown(mouse, modifiers);
+            Pressed.RaisePressStarted();
             return;
         }
 
@@ -250,6 +251,7 @@ sealed class Root
 
         Pressed = null;
         pressed.IsPressed = false;
+        pressed.RaisePressEnded();
         if (pressed == Hovered)
             pressed.RaiseClicked();
     }
@@ -373,8 +375,11 @@ sealed class Root
         // Something that was pressed and then disabled or hidden can't be clicked any more.
         if (Pressed is { IsInteractive: false } or { Visible: false })
         {
-            Pressed.IsPressed = false;
+            // Still ends the press, so a held control (a cue preview, say) never gets stuck down.
+            var cancelled = Pressed;
             Pressed = null;
+            cancelled.IsPressed = false;
+            cancelled.RaisePressEnded();
         }
 
         if (hit == Hovered)

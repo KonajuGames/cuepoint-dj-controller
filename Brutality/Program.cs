@@ -64,36 +64,67 @@ static void Run(string? texturePath)
     var hud = new Hud(bodyFont, titleFont, gpu.DeviceName, texturePath);
     using var input = new GlfwUiInput(window, hud.Ui);
 
-    // Step 1 of the DJ app: one deck with a fixed track. A song list replaces this in step 3.
+    // Fixed tracks until the song list (step 3): an MP3 on A, and an .m4a on B, which goes through Media Foundation.
     const string DECK_A_TRACK =
         "F:/Music/_CDs/2 Unlimited/Maximum Overdrive/01. 2 Unlimited - Maximum Overdrive (radio edit).mp3";
+    const string DECK_B_TRACK = "F:/Music/5 Seconds of Summer/Teeth - Single/01 Teeth.m4a";
 
     using var audio = new AudioEngine();
     using var deckA = audio.CreateDeck("A");
+    using var deckB = audio.CreateDeck("B");
     hud.AddDeck(deckA);
+    hud.AddDeck(deckB);
     hud.Log($"Audio decoders: {string.Join(", ", audio.Decoders)}");
-    try
+    LoadDeck(deckA, DECK_A_TRACK);
+    LoadDeck(deckB, DECK_B_TRACK);
+
+    void LoadDeck(Deck deck, string path)
     {
-        var loading = Stopwatch.StartNew();
-        deckA.Load(DECK_A_TRACK);
-        hud.Log($"Deck A: loaded {deckA.Artist} - {deckA.Title} in {loading.ElapsedMilliseconds} ms");
-    }
-    catch (Exception e)
-    {
-        // A missing or unsupported file leaves the deck empty rather than stopping the app.
-        hud.Log($"Deck A: couldn't load {Path.GetFileName(DECK_A_TRACK)}: {e.Message}");
+        try
+        {
+            var loading = Stopwatch.StartNew();
+            deck.Load(path);
+            hud.Log($"Deck {deck.Name}: loaded {deck.Artist} - {deck.Title} in {loading.ElapsedMilliseconds} ms");
+        }
+        catch (Exception e)
+        {
+            // A missing or unsupported file leaves the deck empty rather than stopping the app.
+            hud.Log($"Deck {deck.Name}: couldn't load {Path.GetFileName(path)}: {e.Message}");
+        }
     }
 
-    // App shortcuts go through the UI first, so Escape in the note box only leaves the box, and Space on a focused
-    // button presses the button rather than the deck.
+    // App shortcuts go through the UI first, so Escape in the note box only leaves the box, and typing there
+    // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored.
     input.UnhandledKey += (key, action, _) =>
     {
-        if (action != GlfwKeyAction.Press)
+        if (action == GlfwKeyAction.Repeat)
             return;
-        if (key == GlfwKey.Escape)
-            window.ShouldClose = true;
-        else if (key == GlfwKey.Space)
-            deckA.TogglePlay();
+        var pressed = action == GlfwKeyAction.Press;
+
+        switch (key)
+        {
+            case GlfwKey.Escape when pressed:
+                window.ShouldClose = true;
+                break;
+            case GlfwKey.Z:
+                if (pressed)
+                    deckA.CueDown();
+                else
+                    deckA.CueUp();
+                break;
+            case GlfwKey.X when pressed:
+                deckA.TogglePlay();
+                break;
+            case GlfwKey.N:
+                if (pressed)
+                    deckB.CueDown();
+                else
+                    deckB.CueUp();
+                break;
+            case GlfwKey.M when pressed:
+                deckB.TogglePlay();
+                break;
+        }
     };
 
     var clock = Stopwatch.StartNew();

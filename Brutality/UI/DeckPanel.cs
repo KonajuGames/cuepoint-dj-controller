@@ -4,8 +4,8 @@ using Brutality.Audio;
 namespace Brutality.UI;
 
 /// <summary>
-/// A deck's controls and read-out: what's loaded, where it's up to, and a play/pause button. Call
-/// <see cref="Refresh"/> each frame to pick up the deck's position.
+/// A deck's controls and read-out: what's loaded, where it's up to and its cue point, with Cue and Play/Pause
+/// buttons. Call <see cref="Refresh"/> each frame to pick up the deck's position.
 /// </summary>
 sealed class DeckPanel : Panel
 {
@@ -13,6 +13,7 @@ sealed class DeckPanel : Panel
     readonly Label _title;
     readonly Label _artist;
     readonly Label _time;
+    readonly Button _cue;
     readonly Button _playPause;
 
     public DeckPanel(Deck deck, Font body, Font heading, float4 muted, float4 accent)
@@ -25,7 +26,14 @@ sealed class DeckPanel : Panel
         _artist = Add(new Label(body) { Color = muted });
         _time = Add(new Label(body) { Color = accent });
 
-        _playPause = Add(new Button(body, "Play") { MinSize = new float2(84, 0), FocusColor = accent });
+        var buttons = Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
+
+        // Cue acts on press and release rather than click, since holding it previews from the cue point.
+        _cue = buttons.Add(new Button(body, "Cue") { MinSize = new float2(84, 0), FocusColor = accent });
+        _cue.PressStarted += _ => _deck.CueDown();
+        _cue.PressEnded += _ => _deck.CueUp();
+
+        _playPause = buttons.Add(new Button(body, "Play") { MinSize = new float2(84, 0), FocusColor = accent });
         _playPause.Clicked += _ => _deck.TogglePlay();
 
         Refresh();
@@ -38,6 +46,7 @@ sealed class DeckPanel : Panel
             _title.Text = "No track loaded";
             _artist.Text = "";
             _time.Text = "";
+            _cue.Enabled = false;
             _playPause.Enabled = false;
             return;
         }
@@ -47,10 +56,13 @@ sealed class DeckPanel : Panel
 
         var position = _deck.Position;
         var remaining = _deck.Duration - position;
-        _time.Text = $"{Format(position)} / {Format(_deck.Duration)}   -{Format(remaining)}";
+        _time.Text =
+            $"{Format(position)} / {Format(_deck.Duration)}   -{Format(remaining)}   Cue {Format(_deck.CuePoint)}";
 
+        _cue.Enabled = true;
         _playPause.Enabled = true;
-        _playPause.Text = _deck.IsPlaying ? "Pause" : "Play";
+        // A cue preview is playing, but Play would latch it rather than pause, so it still offers Play.
+        _playPause.Text = _deck.IsPlaying && !_deck.IsCuePreviewing ? "Pause" : "Play";
     }
 
     static string Format(TimeSpan time) =>

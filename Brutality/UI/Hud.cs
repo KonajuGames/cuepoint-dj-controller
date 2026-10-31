@@ -30,6 +30,7 @@ sealed class Hud
     readonly Font _body;
     readonly Font _title;
     readonly List<DeckPanel> _decks = [];
+    Panel? _deckRow;
     bool _paused;
     int2 _lastFramebufferSize;
 
@@ -127,7 +128,10 @@ sealed class Hud
             }
         );
         hint.Add(
-            new Label(body, "Space  Play/pause deck A\nTab  Next control\nEnter  Press or submit\nEsc  Leave a box, or quit")
+            new Label(
+                body,
+                "Z / X  Cue / Play deck A\nN / M  Cue / Play deck B\nTab  Next control\nEnter  Press or submit\nEsc  Leave a box, or quit"
+            )
             {
                 Color = Muted,
             }
@@ -139,11 +143,20 @@ sealed class Hud
     /// </summary>
     public void AddDeck(Deck deck)
     {
-        var panel = Ui.Add(
-            new DeckPanel(deck, _body, _title, Muted, Accent)
+        // Decks sit side by side, left to right in the order they're added.
+        _deckRow ??= Ui.Add(
+            new Panel
             {
                 Anchor = Anchor.BottomLeft,
                 Position = new float2(16, 16),
+                Direction = Direction.Horizontal,
+                Spacing = 16,
+            }
+        );
+
+        var panel = _deckRow.Add(
+            new DeckPanel(deck, _body, _title, Muted, Accent)
+            {
                 Padding = 12,
                 Background = PanelBackground,
                 BorderColor = PanelBorder,

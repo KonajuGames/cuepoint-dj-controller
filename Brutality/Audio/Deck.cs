@@ -77,6 +77,8 @@ sealed class Deck : IDisposable
         // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
         _track.Play(0);
         _track.Pause();
+        _cueFrames = 0;
+        _previewing = false;
     }
 
     /// <summary>
@@ -107,6 +109,8 @@ sealed class Deck : IDisposable
 
     public void Play()
     {
+        // Play during a cue preview keeps it playing once Cue is let go, as on a CDJ.
+        _previewing = false;
         if (!IsLoaded || IsPlaying)
             return;
 
@@ -120,16 +124,77 @@ sealed class Deck : IDisposable
 
     public void Pause()
     {
+        _previewing = false;
         if (IsPlaying)
             _track.Pause();
     }
 
     public void TogglePlay()
     {
-        if (IsPlaying)
+        if (IsPlaying && !_previewing)
             Pause();
         else
             Play();
+    }
+
+    /// <summary>
+    /// The deck's cue point: where Cue returns to, and where a cue preview starts. 0:00 when a song loads.
+    /// </summary>
+    public TimeSpan CuePoint => IsLoaded ? TimeSpan.FromMilliseconds(_track.FramesToMS(_cueFrames)) : TimeSpan.Zero;
+
+    /// <summary>
+    /// Cue is held down on a paused deck, so it's playing from the cue point until <see cref="CueUp"/>.
+    /// </summary>
+    public bool IsCuePreviewing => _previewing;
+
+    long _cueFrames;
+    bool _previewing;
+
+    /// <summary>
+    /// The Cue button went down. While playing, it jumps back to the cue point and pauses. While paused, it sets the
+    /// cue point where the deck is and plays from there until <see cref="CueUp"/>, so you can hear where you've
+    /// cued; pressing Play meanwhile keeps it playing.
+    /// </summary>
+    public void CueDown()
+    {
+        if (!IsLoaded || _previewing)
+            return;
+
+        if (IsPlaying)
+        {
+            PauseAt(_cueFrames);
+            return;
+        }
+
+        // A song that played to the end has stopped and has no position to cue from, so it goes back to the start.
+        if (!_track.Paused())
+            PauseAt(0);
+
+        _cueFrames = Math.Max(0, _track.GetPlaybackPosition());
+        _track.Resume();
+        _previewing = true;
+    }
+
+    /// <summary>
+    /// The Cue button came up: a preview ends back at the cue point, paused. Does nothing if Play took over.
+    /// </summary>
+    public void CueUp()
+    {
+        if (!_previewing)
+            return;
+        _previewing = false;
+        PauseAt(_cueFrames);
+    }
+
+    /// <summary>
+    /// Pauses at <paramref name="frames"/> into the song, from any state, including stopped at the end.
+    /// </summary>
+    void PauseAt(long frames)
+    {
+        if (!_track.Playing() && !_track.Paused())
+            _track.Play(0);
+        _track.Pause();
+        _track.SetPlaybackPosition(frames);
     }
 
     public void Dispose()
