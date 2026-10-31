@@ -45,7 +45,7 @@ static void Run()
     Glfw.WindowHint(GlfwWindowHint.ClientApi, Glfw.Constants.GLFW_NO_API);
 
     // Declared first so it's disposed last, after the GPU objects that draw to it.
-    using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Hello BRUTAL", Size = new int2(1280, 720) });
+    using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Cuepoint", Size = new int2(1280, 720) });
 
 #if DEBUG
     const bool ENABLE_VALIDATION = true;

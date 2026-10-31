@@ -3,6 +3,9 @@
   <PropertyGroup>
     <!-- No console window on Windows. Program attaches to the launching terminal's console when there is one. -->
     <OutputType>WinExe</OutputType>
+    <!-- The app is Cuepoint; the project, folders and namespaces keep their original Brutality name. -->
+    <AssemblyName>Cuepoint</AssemblyName>
+    <Product>Cuepoint</Product>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

@@ -34,7 +34,7 @@ static partial class WindowsShell
         Console.Error.WriteLine(exception);
 
         if (OperatingSystem.IsWindows())
-            MessageBoxW(nint.Zero, exception.ToString(), "Brutality crashed", MB_OK | MB_ICONERROR);
+            MessageBoxW(nint.Zero, exception.ToString(), "Cuepoint crashed", MB_OK | MB_ICONERROR);
     }
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
