@@ -5,11 +5,14 @@ namespace Brutality.UI;
 
 /// <summary>
 /// The music library as a searchable list, with a "Load to" button for each deck. It raises events rather than
-/// loading anything itself; call <see cref="Update"/> each frame to bring in tags as the library reads them.
+/// loading anything itself; call <see cref="Update"/> each frame to bring in tags as the library reads them. With an
+/// analyser, songs are analysed as they come into view, each row filling like a progress bar meanwhile, and their
+/// tempo and key appear when done.
 /// </summary>
 sealed class SongBrowser : Panel
 {
     readonly MusicLibrary _library;
+    readonly LibraryAnalyser? _analyser;
     readonly Label _status;
     readonly TextBox _search;
     readonly ScrollPanel _scroll;
@@ -29,6 +32,7 @@ sealed class SongBrowser : Panel
 
     public SongBrowser(
         MusicLibrary library,
+        LibraryAnalyser? analyser,
         IEnumerable<string> deckNames,
         Font body,
         Font heading,
@@ -38,16 +42,24 @@ sealed class SongBrowser : Panel
     )
     {
         _library = library;
+        _analyser = analyser;
         Spacing = 6;
 
         var top = Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
         top.Add(new Label(heading, "Library"));
         _status = top.Add(new Label(body) { Color = muted });
 
-        List = new ListView<Song>(body) { EmptyText = "No songs match" };
-        List.Columns.Add(new ListColumn<Song>("Title", 300, song => song.Title));
-        List.Columns.Add(new ListColumn<Song>("Artist", 200, song => song.Artist));
-        List.Columns.Add(new ListColumn<Song>("Length", 70, song => Format(song.Duration)) { AlignRight = true });
+        List = new ListView<Song>(body)
+        {
+            EmptyText = "No songs match",
+            RowProgress = analyser is null ? null : analyser.ProgressOf,
+            ProgressColor = accent * new float4(1, 1, 1, 0.3f),
+        };
+        List.Columns.Add(new ListColumn<Song>("Title", 242, song => song.Title));
+        List.Columns.Add(new ListColumn<Song>("Artist", 170, song => song.Artist));
+        List.Columns.Add(new ListColumn<Song>("Length", 64, song => Format(song.Duration)) { AlignRight = true });
+        List.Columns.Add(new ListColumn<Song>("BPM", 64, FormatBpm) { AlignRight = true });
+        List.Columns.Add(new ListColumn<Song>("Key", 84, FormatKey) { AlignRight = true });
 
         _search = Add(
             new TextBox(body)
@@ -90,11 +102,24 @@ sealed class SongBrowser : Panel
         if (_library.ApplyReadTags() > 0 && _search.Text.Length > 0)
             Filter();
 
-        _status.Text =
+        // Songs in view (as last drawn) are analysed first, from the top down.
+        if (_analyser is not null)
+        {
+            var (first, count) = List.VisibleRows.GetOffsetAndLength(List.Items.Count);
+            if (count > 0)
+                _analyser.Request(List.Items.Skip(first).Take(count).ToList());
+        }
+
+        var songs =
             _library.Error is { } error ? $"Couldn't read {_library.Root}: {error}"
             : _library.IsReadingTags ? $"{_library.Songs.Count} songs, reading tags {_library.TaggedCount}/{_library.Songs.Count}"
             : List.Items.Count == _library.Songs.Count ? $"{_library.Songs.Count} songs"
             : $"{List.Items.Count} of {_library.Songs.Count} songs";
+        var analysing =
+            _analyser is null || _analyser.ActiveCount == 0 ? ""
+            : _analyser.QueuedCount == 0 ? $", analysing {_analyser.ActiveCount}"
+            : $", analysing {_analyser.ActiveCount}, {_analyser.QueuedCount} waiting";
+        _status.Text = songs + analysing;
     }
 
     void Filter()
@@ -110,4 +135,20 @@ sealed class SongBrowser : Panel
     }
 
     static string Format(TimeSpan? time) => time is { } t ? $"{(int)t.TotalMinutes}:{t.Seconds:00}" : "";
+
+    /// <summary>
+    /// The main tempo, with "~" before it if the tempo varies through the song.
+    /// </summary>
+    static string FormatBpm(Song song) =>
+        song.Analysis is { } analysis ? $"{(analysis.Grid.IsVariable ? "~" : "")}{analysis.Bpm:F1}"
+        : song.AnalysisError is not null ? "–"
+        : "";
+
+    /// <summary>
+    /// The Camelot code first, since that's what mixing goes by, then the key itself.
+    /// </summary>
+    static string FormatKey(Song song) =>
+        song.Analysis is { } analysis ? $"{analysis.Key.Camelot}  {analysis.Key.ShortName}"
+        : song.AnalysisError is not null ? "–"
+        : "";
 }

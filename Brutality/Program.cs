@@ -73,8 +73,19 @@ static void Run()
 
     // The library scans now and reads tags in the background; songs load onto decks in the background too.
     using var library = new MusicLibrary(MUSIC_FOLDER);
-    var browser = hud.AddBrowser(library, decks.Select(deck => deck.Name));
     hud.Log(library.Error is { } error ? $"Library: {error}" : $"Library: {library.Songs.Count} songs in {MUSIC_FOLDER}");
+
+    // Songs are analysed as they come into view in the list, and the results kept between runs.
+    var database = LibraryDatabase.Load(
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "library.json")
+    );
+    using var analyser = new LibraryAnalyser(library.Songs, database);
+    hud.Log(
+        database.LoadError is { } loadError
+            ? $"Database: couldn't read {database.FilePath}, starting afresh: {loadError}"
+            : $"Database: {library.Songs.Count(song => song.Analysis is not null)} songs already analysed"
+    );
+    var browser = hud.AddBrowser(library, analyser, decks.Select(deck => deck.Name));
 
     // Left to right: deck A, the crossfader, deck B.
     hud.AddDeck(deckA);
@@ -83,14 +94,32 @@ static void Run()
 
     foreach (var deck in decks)
     {
-        deck.Loaded += loaded => hud.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
+        deck.Loaded += loaded =>
+        {
+            hud.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
+            loaded.Analysis = loaded.FilePath is { } path ? library.Find(path)?.Analysis : null;
+        };
         // A missing or unsupported file leaves the deck as it was rather than stopping the app.
         deck.LoadFailed += (failed, path, e) =>
             hud.Log($"Deck {failed.Name}: couldn't load {Path.GetFileName(path)}: {e.Message}");
     }
 
+    // A song analysed while it's on a deck takes its gain then. Most finish before the deck has decoded.
+    analyser.Analysed += song =>
+    {
+        if (song.AnalysisError is { } analysisError)
+            hud.Log($"Couldn't analyse {Path.GetFileName(song.Path)}: {analysisError}");
+        foreach (var deck in decks)
+        {
+            if (string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase))
+                deck.Analysis = song.Analysis;
+        }
+    };
+
     void Load(Song song, Deck deck)
     {
+        // Analysis goes to the front of the queue, so the deck has its gain and tempo as soon as possible.
+        analyser.Request(song);
         deck.BeginLoad(song.Path, $"{song.Artist} - {song.Title}");
         hud.Log($"Deck {deck.Name}: loading {song.Artist} - {song.Title}");
     }
@@ -166,6 +195,12 @@ static void Run()
         // Finishes any background loads, raising their Loaded events here on the UI thread.
         foreach (var deck in decks)
             deck.Update();
+
+        // Applies finished analyses and saves the database when any came in.
+        var saveError = analyser.SaveError;
+        analyser.Update();
+        if (analyser.SaveError is { } newSaveError && newSaveError != saveError)
+            hud.Log($"Database: couldn't save {database.FilePath}: {newSaveError}");
 
         hud.Update(clock.Elapsed.TotalSeconds, size);
 

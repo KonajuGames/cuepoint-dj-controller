@@ -1,5 +1,6 @@
 using Brutal.SdlApi;
 using Brutal.SdlApi.Mixer;
+using Brutality.Audio.Analysis;
 
 namespace Brutality.Audio;
 
@@ -115,10 +116,27 @@ sealed class Deck : IDisposable
         }
     }
 
+    TrackAnalysis? _analysis;
+
     /// <summary>
-    /// What the deck plays at: its fader through an audio taper, times what the crossfader lets through.
+    /// The loaded song's beat grid, loudness and key, once known; set by whoever analyses songs, and cleared when
+    /// another song loads. Its <see cref="TrackAnalysis.AutoGain"/> brings the song to the same loudness as the rest.
     /// </summary>
-    public float Gain => VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
+    public TrackAnalysis? Analysis
+    {
+        get => _analysis;
+        set
+        {
+            _analysis = value;
+            ApplyGain();
+        }
+    }
+
+    /// <summary>
+    /// What the deck plays at: the song's automatic gain, then its fader through an audio taper, times what the
+    /// crossfader lets through.
+    /// </summary>
+    public float Gain => (_analysis?.AutoGain ?? 1) * VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
 
     /// <summary>
     /// Fader position to gain. Squared, so the fader's travel feels even to the ear: halfway is about -12 dB rather
@@ -201,7 +219,7 @@ sealed class Deck : IDisposable
     /// </summary>
     static DecodedSong Decode(AudioEngine engine, string path)
     {
-        var (pcm, title, artist) = DecodePcm(path);
+        var (pcm, title, artist) = AudioDecoder.Decode(path);
 
         // Media Foundation decodes but brings no tags, and SDL_mixer can't read .m4a tags, so ask Windows.
         if (string.IsNullOrEmpty(title) && OperatingSystem.IsWindows())
@@ -222,32 +240,6 @@ sealed class Deck : IDisposable
     }
 
     /// <summary>
-    /// SDL_mixer decodes MP3, WAV, FLAC and OGG itself. Anything it can't (AAC in .m4a, chiefly) goes to Windows'
-    /// Media Foundation instead, when on Windows.
-    /// </summary>
-    static (PcmAudio Audio, string? Title, string? Artist) DecodePcm(string path)
-    {
-        try
-        {
-            return SdlPcmDecoder.Decode(path);
-        }
-        catch (SdlException sdlError) when (OperatingSystem.IsWindows() && File.Exists(path))
-        {
-            try
-            {
-                return (MediaFoundationDecoder.Decode(path), null, null);
-            }
-            catch (Exception mfError)
-            {
-                throw new InvalidOperationException(
-                    $"Couldn't decode {System.IO.Path.GetFileName(path)}. SDL_mixer: {sdlError.Message} Media Foundation: {mfError.Message}",
-                    mfError
-                );
-            }
-        }
-    }
-
-    /// <summary>
     /// Puts a decoded song on the deck, paused at the start with the cue point there.
     /// </summary>
     void Apply(DecodedSong song)
@@ -262,6 +254,7 @@ sealed class Deck : IDisposable
         Artist = song.Artist;
         Duration = song.Duration;
         Waveform = song.Waveform;
+        Analysis = null;
 
         // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
         _track.Play(0);

@@ -56,6 +56,20 @@ sealed class ListView<T> : Element
     public float4 SelectedRowUnfocused { get; set; } = Colors.Hex(0x3D6FB8, 0.35f);
 
     /// <summary>
+    /// How far along some work on an item is, from 0 to 1, or null if there's none: drawn as a bar filling the row's
+    /// background from the left.
+    /// </summary>
+    public Func<T, float?>? RowProgress { get; set; }
+
+    public float4 ProgressColor { get; set; } = Colors.Hex(0xEB7828, 0.35f);
+
+    /// <summary>
+    /// The rows drawn last frame, by index into <see cref="Items"/>: those in view. Empty before the first draw, and
+    /// again from when <see cref="Items"/> changes until the next, since the old rows may no longer exist.
+    /// </summary>
+    public Range VisibleRows { get; private set; } = 0..0;
+
+    /// <summary>
     /// The selection changed, by mouse, keyboard or <see cref="Items"/> changing.
     /// </summary>
     public event Action<ListView<T>>? SelectionChanged;
@@ -86,6 +100,7 @@ sealed class ListView<T> : Element
             var selected = SelectedItem;
             _items = value;
             _hovered = -1;
+            VisibleRows = 0..0;
             var index = selected is null ? -1 : IndexOf(selected);
             if (index != _selected || selected is not null && index < 0)
             {
@@ -132,6 +147,7 @@ sealed class ListView<T> : Element
     {
         if (_items.Count == 0)
         {
+            VisibleRows = 0..0;
             batch.AddText(Font, EmptyText, ScreenPosition + new float2(CellPadding, 3), MutedColor);
             return;
         }
@@ -143,6 +159,7 @@ sealed class ListView<T> : Element
             (top, bottom) = (MathF.Max(top, clip.Min.Y), MathF.Min(bottom, clip.Max.Y));
         var first = Math.Max(0, (int)((top - ScreenPosition.Y) / RowHeight));
         var last = Math.Min(_items.Count - 1, (int)((bottom - ScreenPosition.Y) / RowHeight));
+        VisibleRows = first..Math.Max(first, last + 1);
 
         for (var row = first; row <= last; row++)
         {
@@ -155,6 +172,8 @@ sealed class ListView<T> : Element
                 : row % 2 == 1 ? AlternateRow
                 : Colors.Transparent;
             batch.AddRect(rowPosition, rowSize, background);
+            if (RowProgress?.Invoke(_items[row]) is { } progress)
+                batch.AddRect(rowPosition, new float2(Size.X * Math.Clamp(progress, 0, 1), RowHeight), ProgressColor);
 
             var x = rowPosition.X;
             foreach (var column in Columns)

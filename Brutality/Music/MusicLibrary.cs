@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Brutality.Audio;
+using Brutality.Audio.Analysis;
 
 namespace Brutality.Music;
 
@@ -12,6 +13,14 @@ sealed class Song
 {
     public string Path { get; }
 
+    /// <summary>
+    /// The file's size and when it was last written, as of the scan: if either changes, an analysis saved for it is
+    /// out of date.
+    /// </summary>
+    public long Size { get; }
+
+    public DateTime Modified { get; }
+
     public string Title { get; internal set; }
     public string Artist { get; internal set; }
     public string Album { get; internal set; }
@@ -22,9 +31,21 @@ sealed class Song
     /// </summary>
     public bool HasTags { get; internal set; }
 
-    internal Song(string path, string title, string artist, string album)
+    /// <summary>
+    /// Its beat grid, loudness and key, once analysed.
+    /// </summary>
+    public TrackAnalysis? Analysis { get; internal set; }
+
+    /// <summary>
+    /// Why it couldn't be analysed, if it couldn't; it isn't tried again until the file changes.
+    /// </summary>
+    public string? AnalysisError { get; internal set; }
+
+    internal Song(string path, long size, DateTime modified, string title, string artist, string album)
     {
         Path = path;
+        Size = size;
+        Modified = modified;
         Title = title;
         Artist = artist;
         Album = album;
@@ -82,6 +103,7 @@ sealed partial class MusicLibrary : IDisposable
 
     public bool IsReadingTags => TaggedCount < Songs.Count && _reader is { IsCompleted: false };
 
+    readonly Dictionary<string, Song> _byPath = new(StringComparer.OrdinalIgnoreCase);
     readonly ConcurrentQueue<(Song Song, SongTags Tags)> _readTags = new();
     readonly CancellationTokenSource _stop = new();
     readonly Task? _reader;
@@ -92,12 +114,14 @@ sealed partial class MusicLibrary : IDisposable
         try
         {
             var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
-            Songs = Directory
-                .EnumerateFiles(root, "*", options)
-                .Where(path => Extensions.Contains(System.IO.Path.GetExtension(path)))
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .Select(path => Guess(root, path))
+            // FileInfos from enumerating already carry the size and time, so this costs no more than listing names.
+            Songs = new DirectoryInfo(root)
+                .EnumerateFiles("*", options)
+                .Where(file => Extensions.Contains(file.Extension))
+                .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
+                .Select(file => Guess(root, file))
                 .ToList();
+            _byPath = Songs.ToDictionary(song => song.Path, StringComparer.OrdinalIgnoreCase);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -148,11 +172,17 @@ sealed partial class MusicLibrary : IDisposable
     }
 
     /// <summary>
+    /// The song at <paramref name="path"/>, if it's in the library.
+    /// </summary>
+    public Song? Find(string path) => _byPath.GetValueOrDefault(System.IO.Path.GetFullPath(path));
+
+    /// <summary>
     /// A first guess from where the file is, for the list to show before its tags arrive. Assumes the common
     /// "Artist/Album/01 Title.ext" layout, skipping folders like "_CDs" that group rather than name an artist.
     /// </summary>
-    static Song Guess(string root, string path)
+    static Song Guess(string root, FileInfo file)
     {
+        var path = file.FullName;
         var folders = System.IO.Path.GetRelativePath(root, System.IO.Path.GetDirectoryName(path) ?? root)
             .Split(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar)
             .Where(folder => folder is not ("." or "") && !folder.StartsWith('_'))
@@ -166,7 +196,7 @@ sealed partial class MusicLibrary : IDisposable
         if (artist.Length > 0 && title.StartsWith(artist + " - ", StringComparison.OrdinalIgnoreCase))
             title = title[(artist.Length + 3)..];
 
-        return new Song(path, title, artist, album);
+        return new Song(path, file.Length, file.LastWriteTimeUtc, title, artist, album);
     }
 
     [GeneratedRegex(@"^\d{1,3}\s*[.\-_)]?\s+")]

@@ -4,8 +4,8 @@ using Brutality.Audio;
 namespace Brutality.UI;
 
 /// <summary>
-/// A deck's controls and read-out: what's loaded, where it's up to and its cue point, a progress bar to seek with,
-/// Cue and Play/Pause buttons, and a volume fader. Call <see cref="Refresh"/> each frame to pick up the deck's
+/// A deck's controls and read-out: what's loaded, where it's up to and its cue point, its tempo, key and automatic
+/// gain once analysed, a waveform to seek with, Cue and Play/Pause buttons, and a volume fader. Call <see cref="Refresh"/> each frame to pick up the deck's
 /// position.
 /// </summary>
 sealed class DeckPanel : Panel
@@ -16,6 +16,7 @@ sealed class DeckPanel : Panel
     readonly Label _title;
     readonly Label _artist;
     readonly Label _time;
+    readonly Label _analysis;
     readonly Label _loading;
     readonly WaveformBar _progress;
     readonly Button _cue;
@@ -33,6 +34,7 @@ sealed class DeckPanel : Panel
         _title = info.Add(new Label(body) { Color = Colors.White });
         _artist = info.Add(new Label(body) { Color = muted });
         _time = info.Add(new Label(body) { Color = accent });
+        _analysis = info.Add(new Label(body) { Color = muted });
         // Always there, empty when not loading, so the panel doesn't change height as loads come and go.
         _loading = info.Add(new Label(body) { Color = muted });
 
@@ -97,6 +99,7 @@ sealed class DeckPanel : Panel
             _title.Text = _deck.IsLoading ? "Loading…" : "No track loaded";
             _artist.Text = "";
             _time.Text = "";
+            _analysis.Text = "";
             _cue.Enabled = false;
             _playPause.Enabled = false;
             _progress.Enabled = false;
@@ -114,6 +117,12 @@ sealed class DeckPanel : Panel
         var remaining = _deck.Duration - position;
         _time.Text =
             $"{Format(position)} / {Format(_deck.Duration)}   -{Format(remaining)}   Cue {Format(_deck.CuePoint)}";
+
+        // The tempo where the deck is, which moves on through a song whose tempo varies; "~" says it does.
+        _analysis.Text = _deck.Analysis is { } analysis
+            ? $"{(analysis.Grid.IsVariable ? "~" : "")}{analysis.Grid.BpmAt(position.TotalSeconds):F2} BPM   "
+                + $"{analysis.Key.ShortName} ({analysis.Key.Camelot})   Gain {analysis.AutoGainDb:+0.0;-0.0;0.0} dB"
+            : "Analysing…";
 
         _progress.Enabled = true;
         _progress.Waveform = _deck.Waveform;

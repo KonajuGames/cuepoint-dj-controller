@@ -116,16 +116,17 @@ sealed class Hud
     }
 
     /// <summary>
-    /// Shows <paramref name="deck"/>'s controls in the bottom-left, kept up to date by <see cref="Update"/>.
-    /// </summary>
-    /// <summary>
     /// Shows <paramref name="library"/> as a song browser at the top, between the stats panel and the event log,
-    /// with a "Load to" button for each named deck.
+    /// with a "Load to" button for each named deck. Songs in view are given to <paramref name="analyser"/>.
     /// </summary>
-    public SongBrowser AddBrowser(Music.MusicLibrary library, IEnumerable<string> deckNames)
+    public SongBrowser AddBrowser(
+        Music.MusicLibrary library,
+        Music.LibraryAnalyser? analyser,
+        IEnumerable<string> deckNames
+    )
     {
         _browser = Ui.Add(
-            new SongBrowser(library, deckNames, _body, _title, Muted, Accent, listHeight: 280)
+            new SongBrowser(library, analyser, deckNames, _body, _title, Muted, Accent, listHeight: 248)
             {
                 Position = new float2(292, 16),
                 Padding = 12,
@@ -189,6 +190,9 @@ sealed class Hud
             }
         );
 
+    /// <summary>
+    /// Shows <paramref name="deck"/>'s controls in the bottom-left, kept up to date by <see cref="Update"/>.
+    /// </summary>
     public void AddDeck(Deck deck)
     {
         var panel = DeckRow.Add(
