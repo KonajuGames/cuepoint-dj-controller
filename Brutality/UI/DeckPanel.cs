@@ -101,6 +101,7 @@ sealed class DeckPanel : Panel
             _overview.Value = 0;
             _overview.Marks.Clear();
             _overview.Waveform = null;
+            _overview.Grid = null;
             return;
         }
 
@@ -129,6 +130,7 @@ sealed class DeckPanel : Panel
 
         _overview.Enabled = true;
         _overview.Waveform = _deck.Waveform;
+        _overview.Grid = _deck.Analysis?.Grid;
         _overview.Max = (float)_deck.Duration.TotalSeconds;
         // While it's being dragged the slider leads and the deck follows, so don't pull it back.
         if (!_overview.IsDragging)
