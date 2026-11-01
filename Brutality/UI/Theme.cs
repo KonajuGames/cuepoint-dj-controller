@@ -22,6 +22,11 @@ static class Theme
     public static readonly float4 Accent = Colors.Hex(0xEB7828);
     public static readonly float4 Focus = Colors.Hex(0x7AB8FF);
 
+    /// <summary>
+    /// A loop, wherever it shows: its button lit, and its stretch of the waveforms shaded.
+    /// </summary>
+    public static readonly float4 Loop = Colors.Hex(0x48D17A);
+
     public static readonly float4 DeckA = Colors.Hex(0x2F8FFF);
     public static readonly float4 DeckB = Colors.Hex(0xEE4444);
 

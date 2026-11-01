@@ -5,10 +5,16 @@ using Brutality.Audio.Analysis;
 namespace Brutality.Audio;
 
 /// <summary>
-/// One player: a song loaded onto an SDL_mixer track, with play/pause, cue and a position. Get one from
-/// <see cref="AudioEngine.CreateDeck"/>. Everything except decoding happens on the thread that calls it, which
+/// One player: a song loaded onto an SDL_mixer track, with play/pause, cue, hotcues, loops and a position. Get one
+/// from <see cref="AudioEngine.CreateDeck"/>. Everything except decoding happens on the thread that calls it, which
 /// should be the UI thread; call <see cref="Update"/> once a frame to finish background loads.
 /// </summary>
+/// <remarks>
+/// The song's samples stay in memory and SDL_mixer plays straight from them. A loop is played as just its stretch
+/// of those samples, set to repeat, so the mixer loops it without a gap; leaving the loop puts the whole song back
+/// on at the matching place. Positions on the track are then counted from the loop's start, which
+/// <see cref="Position"/> allows for.
+/// </remarks>
 sealed class Deck : IDisposable
 {
     /// <summary>
@@ -16,6 +22,7 @@ sealed class Deck : IDisposable
     /// </summary>
     sealed record DecodedSong(
         string Path,
+        PcmAudio Pcm,
         MixAudio Audio,
         string Title,
         string Artist,
@@ -78,6 +85,21 @@ sealed class Deck : IDisposable
     readonly AudioEngine _engine;
     readonly MixTrack _track;
     MixAudio _audio;
+
+    /// <summary>
+    /// The loaded song's samples, pinned, which <see cref="_audio"/> and any loop play straight from.
+    /// </summary>
+    PcmAudio? _pcm;
+
+    /// <summary>
+    /// The loop's stretch of the song, on the track while looping; null otherwise.
+    /// </summary>
+    MixAudio _loopAudio;
+
+    long _loopStart;
+    long _loopEnd;
+    double _loopStartBeat;
+    double _loopBeats = 4;
 
     /// <summary>
     /// The background load in progress, if any. A newer load replaces it; the older one's result is thrown away.
@@ -170,8 +192,19 @@ sealed class Deck : IDisposable
     /// <summary>
     /// Where playback is, from SDL_mixer's audio thread, so it moves on between calls while playing.
     /// </summary>
-    public TimeSpan Position =>
-        IsLoaded ? TimeSpan.FromMilliseconds(_track.FramesToMS(Math.Max(0, _track.GetPlaybackPosition()))) : TimeSpan.Zero;
+    public TimeSpan Position => IsLoaded && _pcm is not null ? ToTime(SongFrame) : TimeSpan.Zero;
+
+    /// <summary>
+    /// Where playback is in the song, in frames: the track's position, plus the loop's start while it's playing the
+    /// loop.
+    /// </summary>
+    long SongFrame => (IsLooping ? _loopStart : 0) + Math.Max(0, _track.GetPlaybackPosition());
+
+    int SampleRate => _pcm?.SampleRate ?? 44100;
+
+    TimeSpan ToTime(long frames) => TimeSpan.FromSeconds((double)frames / SampleRate);
+
+    long ToFrames(TimeSpan time) => (long)Math.Round(time.TotalSeconds * SampleRate);
 
     public bool IsPlaying => IsLoaded && _track.Playing() && !_track.Paused();
 
@@ -235,7 +268,8 @@ sealed class Deck : IDisposable
     /// </summary>
     static DecodedSong Decode(AudioEngine engine, string path)
     {
-        var (pcm, title, artist) = AudioDecoder.Decode(path);
+        var (decoded, title, artist) = AudioDecoder.Decode(path);
+        var pcm = decoded.Pinned();
 
         // Media Foundation decodes but brings no tags, and SDL_mixer can't read .m4a tags, so ask Windows.
         if (string.IsNullOrEmpty(title) && OperatingSystem.IsWindows())
@@ -248,7 +282,8 @@ sealed class Deck : IDisposable
         var detail = DetailWaveform.From(pcm);
         return new DecodedSong(
             path,
-            pcm.ToMixAudio(engine.Mixer),
+            pcm,
+            pcm.Play(engine.Mixer, 0, pcm.Frames),
             string.IsNullOrEmpty(title) ? System.IO.Path.GetFileNameWithoutExtension(path) : title,
             artist ?? "",
             pcm.Duration,
@@ -265,7 +300,10 @@ sealed class Deck : IDisposable
         _track.Stop(0);
         _track.SetAudio(song.Audio);
         _audio.Dispose();
+        _loopAudio.Dispose();
+        _loopAudio = default;
         _audio = song.Audio;
+        _pcm = song.Pcm;
 
         FilePath = song.Path;
         Title = song.Title;
@@ -332,6 +370,9 @@ sealed class Deck : IDisposable
     {
         if (!IsLoaded || _previewing)
             return;
+
+        // Cueing works on the whole song, so it leaves a loop first.
+        ExitLoop();
 
         if (IsPlaying)
         {
@@ -423,7 +464,18 @@ sealed class Deck : IDisposable
             return;
 
         var clamped = TimeSpan.FromTicks(Math.Clamp(position.Ticks, 0, Duration.Ticks));
-        var frames = _track.MSToFrames((long)clamped.TotalMilliseconds);
+        var frames = ToFrames(clamped);
+
+        // Inside the loop it stays looping; anywhere else, it leaves the loop to get there.
+        if (IsLooping)
+        {
+            if (frames >= _loopStart && frames < _loopEnd)
+            {
+                _track.SetPlaybackPosition(frames - _loopStart);
+                return;
+            }
+            ExitLoop();
+        }
 
         // A song that played to the end has stopped and needs restarting (paused) before it has a position to set.
         if (!_track.Playing() && !_track.Paused())
@@ -441,6 +493,132 @@ sealed class Deck : IDisposable
             _track.Play(0);
         _track.Pause();
         _track.SetPlaybackPosition(frames);
+    }
+
+    /// <summary>
+    /// The shortest and longest loops, in beats.
+    /// </summary>
+    public const double MIN_LOOP_BEATS = 1.0 / 16;
+
+    public const double MAX_LOOP_BEATS = 32;
+
+    public bool IsLooping => !_loopAudio.IsNull();
+
+    /// <summary>
+    /// Where the loop starts and ends, while looping.
+    /// </summary>
+    public (TimeSpan Start, TimeSpan End)? Loop => IsLooping ? (ToTime(_loopStart), ToTime(_loopEnd)) : null;
+
+    /// <summary>
+    /// How long a loop is, in beats, whether looping or not: a power of two from <see cref="MIN_LOOP_BEATS"/> to
+    /// <see cref="MAX_LOOP_BEATS"/>. Changing it while looping changes the loop, keeping its start.
+    /// </summary>
+    public double LoopBeats
+    {
+        get => _loopBeats;
+        set
+        {
+            var beats = Math.Pow(2, Math.Round(Math.Log2(Math.Clamp(value, MIN_LOOP_BEATS, MAX_LOOP_BEATS))));
+            if (beats == _loopBeats)
+                return;
+            _loopBeats = beats;
+            if (IsLooping)
+                PlaceLoop(_loopStartBeat);
+        }
+    }
+
+    /// <summary>
+    /// Whether a loop can be started: there's a song with a beat grid to fit it to.
+    /// </summary>
+    public bool CanLoop => IsLoaded && _pcm is not null && _analysis is not null;
+
+    /// <summary>
+    /// Starts a loop of <see cref="LoopBeats"/> beats from the last beat played (or, for a loop shorter than a beat,
+    /// the last fraction of one), so the music carries straight on into it; or leaves the loop if looping.
+    /// </summary>
+    public void ToggleLoop()
+    {
+        if (IsLooping)
+        {
+            ExitLoop();
+            return;
+        }
+        if (!CanLoop || _analysis!.Grid is not { } grid)
+            return;
+
+        var beat = grid.BeatNumberAt(Position.TotalSeconds);
+        var startBeat = _loopBeats >= 1 ? Math.Floor(beat) : Math.Floor(beat / _loopBeats) * _loopBeats;
+        PlaceLoop(startBeat);
+    }
+
+    public void HalveLoop() => LoopBeats = _loopBeats / 2;
+
+    public void DoubleLoop() => LoopBeats = _loopBeats * 2;
+
+    /// <summary>
+    /// Puts the loop from <paramref name="startBeat"/> for <see cref="LoopBeats"/> on the track, carrying on from the
+    /// same place in the music: the same moment if it's inside the loop, or as far into the loop as the music is past
+    /// its start. Playing or paused stays as it was.
+    /// </summary>
+    void PlaceLoop(double startBeat)
+    {
+        if (_pcm is not { } pcm || _analysis?.Grid is not { } grid)
+            return;
+
+        var start = Math.Clamp(ToFrames(TimeSpan.FromSeconds(grid.TimeOfBeat(startBeat))), 0, pcm.Frames - 1);
+        var end = Math.Clamp(ToFrames(TimeSpan.FromSeconds(grid.TimeOfBeat(startBeat + _loopBeats))), start + 1, pcm.Frames);
+
+        _engine.Mixer.Lock();
+        try
+        {
+            var length = end - start;
+            var into = ((SongFrame - start) % length + length) % length;
+            var playing = IsPlaying;
+            var loop = pcm.Play(_engine.Mixer, start, length);
+
+            _track.SetAudio(loop);
+            _track.Play(0);
+            _track.SetLoops(-1);
+            _track.SetPlaybackPosition(into);
+            if (!playing)
+                _track.Pause();
+
+            _loopAudio.Dispose();
+            (_loopAudio, _loopStart, _loopEnd, _loopStartBeat) = (loop, start, end, startBeat);
+        }
+        finally
+        {
+            _engine.Mixer.Unlock();
+        }
+    }
+
+    /// <summary>
+    /// Leaves the loop, carrying on through the song from wherever it was in the loop. Playing or paused stays as it
+    /// was. Does nothing if not looping.
+    /// </summary>
+    public void ExitLoop()
+    {
+        if (!IsLooping)
+            return;
+
+        _engine.Mixer.Lock();
+        try
+        {
+            var at = SongFrame;
+            var playing = IsPlaying;
+            _track.SetAudio(_audio);
+            _track.Play(0);
+            _track.SetPlaybackPosition(at);
+            if (!playing)
+                _track.Pause();
+
+            _loopAudio.Dispose();
+            _loopAudio = default;
+        }
+        finally
+        {
+            _engine.Mixer.Unlock();
+        }
     }
 
     public void Dispose()
@@ -464,6 +642,7 @@ sealed class Deck : IDisposable
 
         // The track first, so nothing is still reading the audio or measuring it when they're freed.
         _track.Dispose();
+        _loopAudio.Dispose();
         _audio.Dispose();
         Meter.Dispose();
     }

@@ -31,6 +31,14 @@ sealed class WaveformBar : Slider
     /// </summary>
     public IReadOnlyList<(float Value, float4 Color, string Label)> Flags { get; set; } = [];
 
+    /// <summary>
+    /// A stretch to shade, such as a loop, as values between <see cref="Slider.Min"/> and <see cref="Slider.Max"/>,
+    /// in <see cref="RegionColor"/>, with solid edges.
+    /// </summary>
+    public (float Start, float End)? Region { get; set; }
+
+    public float4 RegionColor { get; set; } = Colors.Hex(0x48D17A);
+
     public Font? FlagFont { get; set; }
 
     public float4 GridColor { get; set; } = Colors.Hex(0xFFFFFF, 0.14f);
@@ -70,8 +78,20 @@ sealed class WaveformBar : Slider
             );
         }
 
+        DrawRegion(batch, left);
         DrawGrid(batch, left);
         DrawFlags(batch, left);
+    }
+
+    void DrawRegion(Batch batch, float left)
+    {
+        if (Region is not { } region || Max <= Min)
+            return;
+        var start = MathF.Round(left + OffsetOf(Math.Clamp((region.Start - Min) / (Max - Min), 0, 1)));
+        var end = MathF.Max(start + 1, MathF.Round(left + OffsetOf(Math.Clamp((region.End - Min) / (Max - Min), 0, 1))));
+        batch.AddRect(new float2(start, ScreenPosition.Y), new float2(end - start, Size.Y), Faded(Theme.Fade(RegionColor, 0.35f)));
+        batch.AddRect(new float2(start, ScreenPosition.Y), new float2(1, Size.Y), Faded(RegionColor));
+        batch.AddRect(new float2(end - 1, ScreenPosition.Y), new float2(1, Size.Y), Faded(RegionColor));
     }
 
     void DrawFlags(Batch batch, float left)

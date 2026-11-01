@@ -105,6 +105,7 @@ sealed class ScrollingWaveform : Element
                     batch.AddRect(new float2(ScreenPosition.X + x, middle - core), new float2(1, core * 2), inner);
             }
 
+            DrawLoop(batch, position, centre);
             DrawBeats(batch, position, centre);
             DrawHotcues(batch, position, centre);
         }
@@ -137,6 +138,25 @@ sealed class ScrollingWaveform : Element
                 batch.AddRect(new float2(x - 1, ScreenPosition.Y + Size.Y - tick), new float2(3, tick), Colors.Hex(0xFFFFFF, 0.8f));
             }
         }
+    }
+
+    /// <summary>
+    /// The loop, while there is one, shaded over the waveform with solid edges.
+    /// </summary>
+    void DrawLoop(Batch batch, double position, float centre)
+    {
+        if (_deck.Loop is not { } loop)
+            return;
+        float X(TimeSpan at) => MathF.Round(centre + (float)((at.TotalSeconds - position) * PixelsPerSecond));
+        var start = MathF.Max(ScreenPosition.X, X(loop.Start));
+        var end = MathF.Min(ScreenPosition.X + Size.X, X(loop.End));
+        if (end <= start)
+            return;
+        batch.AddRect(new float2(start, ScreenPosition.Y), new float2(end - start, Size.Y), Theme.Fade(Theme.Loop, 0.22f));
+        if (X(loop.Start) >= ScreenPosition.X)
+            batch.AddRect(new float2(X(loop.Start), ScreenPosition.Y), new float2(2, Size.Y), Theme.Loop);
+        if (X(loop.End) < ScreenPosition.X + Size.X)
+            batch.AddRect(new float2(X(loop.End) - 2, ScreenPosition.Y), new float2(2, Size.Y), Theme.Loop);
     }
 
     void DrawHotcues(Batch batch, double position, float centre)

@@ -32,14 +32,14 @@ sealed class MixerPanel : Panel
         {
             var color = Theme.DeckColor(deck.Name);
             var name = Add(new Label(bold, deck.Name) { Color = color });
-            var meter = Add(new LevelMeter(2) { Length = 92, BarThickness = 4, BarGap = 2, Segments = 20 });
+            var meter = Add(new LevelMeter(2) { Length = 124, BarThickness = 4, BarGap = 2, Segments = 26 });
 
             // A channel fader: up is louder, and double-clicking puts it back to full.
             var fader = Add(
                 new Slider
                 {
                     Orientation = Orientation.Vertical,
-                    Length = 92,
+                    Length = 124,
                     Thickness = 22,
                     HandleLength = 12,
                     DefaultValue = 1,

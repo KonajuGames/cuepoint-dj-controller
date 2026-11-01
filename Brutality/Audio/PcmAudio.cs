@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.SdlApi.Mixer;
 
@@ -13,18 +15,42 @@ sealed record PcmAudio(float[] Samples, int Channels, int SampleRate)
     public TimeSpan Duration => TimeSpan.FromSeconds((double)Frames / SampleRate);
 
     /// <summary>
-    /// Hands the samples to SDL_mixer, which keeps its own copy.
+    /// Whether <see cref="Samples"/> is pinned, so it never moves and SDL_mixer can play straight from it.
     /// </summary>
-    public unsafe MixAudio ToMixAudio(MixMixer mixer)
+    public bool IsPinned { get; init; }
+
+    /// <summary>
+    /// The same audio in a pinned copy of the samples, or this if they're pinned already.
+    /// </summary>
+    public PcmAudio Pinned()
     {
+        if (IsPinned)
+            return this;
+        var pinned = GC.AllocateUninitializedArray<float>(Samples.Length, pinned: true);
+        Samples.CopyTo(pinned, 0);
+        return new PcmAudio(pinned, Channels, SampleRate) { IsPinned = true };
+    }
+
+    /// <summary>
+    /// Hands SDL_mixer <paramref name="frames"/> frames from <paramref name="firstFrame"/> to play straight from the
+    /// samples, without copying them: the whole song, or a stretch of it to loop. The samples must be pinned (see
+    /// <see cref="Pinned"/>) and outlive the audio it returns.
+    /// </summary>
+    public unsafe MixAudio Play(MixMixer mixer, long firstFrame, long frames)
+    {
+        if (!IsPinned)
+            throw new InvalidOperationException("SDL_mixer can only play straight from pinned samples");
+        if (firstFrame < 0 || frames <= 0 || firstFrame + frames > Frames)
+            throw new ArgumentOutOfRangeException(nameof(frames), $"Frames {firstFrame} to {firstFrame + frames} aren't all in the song's {Frames}");
+
         var spec = new SdlAudioSpec
         {
             format = SdlAudioFormat.F32,
             channels = Channels,
             freq = SampleRate,
         };
-        fixed (float* data = Samples)
-            return mixer.LoadRawAudio(data, (nuint)(Samples.Length * sizeof(float)), &spec);
+        var data = (float*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(Samples));
+        return mixer.LoadRawAudioNoCopy(data + firstFrame * Channels, (nuint)(frames * Channels * sizeof(float)), &spec, false);
     }
 }
 
@@ -71,10 +97,15 @@ sealed class PcmCollector : IPcmSink
         _filled += samples.Length;
     }
 
+    /// <summary>
+    /// The samples gathered, pinned, so a deck can play straight from them.
+    /// </summary>
     public PcmAudio ToPcm()
     {
-        Array.Resize(ref _samples, _filled);
-        return new PcmAudio(_samples, _channels, _sampleRate);
+        var pinned = GC.AllocateUninitializedArray<float>(_filled, pinned: true);
+        _samples.AsSpan(0, _filled).CopyTo(pinned);
+        _samples = [];
+        return new PcmAudio(pinned, _channels, _sampleRate) { IsPinned = true };
     }
 }
 
