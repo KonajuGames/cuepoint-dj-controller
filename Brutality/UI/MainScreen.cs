@@ -53,8 +53,12 @@ sealed class MainScreen : Panel
             _waveforms.Add(Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name), fonts.Small)));
 
         // Left to right: the first half of the decks, the mixer, the rest.
+        // Decks right of the mixer are laid out as reflections, so each deck's mixing controls sit nearest the mixer.
         var deckPanels = decks
-            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i)))
+            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i))
+            {
+                Mirrored = i >= (decks.Count + 1) / 2,
+            })
             .ToList();
         _mixer = new MixerPanel(engine, decks, fonts.Small, fonts.Bold);
         for (var i = 0; i < deckPanels.Count; i++)

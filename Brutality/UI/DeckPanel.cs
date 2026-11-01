@@ -8,8 +8,14 @@ namespace Brutality.UI;
 /// its key, how far in it is and how long's left, the whole song's waveform to see and seek in with its hotcues
 /// marked, Cue and Play, a loop of so many beats to start and stop, halve and double, a pad for each hotcue (press an
 /// empty one to set it where the deck is, a set one to jump there, and Shift-click or right-click one to clear it),
-/// and down the right-hand side the tempo fader: down is faster, as on a turntable, double-click puts it back to
-/// zero, and the button under it changes its range. The tempo and key shown are what's coming out, fader and all.
+/// and the tempo fader: down is faster, as on a turntable, double-click puts it back to zero, and the button under it
+/// changes its range. The tempo and key shown are what's coming out, fader and all.
+/// <para>
+/// The controls you reach for while mixing (the tempo fader, the tempo and key, the loop) sit on the side nearest
+/// the mixer, and the song's details, Cue and Play on the outer side. A deck to the right of the mixer is
+/// <see cref="Mirrored"/>, so its layout is the left deck's reflected. The waveform still runs left to right, as
+/// time does, and the pads still count 1 to 8.
+/// </para>
 /// Sized by whoever lays it out, with <see cref="Width"/>. Call <see cref="Refresh"/> once a frame.
 /// </summary>
 sealed class DeckPanel : Panel
@@ -51,6 +57,12 @@ sealed class DeckPanel : Panel
     const float ROW_GAP = 6;
 
     public float Width { get; set; } = 480;
+
+    /// <summary>
+    /// Laid out as a reflection, for a deck to the right of the mixer: tempo fader on the left, details on the
+    /// right.
+    /// </summary>
+    public bool Mirrored { get; set; }
 
     /// <param name="padKeys">The keys that press the hotcue pads, in order, to label them with.</param>
     public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big, IReadOnlyList<string>? padKeys = null)
@@ -300,29 +312,37 @@ sealed class DeckPanel : Panel
     public override void Arrange(float2 position)
     {
         ArrangeSelf(position);
-        var left = position.X + PAD;
-        var columnLeft = position.X + Width - PAD - TEMPO_COLUMN;
-        var right = columnLeft - TEMPO_GAP;
         var top = position.Y + PAD;
+
+        // The tempo column is on the side nearest the mixer; the rest of the deck is the content beside it.
+        var columnLeft = Mirrored ? position.X + PAD : position.X + Width - PAD - TEMPO_COLUMN;
+        var contentLeft = Mirrored ? columnLeft + TEMPO_COLUMN + TEMPO_GAP : position.X + PAD;
+        var contentRight = Mirrored ? position.X + Width - PAD : columnLeft - TEMPO_GAP;
+
+        // Within the content, things go in from the outer edge (the song's details, the transport) or from the inner
+        // edge beside the tempo column (its readouts, the loop), whichever side that is for this deck.
+        float Outer(float offset, Element child) => Mirrored ? contentRight - offset - child.Size.X : contentLeft + offset;
+        float Inner(float offset, Element child) => Mirrored ? contentLeft + offset : contentRight - offset - child.Size.X;
         void Place(Element child, float x, float y) => child.Arrange(new float2(MathF.Round(x), MathF.Round(y)));
 
-        Place(_badge, left, top + 2);
-        Place(_title, left + 40, top);
-        Place(_artist, left + 40, top + _title.Size.Y + 1);
-        Place(_bpm, right - _bpm.Size.X, top - 6);
-        Place(_key, right - _key.Size.X, top + _bpm.Size.Y - 6);
+        Place(_badge, Outer(0, _badge), top + 2);
+        Place(_title, Outer(40, _title), top);
+        Place(_artist, Outer(40, _artist), top + _title.Size.Y + 1);
+        Place(_bpm, Inner(0, _bpm), top - 6);
+        Place(_key, Inner(0, _key), top + _bpm.Size.Y - 6);
 
         var timesY = top + 52;
-        Place(_elapsed, left, timesY);
-        Place(_remaining, left + _elapsed.Size.X + 12, timesY);
-        Place(_cuePoint, left + _elapsed.Size.X + 12 + _remaining.Size.X + 16, timesY);
-        Place(_gain, right - _gain.Size.X, timesY);
+        Place(_elapsed, Outer(0, _elapsed), timesY);
+        Place(_remaining, Outer(_elapsed.Size.X + 12, _remaining), timesY);
+        Place(_cuePoint, Outer(_elapsed.Size.X + 12 + _remaining.Size.X + 16, _cuePoint), timesY);
+        Place(_gain, Inner(0, _gain), timesY);
 
-        Place(_overview, left, timesY + _elapsed.Size.Y + 4);
+        Place(_overview, contentLeft, timesY + _elapsed.Size.Y + 4);
 
-        // From the bottom: the hotcue pads across the width, and above them the transport and the loop.
+        // From the bottom: the hotcue pads across the whole width, in order, and above them the transport and the
+        // loop.
         var padsY = position.Y + HEIGHT - PAD - PAD_HEIGHT;
-        var x = left;
+        var x = position.X + PAD;
         foreach (var pad in _pads)
         {
             Place(pad, x, padsY);
@@ -330,12 +350,16 @@ sealed class DeckPanel : Panel
         }
 
         var buttonsY = padsY - ROW_GAP - _cue.Size.Y;
-        Place(_cue, left, buttonsY);
-        Place(_playPause, left + _cue.Size.X + 8, buttonsY);
-        Place(_loading, left + _cue.Size.X + 8 + _playPause.Size.X + 12, buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
-        Place(_doubleLoop, right - _doubleLoop.Size.X, buttonsY);
-        Place(_loop, right - _doubleLoop.Size.X - 4 - _loop.Size.X, buttonsY);
-        Place(_halveLoop, right - _doubleLoop.Size.X - 4 - _loop.Size.X - 4 - _halveLoop.Size.X, buttonsY);
+        Place(_cue, Outer(0, _cue), buttonsY);
+        Place(_playPause, Outer(_cue.Size.X + 8, _playPause), buttonsY);
+        Place(_loading, Outer(_cue.Size.X + 8 + _playPause.Size.X + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
+
+        // The loop's buttons keep their order, halve on the left, whichever side the group is on.
+        var loopWidth = _halveLoop.Size.X + 4 + _loop.Size.X + 4 + _doubleLoop.Size.X;
+        var loopLeft = Mirrored ? contentLeft : contentRight - loopWidth;
+        Place(_halveLoop, loopLeft, buttonsY);
+        Place(_loop, loopLeft + _halveLoop.Size.X + 4, buttonsY);
+        Place(_doubleLoop, loopLeft + _halveLoop.Size.X + 4 + _loop.Size.X + 4, buttonsY);
 
         Place(_tempoReadout, columnLeft + (TEMPO_COLUMN - _tempoReadout.Size.X) / 2, top - 2);
         var faderTop = top - 2 + _tempoReadout.Size.Y + 4;
