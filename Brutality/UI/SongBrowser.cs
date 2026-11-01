@@ -192,6 +192,13 @@ sealed class SongBrowser : Panel
             _analyser.Request(List.Items.Skip(first).Take(count).ToList());
 
         var songs = List.Items.Count == _sourceSongs.Count ? $"{_sourceSongs.Count} songs" : $"{List.Items.Count} of {_sourceSongs.Count} songs";
+
+        // How long the songs listed play for, of those whose lengths are known (read with their tags).
+        var total = TimeSpan.Zero;
+        foreach (var song in List.Items)
+            total += song.Duration ?? TimeSpan.Zero;
+        if (total > TimeSpan.Zero)
+            songs += ", " + FormatTotal(total);
         var tags = _library.IsReadingTags ? $", reading tags {_library.TaggedCount}/{_library.Songs.Count}" : "";
         var analysing =
             _analyser.ActiveCount == 0 ? ""
@@ -277,6 +284,14 @@ sealed class SongBrowser : Panel
     }
 
     static string Format(TimeSpan? time) => time is { } t ? $"{(int)t.TotalMinutes}:{t.Seconds:00}" : "";
+
+    /// <summary>
+    /// A total playing time: 42:15 under an hour, 3:42:15 under a day, then 2 days 3:42:15.
+    /// </summary>
+    internal static string FormatTotal(TimeSpan total) =>
+        total.TotalHours < 1 ? $"{total.Minutes}:{total.Seconds:00}"
+        : total.TotalDays < 1 ? $"{total.Hours}:{total.Minutes:00}:{total.Seconds:00}"
+        : $"{total.Days} {(total.Days == 1 ? "day" : "days")} {total.Hours}:{total.Minutes:00}:{total.Seconds:00}";
 
     /// <summary>
     /// The main tempo, with "~" before it if the tempo varies through the song.
