@@ -388,6 +388,9 @@ sealed class MidiControls : IDisposable
             case "volume":
                 deck.Volume = position;
                 break;
+            case "trim":
+                deck.Trim = centred;
+                break;
             case "eq.high":
                 deck.Equalizer.High = centred;
                 break;

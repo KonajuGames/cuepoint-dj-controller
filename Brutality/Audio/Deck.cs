@@ -155,6 +155,30 @@ sealed class Deck : IDisposable
         }
     }
 
+    float _trim;
+
+    /// <summary>
+    /// The channel's trim, from -1 to 1 (<see cref="TRIM_DB"/> down to as far up), 0 leaving it as it is: the level
+    /// set by hand coming into the channel, on top of the automatic gain, so it's heard ahead of the EQ, the meter and
+    /// the headphones.
+    /// </summary>
+    public float Trim
+    {
+        get => _trim;
+        set
+        {
+            _trim = Math.Clamp(value, -1, 1);
+            ApplyGain();
+        }
+    }
+
+    /// <summary>
+    /// How far <see cref="Trim"/> turns the level either way, in decibels.
+    /// </summary>
+    public const float TRIM_DB = 12;
+
+    float TrimFactor => MathF.Pow(10, _trim * TRIM_DB / 20);
+
     TrackAnalysis? _analysis;
 
     /// <summary>
@@ -172,12 +196,15 @@ sealed class Deck : IDisposable
     }
 
     /// <summary>
-    /// What the deck plays at in the main mix: the song's automatic gain, then its fader through an audio taper,
-    /// times what the crossfader lets through.
+    /// What the deck plays at in the main mix: the song's automatic gain and the trim, then its fader through an
+    /// audio taper, times what the crossfader lets through.
     /// </summary>
-    public float Gain => AutoGainFactor * ChannelGain;
+    public float Gain => InputGain * ChannelGain;
 
     float AutoGainFactor => _engine.AutoGain ? _analysis?.AutoGain ?? 1 : 1;
+
+    // The level coming into the channel: the automatic gain and the trim.
+    float InputGain => AutoGainFactor * TrimFactor;
 
     /// <summary>
     /// The fader and crossfader together: what's applied after the EQ, the meter and the headphones have had the
@@ -341,12 +368,12 @@ sealed class Deck : IDisposable
     public static float VolumeTaper(float position) => position * position;
 
     /// <summary>
-    /// The automatic gain goes to SDL_mixer as the track's own gain, ahead of everything; the fader and crossfader
-    /// are left for the track's callback, after the headphones have had the sound.
+    /// The automatic gain and trim go to SDL_mixer as the track's own gain, ahead of everything; the fader and
+    /// crossfader are left for the track's callback, after the headphones have had the sound.
     /// </summary>
     internal void ApplyGain()
     {
-        _track.SetGain(AutoGainFactor);
+        _track.SetGain(InputGain);
         Volatile.Write(ref _channelGain, ChannelGain);
     }
 

@@ -63,6 +63,7 @@ static class ControlCatalog
                     new($"{deck}.tempo", $"Deck {deck} tempo", ControlKind.Fader),
                     new($"{deck}.tempo.reset", $"Deck {deck} reset tempo", ControlKind.Button),
                     new($"{deck}.volume", $"Deck {deck} volume", ControlKind.Fader),
+                    new($"{deck}.trim", $"Deck {deck} trim", ControlKind.Knob),
                     new($"{deck}.eq.high", $"Deck {deck} high", ControlKind.Knob),
                     new($"{deck}.eq.mid", $"Deck {deck} mid", ControlKind.Knob),
                     new($"{deck}.eq.low", $"Deck {deck} low", ControlKind.Knob),

@@ -61,6 +61,7 @@ static class ControllerPresets
             // Pioneer's tempo sliders are minus at the top, where they send 0.
             Control($"{deck}.tempo", channel, 0x00);
             Control($"{deck}.volume", channel, 0x13);
+            Control($"{deck}.trim", channel, 0x04);
             Control($"{deck}.eq.high", channel, 0x07);
             Control($"{deck}.eq.mid", channel, 0x0B);
             Control($"{deck}.eq.low", channel, 0x0F);

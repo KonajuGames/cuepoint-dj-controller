@@ -4,10 +4,10 @@ using Brutality.Audio;
 namespace Brutality.UI;
 
 /// <summary>
-/// The mixer between the decks, laid out as a DJ mixer is. Down the middle, the names of each channel's EQ and
-/// filter, with each deck's controls on its own side: bass, mids and treble from killed on the left, through
-/// unchanged in the middle, to boosted on the right, and the filter, a low-pass to the left and a high-pass to the
-/// right. Double-click any of them to put it back in the middle. At the outer edges, each deck's level coming into
+/// The mixer between the decks, laid out as a DJ mixer is. Down the middle, the names of each channel's trim, EQ and
+/// filter, with each deck's controls on its own side: the trim, from quieter on the left through unchanged in the
+/// middle to louder on the right; bass, mids and treble from killed on the left, through unchanged in the middle, to
+/// boosted on the right; and the filter, a low-pass to the left and a high-pass to the right. Double-click any of them to put it back in the middle. At the outer edges, each deck's level coming into
 /// its channel and its volume fader; under the EQ, each deck's PFL (send it to the headphones) either side of the
 /// automatic gain switch; then the headphones' blend of cue and main mix, and their volume; and the crossfader across
 /// the bottom. All in each deck's colour. Call <see cref="Refresh"/> once a frame.
@@ -16,16 +16,16 @@ sealed class MixerPanel : Panel
 {
     public const float WIDTH = 340;
     const float PAD = 10;
-    const float ROW = 22;
+    const float ROW = 18;
     const float EQ_LENGTH = 72;
     const float LABEL_COLUMN = 48;
 
     /// <summary>
-    /// A channel's controls: its EQ and filter, top to bottom as they're labelled, then its meter and fader.
+    /// A channel's controls: its trim, EQ and filter, top to bottom as they're labelled, then its meter and fader.
     /// </summary>
     sealed record Channel(Deck Deck, Label Name, Slider[] Eq, LevelMeter Meter, Slider Fader, Button Pfl);
 
-    static readonly string[] EqNames = ["HIGH", "MID", "LOW", "FILTER"];
+    static readonly string[] EqNames = ["TRIM", "HIGH", "MID", "LOW", "FILTER"];
 
     readonly AudioEngine _engine;
     readonly Label _heading;
@@ -78,7 +78,7 @@ sealed class MixerPanel : Panel
                 );
                 eq[row].Marks.Add(0);
                 var band = row;
-                eq[row].Changed += slider => SetEq(deck.Equalizer, band, slider.Value);
+                eq[row].Changed += slider => SetEq(deck, band, slider.Value);
             }
 
             var meter = Add(new LevelMeter(2) { Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 });
@@ -157,32 +157,36 @@ sealed class MixerPanel : Panel
         Refresh();
     }
 
-    static void SetEq(Equalizer equalizer, int row, float value)
+    static void SetEq(Deck deck, int row, float value)
     {
         switch (row)
         {
             case 0:
-                equalizer.High = value;
+                deck.Trim = value;
                 break;
             case 1:
-                equalizer.Mid = value;
+                deck.Equalizer.High = value;
                 break;
             case 2:
-                equalizer.Low = value;
+                deck.Equalizer.Mid = value;
+                break;
+            case 3:
+                deck.Equalizer.Low = value;
                 break;
             default:
-                equalizer.Filter = value;
+                deck.Equalizer.Filter = value;
                 break;
         }
     }
 
-    static float GetEq(Equalizer equalizer, int row) =>
+    static float GetEq(Deck deck, int row) =>
         row switch
         {
-            0 => equalizer.High,
-            1 => equalizer.Mid,
-            2 => equalizer.Low,
-            _ => equalizer.Filter,
+            0 => deck.Trim,
+            1 => deck.Equalizer.High,
+            2 => deck.Equalizer.Mid,
+            3 => deck.Equalizer.Low,
+            _ => deck.Equalizer.Filter,
         };
 
     public void Refresh()
@@ -196,7 +200,7 @@ sealed class MixerPanel : Panel
             for (var row = 0; row < channel.Eq.Length; row++)
             {
                 if (!channel.Eq[row].IsDragging)
-                    channel.Eq[row].Value = GetEq(channel.Deck.Equalizer, row);
+                    channel.Eq[row].Value = GetEq(channel.Deck, row);
             }
 
             var color = Theme.DeckColor(channel.Deck.Name);
