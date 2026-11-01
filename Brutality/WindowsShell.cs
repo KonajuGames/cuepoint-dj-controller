@@ -5,7 +5,7 @@ namespace Brutality;
 /// <summary>
 /// What a windowed (WinExe) app loses on Windows, put back: console output when started from a terminal, and a
 /// visible error when it crashes. Elsewhere there is no WinExe distinction, so both fall back to the console. Also
-/// the Recycle Bin, for deleting files the user can get back.
+/// the Recycle Bin, for deleting files the user can get back, and keeping the computer awake mid-set.
 /// </summary>
 static unsafe partial class WindowsShell
 {
@@ -13,6 +13,25 @@ static unsafe partial class WindowsShell
     const uint MB_OK = 0x0, MB_ICONERROR = 0x10;
     const uint FO_DELETE = 3;
     const ushort FOF_SILENT = 0x4, FOF_NOCONFIRMATION = 0x10, FOF_ALLOWUNDO = 0x40, FOF_NOERRORUI = 0x400;
+    const uint ES_SYSTEM_REQUIRED = 0x1, ES_DISPLAY_REQUIRED = 0x2, ES_CONTINUOUS = 0x80000000;
+
+    /// <summary>
+    /// Whether the computer is being kept awake, by <see cref="KeepAwake"/>.
+    /// </summary>
+    public static bool IsKeepingAwake { get; private set; }
+
+    /// <summary>
+    /// Keeps the computer from sleeping and the screen from turning off, or lets them again. Call from the thread
+    /// that runs the window, which holds it until told otherwise. The screen saver isn't stopped by this alone; the
+    /// window turns it away too (see <see cref="WindowChrome"/>) while <see cref="IsKeepingAwake"/>.
+    /// </summary>
+    public static void KeepAwake(bool awake)
+    {
+        if (!OperatingSystem.IsWindows() || awake == IsKeepingAwake)
+            return;
+        if (SetThreadExecutionState(awake ? ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED : ES_CONTINUOUS) != 0)
+            IsKeepingAwake = awake;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     struct FileOperation
@@ -85,4 +104,7 @@ static unsafe partial class WindowsShell
 
     [LibraryImport("shell32.dll")]
     private static partial int SHFileOperationW(FileOperation* operation);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial uint SetThreadExecutionState(uint flags);
 }

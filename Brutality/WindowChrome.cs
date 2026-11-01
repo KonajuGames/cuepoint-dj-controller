@@ -17,6 +17,8 @@ static unsafe partial class WindowChrome
 {
     const uint WM_NCCALCSIZE = 0x0083;
     const uint WM_NCHITTEST = 0x0084;
+    const uint WM_SYSCOMMAND = 0x0112;
+    const nint SC_SCREENSAVE = 0xF140, SC_MONITORPOWER = 0xF170;
     const int GWLP_WNDPROC = -4;
 
     const int HTCLIENT = 1, HTCAPTION = 2;
@@ -78,17 +80,26 @@ static unsafe partial class WindowChrome
             {
                 case WM_NCCALCSIZE when wParam != 0:
                     // The whole window is client area. Maximised, though, Windows makes the window bigger than the
-                    // screen by its frame on every side, so the client area is kept to the monitor's work area.
+                    // screen by its frame on every side, so the client area is kept to the monitor's work area. The
+                    // monitor is the one the window is going to (the first rectangle Windows passes): where it is now
+                    // can be the minimised window's spot far off screen, nearest some other monitor, which would put
+                    // the client area there and leave the window empty.
                     if (IsZoomed(window))
                     {
+                        var proposed = (Rect*)lParam;
                         var info = new MonitorInfo { Size = sizeof(MonitorInfo) };
-                        if (GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &info))
-                            ((Rect*)lParam)[0] = info.Work;
+                        if (GetMonitorInfoW(MonitorFromRect(proposed, MONITOR_DEFAULTTONEAREST), &info))
+                            proposed[0] = info.Work;
                     }
                     return 0;
 
                 case WM_NCHITTEST:
                     return HitTest(window, lParam);
+
+                // While the app's keeping the computer awake, Windows asking to start the screen saver or turn the
+                // screen off (which it does of the window in front) is turned down.
+                case WM_SYSCOMMAND when WindowsShell.IsKeepingAwake && (wParam & 0xFFF0) is SC_SCREENSAVE or SC_MONITORPOWER:
+                    return 0;
             }
         }
         catch (Exception e)
@@ -186,7 +197,7 @@ static unsafe partial class WindowChrome
     private static partial bool GetClientRect(nint window, Rect* rect);
 
     [LibraryImport("user32.dll")]
-    private static partial nint MonitorFromWindow(nint window, uint flags);
+    private static partial nint MonitorFromRect(Rect* rect, uint flags);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

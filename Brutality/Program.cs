@@ -516,24 +516,22 @@ static void Run()
     var lastFrame = Glfw.Time;
     while (!window.ShouldClose)
     {
-        Glfw.PollEvents();
-
-        // Minimised: there's no framebuffer to draw to, so sleep until something happens; but lighting software still
-        // wants every beat, so while it's connected, wake often enough to send them on time.
+        // Minimised, there's nothing to draw, but the decks, a controller and lighting software still need seeing to:
+        // so everything carries on but the drawing, waking often enough to send lighting software every beat on time.
+        // (With the app's own title bar, a minimised window still has a framebuffer, so its size doesn't say.)
+        //
+        // Whether it's minimised is asked after handling events, as one of them may be the minimise itself: drawing
+        // into a minimised window leaves it black for good once it's restored.
+        if (window.IsIconified)
+            Glfw.WaitEventsTimeout(0.005);
+        else
+            Glfw.PollEvents();
         var size = window.FramebufferSize;
-        if (size.X == 0 || size.Y == 0)
-        {
-            if (lighting.IsConnected)
-            {
-                Glfw.WaitEventsTimeout(0.005);
-                foreach (var deck in decks)
-                    deck.Update();
-                lighting.Update(Glfw.Time);
-            }
-            else
-                Glfw.WaitEvents();
-            continue;
-        }
+        var minimised = window.IsIconified || size.X == 0 || size.Y == 0;
+
+        // A set mustn't stop for a screen saver or sleep, so the computer stays awake while the window can be seen,
+        // and is let go while it's minimised.
+        WindowsShell.KeepAwake(!minimised);
 
         // Finishes any background loads, raising their Loaded events here on the UI thread.
         foreach (var deck in decks)
@@ -556,6 +554,8 @@ static void Run()
         lighting.Update(now);
         controllers?.Update(now, now - lastFrame);
         lastFrame = now;
+        if (minimised)
+            continue;
 
         screen.ScreenSize = new float2(size.X, size.Y);
         if (controllerDialog is not null)
@@ -571,6 +571,7 @@ static void Run()
     if (headphonesFound)
         SaveSettings();
 
+    WindowsShell.KeepAwake(false);
     if (OperatingSystem.IsWindows())
         WindowChrome.Remove();
 }
