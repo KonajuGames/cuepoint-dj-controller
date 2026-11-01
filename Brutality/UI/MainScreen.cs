@@ -22,6 +22,12 @@ sealed class MainScreen : Panel
     const float FOLDERS_WIDTH = 270;
 
     readonly List<ScrollingWaveform> _waveforms = [];
+    readonly List<GridEditor?> _gridEditors = [];
+
+    /// <summary>
+    /// How much a deck's scrolling waveform shows while its grid is being fixed, in seconds.
+    /// </summary>
+    const float GRID_EDIT_SECONDS = 3;
     readonly List<DeckPanel> _decks = [];
     readonly MixerPanel _mixer;
     readonly Panel _folders;
@@ -49,7 +55,8 @@ sealed class MainScreen : Panel
         Fonts fonts,
         Images images,
         Func<int, IReadOnlyList<string>>? hotcueKeys = null,
-        Func<int, DeckKeyHints?>? deckKeys = null
+        Func<int, DeckKeyHints?>? deckKeys = null,
+        Func<Deck, GridEditor?>? gridEditors = null
     )
     {
         Background = Theme.Background;
@@ -57,12 +64,17 @@ sealed class MainScreen : Panel
         TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold, images.Logo));
 
         foreach (var deck in decks)
-            _waveforms.Add(Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name), fonts.Small)));
+        {
+            var editor = gridEditors?.Invoke(deck);
+            var waveform = Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name), fonts.Small) { Pins = editor is null ? null : () => editor.Pins });
+            _waveforms.Add(waveform);
+            _gridEditors.Add(editor);
+        }
 
         // Left to right: the first half of the decks, the mixer, the rest.
         // Decks right of the mixer are laid out as reflections, so each deck's mixing controls sit nearest the mixer.
         var deckPanels = decks
-            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i))
+            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i), gridEditors?.Invoke(deck))
             {
                 Mirrored = i >= (decks.Count + 1) / 2,
             })
@@ -138,10 +150,12 @@ sealed class MainScreen : Panel
         TitleBar.Width = width;
 
         var waveformWidth = width - 2 * GAP;
-        foreach (var waveform in _waveforms)
+        for (var i = 0; i < _waveforms.Count; i++)
         {
+            // Fixing a deck's grid, its waveform zooms right in, to put beats on hits to the millisecond.
+            var waveform = _waveforms[i];
             waveform.FixedSize = new float2(waveformWidth, WAVEFORM_HEIGHT);
-            waveform.PixelsPerSecond = waveformWidth / Options.WaveformSeconds.Value;
+            waveform.PixelsPerSecond = waveformWidth / (_gridEditors[i] is { Active: true } ? GRID_EDIT_SECONDS : Options.WaveformSeconds.Value);
         }
 
         var deckWidth = (width - 2 * GAP - MixerPanel.WIDTH - GAP * (_decks.Count)) / Math.Max(1, _decks.Count);

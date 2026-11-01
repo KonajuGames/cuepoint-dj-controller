@@ -51,6 +51,7 @@ static class ControlCatalog
                     new($"{deck}.loop", $"Deck {deck} loop", ControlKind.Button, HasLight: true),
                     new($"{deck}.loop.halve", $"Deck {deck} halve loop", ControlKind.Button),
                     new($"{deck}.loop.double", $"Deck {deck} double loop", ControlKind.Button),
+                    new($"{deck}.grid", $"Deck {deck} grid mode (pads fix the beat grid)", ControlKind.Button, HasLight: true),
                 ]
             );
             for (var i = 1; i <= HOTCUES; i++)

@@ -81,6 +81,19 @@ sealed class MidiControls : IDisposable
     public event Action? BrowsePressed;
 
     /// <summary>
+    /// A deck's pad was pressed (with Shift, as the controller sends it, if <c>shifted</c>): return true to take it,
+    /// as when the pads are fixing the beat grid, or false to leave it to work the hotcue.
+    /// </summary>
+    public Func<Deck, int, bool, bool>? PadPressed { get; set; }
+
+    /// <summary>
+    /// A deck's grid mode button was pressed, and whether that deck's grid mode is on, for its light.
+    /// </summary>
+    public event Action<Deck>? GridModePressed;
+
+    public Func<Deck, bool>? IsGridMode { get; set; }
+
+    /// <summary>
     /// The control the next message will be bound to, if learning; null otherwise.
     /// </summary>
     public string? Learning { get; set; }
@@ -326,9 +339,14 @@ sealed class MidiControls : IDisposable
             case "tempo.reset":
                 deck.Tempo = 0;
                 break;
+            case "grid":
+                GridModePressed?.Invoke(deck);
+                break;
             default:
                 if (Hotcue(action) is { } hotcue)
                 {
+                    if (PadPressed?.Invoke(deck, hotcue, action.EndsWith(".delete")) == true)
+                        break;
                     if (action.EndsWith(".delete"))
                         deck.DeleteHotcue(hotcue);
                     else
@@ -444,6 +462,7 @@ sealed class MidiControls : IDisposable
             "pfl" => deck.Headphones,
             "keylock" => deck.KeyLocked,
             "loop" => deck.IsLooping,
+            "grid" => IsGridMode?.Invoke(deck) == true,
             _ => Hotcue(action) is { } hotcue && hotcue < deck.Hotcues.Count && deck.Hotcues[hotcue] is not null,
         };
     }

@@ -14,6 +14,12 @@ sealed class HotcuePad(Font font, int number) : Element
     public int Number { get; } = number;
 
     public bool IsSet { get; set; }
+
+    /// <summary>
+    /// What the pad says in place of its number, when it's doing something else (a grid tool, say); null for the
+    /// number.
+    /// </summary>
+    public string? Text { get; set; }
     public float4 Color { get; set; } = Colors.White;
     public bool Enabled { get; set; } = true;
     public float2 FixedSize { get; set; } = new(34, 30);
@@ -79,10 +85,12 @@ sealed class HotcuePad(Font font, int number) : Element
         if (!IsSet)
             batch.AddRect(ScreenPosition + new float2(0, Size.Y - 2), new float2(Size.X, 2), Faded(Theme.Fade(Color, 0.6f)));
 
-        var text = Number.ToString();
-        var extent = font.Measure(text);
+        // A word in place of the number goes in the small font, leaving the corner for the key.
+        var text = Text ?? Number.ToString();
+        var textFont = Text is not null && HintFont is { } small ? small : font;
+        var extent = textFont.Measure(text);
         var at = new float2(MathF.Round(ScreenPosition.X + (Size.X - extent.X) / 2), MathF.Round(ScreenPosition.Y + (Size.Y - extent.Y) / 2));
-        batch.AddText(font, text, at, Faded(IsSet ? Theme.TitleBar : Theme.Muted));
+        batch.AddText(textFont, text, at, Faded(IsSet ? Theme.TitleBar : Text is not null ? Theme.Text : Theme.Muted));
 
         if (KeyHint is { } hint && HintFont is { } hintFont)
         {

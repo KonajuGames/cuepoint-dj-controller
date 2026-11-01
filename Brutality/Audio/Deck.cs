@@ -231,6 +231,28 @@ sealed class Deck : IDisposable
         set => _keyLock.Enabled = value;
     }
 
+    bool _metronome;
+
+    /// <summary>
+    /// Whether the deck clicks on its grid's beats as it plays (higher on each bar's first beat), to hear the grid
+    /// against the music while fixing it. The clicks go to the headphones, or the main mix if there are none, and
+    /// aren't touched by the fader.
+    /// </summary>
+    public bool Metronome
+    {
+        get => Volatile.Read(ref _metronome);
+        set => Volatile.Write(ref _metronome, value);
+    }
+
+    const double CLICK_SECONDS = 0.025;
+    const double CLICK_DECAY_SECONDS = 0.006;
+    const double CLICK_HZ = 1600;
+    const double BAR_CLICK_HZ = 2400;
+    const float CLICK_LEVEL = 0.35f;
+
+    // The clicks for one block, on the audio thread.
+    float[] _clicks = [];
+
     /// <summary>
     /// SDL_mixer's callback for the deck's audio, after its gain and just before it's mixed, on the audio thread:
     /// the EQ changes it there, then the meter measures it.
@@ -248,10 +270,67 @@ sealed class Deck : IDisposable
             if (deck.Headphones)
                 deck._engine.AddCue(samples, count);
             deck.ApplyChannelGain(samples, count, channels);
+            if (deck.Metronome)
+                deck.Click(samples, count, channels, spec->freq);
         }
         catch
         {
             // Nothing can be done about it on the audio thread, and an exception mustn't escape into SDL.
+        }
+    }
+
+    /// <summary>
+    /// The metronome's clicks for this block of output, on the grid's beats: to the headphones, or into the block
+    /// itself (after the fader) if there are none. The block's last sample is at the deck's position now; each sample
+    /// before it is earlier in the song by the deck's speed, so the clicks follow the tempo fader and key lock.
+    /// </summary>
+    unsafe void Click(float* samples, int count, int channels, int rate)
+    {
+        if (_analysis?.Grid is not { } grid || channels <= 0 || rate <= 0)
+            return;
+        var frames = count / channels;
+        var speed = (double)Volatile.Read(ref _speed);
+        var end = Position.TotalSeconds;
+        var secondsPerFrame = speed / rate;
+        var start = end - frames * secondsPerFrame;
+
+        if (_clicks.Length < count)
+            _clicks = new float[count];
+        var clicks = _clicks.AsSpan(0, count);
+        clicks.Clear();
+        var any = false;
+
+        // Every beat whose click sounds in this block: from one a click's length (in song time) before it.
+        var first = (long)Math.Ceiling(grid.BeatNumberAt(start - CLICK_SECONDS * speed) - 1e-9);
+        var last = (long)Math.Floor(grid.BeatNumberAt(end));
+        for (var beat = first; beat <= last; beat++)
+        {
+            var at = grid.TimeOfBeat(beat);
+            var hz = grid.IsBarStart(beat) ? BAR_CLICK_HZ : CLICK_HZ;
+            for (var f = 0; f < frames; f++)
+            {
+                // Output time since the beat, in seconds as heard.
+                var since = (start + f * secondsPerFrame - at) / speed;
+                if (since < 0 || since >= CLICK_SECONDS)
+                    continue;
+                var value = (float)(CLICK_LEVEL * Math.Sin(2 * Math.PI * hz * since) * Math.Exp(-since / CLICK_DECAY_SECONDS));
+                for (var c = 0; c < channels; c++)
+                    clicks[f * channels + c] += value;
+                any = true;
+            }
+        }
+        if (!any)
+            return;
+
+        if (_engine.HasHeadphones)
+        {
+            fixed (float* click = clicks)
+                _engine.AddCue(click, count);
+        }
+        else
+        {
+            for (var i = 0; i < count; i++)
+                samples[i] += clicks[i];
         }
     }
 

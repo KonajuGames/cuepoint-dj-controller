@@ -160,8 +160,9 @@ sealed class LibraryAnalyser : IDisposable
 
             if (finished.Analysis is { } analysis)
             {
-                song.Analysis = analysis;
+                // Kept as analysed; the song gets its grid as fixed by hand, if it was.
                 Database.Set(song, analysis);
+                song.Analysis = Database.WithEdits(song.Path, analysis);
             }
             else
             {

@@ -50,6 +50,8 @@ sealed class DeckPanel : Panel
     readonly Slider _tempoFader;
     readonly Button _tempoRange;
     readonly Button _keyLock;
+    readonly Button? _gridMode;
+    readonly GridEditor? _grid;
 
     /// <summary>
     /// The width of the tempo fader's column down the right-hand side, and the space before it.
@@ -78,8 +80,19 @@ sealed class DeckPanel : Panel
 
     /// <param name="padKeys">The keys that press the hotcue pads, in order, to label them with.</param>
     /// <param name="keys">The keys that press its buttons, to label them with.</param>
-    public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big, IReadOnlyList<string>? padKeys = null, DeckKeyHints? keys = null)
+    /// <param name="grid">Fixes the deck's beat grid by hand, with the pads in GRID mode; no GRID mode if null.</param>
+    public DeckPanel(
+        Deck deck,
+        Font small,
+        Font body,
+        Font bold,
+        Font big,
+        IReadOnlyList<string>? padKeys = null,
+        DeckKeyHints? keys = null,
+        GridEditor? grid = null
+    )
     {
+        _grid = grid;
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
         _bold = bold;
@@ -170,6 +183,13 @@ sealed class DeckPanel : Panel
                 (button.KeyHint, button.HintFont) = (hint, small);
         }
 
+        // GRID turns the pads into tools for fixing the beat grid by hand, and back.
+        if (grid is not null)
+        {
+            _gridMode = Add(new Button(bold, "GRID") { MinSize = new float2(56, 30), FocusColor = Theme.Focus });
+            _gridMode.Clicked += _ => grid.Active = !grid.Active;
+        }
+
         for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
         {
             var index = i;
@@ -182,8 +202,21 @@ sealed class DeckPanel : Panel
                     HintFont = small,
                 }
             );
-            pad.Triggered += _ => _deck.HotcueDown(index);
-            pad.Deleted += _ => _deck.DeleteHotcue(index);
+            // In GRID mode each pad is a tool; Shift (or a right-click) makes a nudge a fine one.
+            pad.Triggered += _ =>
+            {
+                if (_grid is { Active: true })
+                    _grid.Pad(index);
+                else
+                    _deck.HotcueDown(index);
+            };
+            pad.Deleted += _ =>
+            {
+                if (_grid is { Active: true })
+                    _grid.Pad(index, fine: true);
+                else
+                    _deck.DeleteHotcue(index);
+            };
             _pads.Add(pad);
         }
 
@@ -193,6 +226,11 @@ sealed class DeckPanel : Panel
     public void Refresh()
     {
         RefreshTempo();
+        if (_gridMode is not null && _grid is not null)
+        {
+            _gridMode.Background = _grid.Active ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+            _gridMode.HoverBackground = _grid.Active ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+        }
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
 
         if (!_deck.IsLoaded)
@@ -259,10 +297,13 @@ sealed class DeckPanel : Panel
         _overview.Marks.Add((float)_deck.CuePoint.TotalSeconds);
 
         var flags = new List<(float, float4, string)>();
+        var gridMode = _grid is { Active: true };
         for (var i = 0; i < _pads.Count; i++)
         {
             var hotcue = _deck.Hotcues[i];
-            (_pads[i].Enabled, _pads[i].IsSet) = (true, hotcue is not null);
+            (_pads[i].Enabled, _pads[i].IsSet) = (true, hotcue is not null && !gridMode);
+            _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : null;
+            _pads[i].Color = gridMode ? Theme.Accent : Theme.HotcueColor(i);
             if (hotcue is { } at)
                 flags.Add(((float)at.TotalSeconds, Theme.HotcueColor(i), (i + 1).ToString()));
         }
@@ -393,6 +434,11 @@ sealed class DeckPanel : Panel
         Place(_playPause, Outer(_cue.Size.X + 6, _playPause), buttonsY);
         Place(_sync, Outer(_cue.Size.X + 6 + _playPause.Size.X + 6, _sync), buttonsY);
         var transport = _cue.Size.X + 6 + _playPause.Size.X + 6 + _sync.Size.X;
+        if (_gridMode is not null)
+        {
+            Place(_gridMode, Outer(transport + 12, _gridMode), buttonsY);
+            transport += 12 + _gridMode.Size.X;
+        }
         Place(_loading, Outer(transport + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
 
         // The loop's buttons keep their order, halve on the left, whichever side the group is on.

@@ -199,6 +199,7 @@ sealed class OptionsDialog : Panel
             ("Q W E R", "Hotcues 1 to 4 on deck A; A S D F for 5 to 8"),
             ("U I O P", "Hotcues 1 to 4 on deck B; J K L ; for 5 to 8"),
             ("Shift", "With a hotcue key, or clicking a pad, clears it"),
+            ("GRID", "Pads and their keys fix the beat grid; Shift nudges finely"),
             ("Tab / Enter / Esc", "Next control / press / leave a box or close this"),
         })
         {

@@ -128,8 +128,14 @@ static void Run()
     var folders = LibraryTree.Build(library, decks, history, virtualFolders);
     var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
 
+    // Each deck's beat grid can be fixed by hand, with its pads in GRID mode.
+    var gridEditors = decks.Select(deck => new GridEditor(deck, library, database)).ToArray();
+    GridEditor? GridEditorFor(Deck deck) => gridEditors.FirstOrDefault(editor => editor.Deck == deck);
+
     var ui = new Root();
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor));
+    foreach (var editor in gridEditors)
+        editor.Log += screen.Log;
     using var input = new GlfwUiInput(window, ui);
     var browser = screen.Browser;
 
@@ -335,6 +341,21 @@ static void Run()
         controllers.BrowseFolders += steps => Step(screen.FolderTree, steps);
         controllers.BrowsePressed += () => screen.FolderTree.KeyDown(Key.Enter, Modifiers.None);
 
+        // In GRID mode the controller's pads are the grid tools too, Shift + pad making a nudge a fine one.
+        controllers.PadPressed = (deck, pad, shifted) =>
+        {
+            if (GridEditorFor(deck) is not { Active: true } editor)
+                return false;
+            editor.Pad(pad, fine: shifted);
+            return true;
+        };
+        controllers.GridModePressed += deck =>
+        {
+            if (GridEditorFor(deck) is { } editor)
+                editor.Active = !editor.Active;
+        };
+        controllers.IsGridMode = deck => GridEditorFor(deck)?.Active == true;
+
         // Mapping, opened from the options, over everything but menus.
         controllerDialog = ui.Add(new ControllerDialog(controllers, midiDevices!, fonts.Body, fonts.Bold, fonts.Heading));
         screen.Options.ControllerStatus = () => midiDevices!.Devices.Count == 0 ? null : string.Join(", ", midiDevices.Devices.Select(device => device.Name));
@@ -350,10 +371,13 @@ static void Run()
             return;
         var pressed = action == GlfwKeyAction.Press;
 
-        // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear.
+        // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear; or in GRID mode, its tools,
+        // Shift making a nudge a fine one.
         if (HotcueKeys.For(key) is { } hotcue)
         {
-            if (pressed && hotcue.Deck < decks.Length)
+            if (pressed && hotcue.Deck < decks.Length && gridEditors[hotcue.Deck].Active)
+                gridEditors[hotcue.Deck].Pad(hotcue.Hotcue, fine: (mods & GlfwModifier.Shift) != 0);
+            else if (pressed && hotcue.Deck < decks.Length)
             {
                 if ((mods & GlfwModifier.Shift) != 0)
                     decks[hotcue.Deck].DeleteHotcue(hotcue.Hotcue);

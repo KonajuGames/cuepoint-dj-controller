@@ -44,6 +44,11 @@ sealed class ScrollingWaveform : Element
     float SongPixelsPerSecond => PixelsPerSecond / (float)_deck.TempoRatio;
 
     public float4 Color { get; set; }
+
+    /// <summary>
+    /// Where beats have been pinned by hand, in seconds, shown as markers; none if null.
+    /// </summary>
+    public Func<IReadOnlyList<double>>? Pins { get; set; }
     public float4 Background { get; set; } = Theme.Well;
 
     public override bool IsInteractive => _deck.IsLoaded;
@@ -117,6 +122,7 @@ sealed class ScrollingWaveform : Element
 
             DrawLoop(batch, position, centre);
             DrawBeats(batch, position, centre);
+            DrawPins(batch, position, centre);
             DrawHotcues(batch, position, centre);
         }
 
@@ -149,6 +155,25 @@ sealed class ScrollingWaveform : Element
                 batch.AddRect(new float2(x - 1, ScreenPosition.Y), new float2(3, tick), Colors.Hex(0xFFFFFF, 0.8f));
                 batch.AddRect(new float2(x - 1, ScreenPosition.Y + Size.Y - tick), new float2(3, tick), Colors.Hex(0xFFFFFF, 0.8f));
             }
+        }
+    }
+
+    /// <summary>
+    /// Beats pinned by hand, as lines in the accent colour with a block at each end.
+    /// </summary>
+    void DrawPins(Batch batch, double position, float centre)
+    {
+        if (Pins?.Invoke() is not { Count: > 0 } pins)
+            return;
+        var pps = SongPixelsPerSecond;
+        foreach (var pin in pins)
+        {
+            var x = MathF.Round(centre + (float)((pin - position) * pps));
+            if (x < ScreenPosition.X || x >= ScreenPosition.X + Size.X)
+                continue;
+            batch.AddRect(new float2(x - 1, ScreenPosition.Y), new float2(2, Size.Y), Theme.Fade(Theme.Accent, 0.8f));
+            batch.AddRect(new float2(x - 4, ScreenPosition.Y), new float2(8, 5), Theme.Accent);
+            batch.AddRect(new float2(x - 4, ScreenPosition.Y + Size.Y - 5), new float2(8, 5), Theme.Accent);
         }
     }
 

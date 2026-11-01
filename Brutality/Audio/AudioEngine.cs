@@ -197,6 +197,11 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
+    /// Whether there are headphones to send anything to.
+    /// </summary>
+    internal bool HasHeadphones => _headphones is not null;
+
+    /// <summary>
     /// The name of the device the headphones are on, if they're on one: a device of their own, or the output device
     /// when they're on its channels 3 and 4.
     /// </summary>

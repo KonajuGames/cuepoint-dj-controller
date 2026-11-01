@@ -8,9 +8,10 @@ namespace Brutality.Music;
 /// <summary>
 /// What's been learnt about the library's songs, kept between runs in a JSON file: each song's analysis, or why it
 /// couldn't be analysed, with the file size and time it was made from so a changed file gets analysed again. A beat
-/// grid is stored as its markers, each a beat time and the tempo from there on. Hotcues are kept apart from the
-/// analysis, since they're the DJ's own work: analysing again, or a newer analysis, leaves them be. Only used from
-/// the UI thread.
+/// grid is stored as its markers, each a beat time and the tempo from there on. Hotcues, and beat grids fixed by
+/// hand, are kept apart from the analysis, since they're the DJ's own work: analysing again, or a newer analysis,
+/// leaves them be, and a song's fixed grid is given in place of the analysed one wherever its analysis is. Only used
+/// from the UI thread.
 /// </summary>
 sealed class LibraryDatabase
 {
@@ -41,17 +42,20 @@ sealed class LibraryDatabase
 
     readonly Dictionary<string, TrackRecord> _tracks;
     readonly Dictionary<string, double?[]> _hotcues;
+    readonly Dictionary<string, GridRecord> _grids;
 
     LibraryDatabase(
         string filePath,
         Dictionary<string, TrackRecord> tracks,
         Dictionary<string, double?[]> hotcues,
+        Dictionary<string, GridRecord> grids,
         string? loadError
     )
     {
         FilePath = filePath;
         _tracks = new Dictionary<string, TrackRecord>(tracks, StringComparer.OrdinalIgnoreCase);
         _hotcues = new Dictionary<string, double?[]>(hotcues, StringComparer.OrdinalIgnoreCase);
+        _grids = new Dictionary<string, GridRecord>(grids, StringComparer.OrdinalIgnoreCase);
         LoadError = loadError;
     }
 
@@ -63,27 +67,38 @@ sealed class LibraryDatabase
     {
         filePath = Path.GetFullPath(filePath);
         if (!File.Exists(filePath))
-            return new LibraryDatabase(filePath, [], [], null);
+            return new LibraryDatabase(filePath, [], [], [], null);
 
         try
         {
             using var stream = File.OpenRead(filePath);
             var file = JsonSerializer.Deserialize<DatabaseFile>(stream, JsonOptions);
             if (file is null || file.Version != FILE_VERSION)
-                return new LibraryDatabase(filePath, [], [], $"Unrecognised database version {file?.Version}");
-            return new LibraryDatabase(filePath, file.Tracks ?? [], file.Hotcues ?? [], null);
+                return new LibraryDatabase(filePath, [], [], [], $"Unrecognised database version {file?.Version}");
+            return new LibraryDatabase(filePath, file.Tracks ?? [], file.Hotcues ?? [], file.Grids ?? [], null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new LibraryDatabase(filePath, [], [], e.Message);
+            return new LibraryDatabase(filePath, [], [], [], e.Message);
         }
     }
 
     /// <summary>
     /// What's known about <paramref name="song"/>, if it was found from the file as it is now with the current
-    /// analysis: its analysis, or the error analysing it gave.
+    /// analysis: its analysis (with its beat grid as fixed by hand, if it was), or the error analysing it gave.
     /// </summary>
     public bool TryGet(Song song, out TrackAnalysis? analysis, out string? error)
+    {
+        var found = TryGetAnalysed(song, out analysis, out error);
+        if (analysis is not null)
+            analysis = WithEdits(song.Path, analysis);
+        return found;
+    }
+
+    /// <summary>
+    /// <see cref="TryGet"/>, but with the beat grid as analysed, whether or not it was fixed by hand since.
+    /// </summary>
+    public bool TryGetAnalysed(Song song, out TrackAnalysis? analysis, out string? error)
     {
         (analysis, error) = (null, null);
         if (
@@ -152,6 +167,56 @@ sealed class LibraryDatabase
             _hotcues[path] = hotcues.Select(at => at is { } t ? Math.Round(t.TotalSeconds, 3) : (double?)null).ToArray();
     }
 
+    /// <summary>
+    /// <paramref name="analysis"/> of the song at <paramref name="path"/>, with its beat grid as fixed by hand if it
+    /// was.
+    /// </summary>
+    public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) =>
+        GetGridEdit(path, analysis.Grid.Duration) is { } edit ? analysis with { Grid = edit.Grid } : analysis;
+
+    /// <summary>
+    /// The beat grid fixed by hand for the song at <paramref name="path"/>, with its pins, if it was;
+    /// <paramref name="duration"/> is the song's length, for the grid. Null if it wasn't, or what's saved won't make a
+    /// grid.
+    /// </summary>
+    public GridEdit? GetGridEdit(string path, double duration)
+    {
+        if (!_grids.TryGetValue(Path.GetFullPath(path), out var record) || record.Markers is not { Count: > 0 } markers)
+            return null;
+        try
+        {
+            var grid = new BeatGrid(markers.Select(marker => new GridMarker(marker.Time, marker.Bpm)).ToList(), duration)
+            {
+                DownbeatOffset = record.Downbeat,
+            };
+            return new GridEdit(grid, record.Pins ?? []);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Keeps the beat grid fixed by hand for the song at <paramref name="path"/>, or forgets it (going back to the
+    /// analysed one) with null.
+    /// </summary>
+    public void SetGridEdit(string path, GridEdit? edit)
+    {
+        path = Path.GetFullPath(path);
+        if (edit is null)
+            _grids.Remove(path);
+        else
+            _grids[path] = new GridRecord
+            {
+                Markers = edit.Grid.Markers.Select(marker => new MarkerRecord { Time = Math.Round(marker.Time, 5), Bpm = Math.Round(marker.Bpm, 4) }).ToList(),
+                Downbeat = edit.Grid.DownbeatOffset,
+                Pins = edit.Pins.Select(pin => Math.Round(pin, 5)).ToArray(),
+            };
+    }
+
+    public bool HasGridEdit(string path) => _grids.ContainsKey(Path.GetFullPath(path));
+
     public void SetFailed(Song song, string error) =>
         _tracks[song.Path] = new TrackRecord
         {
@@ -171,7 +236,11 @@ sealed class LibraryDatabase
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         var temporary = FilePath + ".tmp";
         using (var stream = File.Create(temporary))
-            JsonSerializer.Serialize(stream, new DatabaseFile { Version = FILE_VERSION, Tracks = _tracks, Hotcues = _hotcues }, JsonOptions);
+            JsonSerializer.Serialize(
+                stream,
+                new DatabaseFile { Version = FILE_VERSION, Tracks = _tracks, Hotcues = _hotcues, Grids = _grids.Count > 0 ? _grids : null },
+                JsonOptions
+            );
         File.Move(temporary, FilePath, overwrite: true);
     }
 
@@ -184,6 +253,22 @@ sealed class LibraryDatabase
         /// Each song's hotcues in seconds, null where one isn't set; songs without any are left out.
         /// </summary>
         public Dictionary<string, double?[]>? Hotcues { get; set; }
+
+        /// <summary>
+        /// Each song's beat grid as fixed by hand; songs left as analysed are left out.
+        /// </summary>
+        public Dictionary<string, GridRecord>? Grids { get; set; }
+    }
+
+    sealed class GridRecord
+    {
+        public List<MarkerRecord>? Markers { get; set; }
+        public int Downbeat { get; set; }
+
+        /// <summary>
+        /// Where beats were pinned by hand, in seconds.
+        /// </summary>
+        public double[]? Pins { get; set; }
     }
 
     sealed class TrackRecord
