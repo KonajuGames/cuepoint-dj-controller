@@ -14,7 +14,7 @@ static class ControllerPresets
 
     /// <summary>
     /// Pioneer's DDJ layout, as on the DDJ-SB3: each deck's controls on its own channel (deck 1 on 1, deck 2 on 2),
-    /// its pads on another (8 and 10), and the shared mixer and browser on 7. Faders and knobs send fourteen bits,
+    /// its pads on another (8 and 9), and the shared mixer and browser on 7. Faders and knobs send fourteen bits,
     /// the fine half 32 above the coarse. Shift sends different messages rather than changing what the app does, so
     /// shifted controls are bound like any other: pads with Shift held come 8 notes higher, and the jog wheel
     /// turned with Shift comes on its own controls.
@@ -42,7 +42,7 @@ static class ControllerPresets
         {
             var deck = decks[i];
             var channel = i;
-            var pads = 7 + 2 * i;
+            var pads = 7 + i;
 
             Note($"{deck}.play", channel, 0x0B);
             Note($"{deck}.cue", channel, 0x0C);
