@@ -26,6 +26,13 @@ sealed class OptionsDialog : Panel
 
     public event Action? Closed;
 
+    /// <summary>
+    /// The headphones were moved to another device, or turned off; the new device's name, or null.
+    /// </summary>
+    public event Action<string?>? HeadphonesChanged;
+
+    readonly Button _headphones;
+
     public OptionsDialog(AudioEngine engine, string musicFolder, string databasePath, Font body, Font bold, Font heading)
     {
         _engine = engine;
@@ -50,6 +57,28 @@ sealed class OptionsDialog : Panel
         _autoGain = gainRow.Add(new Button(bold, "On") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
         _autoGain.Clicked += _ => engine.AutoGain = !engine.AutoGain;
         _box.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
+
+        // Each click moves the headphones on to the next playback device, and after the last, off.
+        var phonesRow = Row("Headphones", body);
+        _headphones = phonesRow.Add(new Button(bold, "Off") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
+        _headphones.Clicked += _ =>
+        {
+            var names = AudioEngine.PlaybackDevices().Select(device => device.Name).ToList();
+            var at = engine.HeadphoneDevice is { } current ? names.IndexOf(current) : -1;
+            string? next = null;
+            for (var i = at + 1; i < names.Count; i++)
+            {
+                if (engine.UseHeadphoneDevice(names[i]))
+                {
+                    next = names[i];
+                    break;
+                }
+            }
+            if (next is null)
+                engine.UseHeadphoneDevice(null);
+            HeadphonesChanged?.Invoke(engine.HeadphoneDevice);
+        };
+        _box.Add(new Label(body, "A second sound card or output, to hear decks with PFL on before the room does.") { Color = Theme.Muted });
 
         var zoomRow = Row("Waveform shows", body);
         WaveformSeconds = zoomRow.Add(
@@ -127,6 +156,7 @@ sealed class OptionsDialog : Panel
     public override float2 Measure()
     {
         _autoGain.Text = _engine.AutoGain ? "On" : "Off";
+        _headphones.Text = _engine.HeadphoneDevice ?? "Off";
         _autoGain.Background = _engine.AutoGain ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
 
         _box.Measure();

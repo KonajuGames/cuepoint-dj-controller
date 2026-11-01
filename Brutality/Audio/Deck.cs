@@ -172,16 +172,41 @@ sealed class Deck : IDisposable
     }
 
     /// <summary>
-    /// What the deck plays at: the song's automatic gain, then its fader through an audio taper, times what the
-    /// crossfader lets through.
+    /// What the deck plays at in the main mix: the song's automatic gain, then its fader through an audio taper,
+    /// times what the crossfader lets through.
     /// </summary>
-    public float Gain =>
-        (_engine.AutoGain ? _analysis?.AutoGain ?? 1 : 1) * VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
+    public float Gain => AutoGainFactor * ChannelGain;
+
+    float AutoGainFactor => _engine.AutoGain ? _analysis?.AutoGain ?? 1 : 1;
 
     /// <summary>
-    /// The deck's level as it plays, after its gain, the crossfader and its EQ.
+    /// The fader and crossfader together: what's applied after the EQ, the meter and the headphones have had the
+    /// sound, as on a DJ mixer.
+    /// </summary>
+    float ChannelGain => VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
+
+    /// <summary>
+    /// The deck's level as it comes into its mixer channel: after the automatic gain and the EQ, but before the fader
+    /// and crossfader, as a DJ mixer's channel meters show it, so a deck being cued shows its level too.
     /// </summary>
     public AudioMeter Meter { get; } = new();
+
+    bool _headphones;
+
+    /// <summary>
+    /// Whether the deck goes to the headphones (its PFL is on): after its EQ but before its fader, so it can be heard
+    /// there with the fader down.
+    /// </summary>
+    public bool Headphones
+    {
+        get => Volatile.Read(ref _headphones);
+        set => Volatile.Write(ref _headphones, value);
+    }
+
+    // The fader and crossfader's gain: what the UI last set, and what the audio thread last applied, which it eases
+    // towards across each buffer so moving them doesn't click.
+    float _channelGain = 1;
+    float _appliedChannelGain = 1;
 
     /// <summary>
     /// The deck's mixer channel EQ and filter.
@@ -198,8 +223,12 @@ sealed class Deck : IDisposable
         try
         {
             var deck = (Deck)GCHandle.FromIntPtr((nint)userData).Target!;
-            deck.Equalizer.Process(samples, count, spec->channels, spec->freq);
-            deck.Meter.Measure(samples, count, spec->channels);
+            var channels = spec->channels;
+            deck.Equalizer.Process(samples, count, channels, spec->freq);
+            deck.Meter.Measure(samples, count, channels);
+            if (deck.Headphones)
+                deck._engine.AddCue(samples, count);
+            deck.ApplyChannelGain(samples, count, channels);
         }
         catch
         {
@@ -213,7 +242,15 @@ sealed class Deck : IDisposable
     /// </summary>
     public static float VolumeTaper(float position) => position * position;
 
-    internal void ApplyGain() => _track.SetGain(Gain);
+    /// <summary>
+    /// The automatic gain goes to SDL_mixer as the track's own gain, ahead of everything; the fader and crossfader
+    /// are left for the track's callback, after the headphones have had the sound.
+    /// </summary>
+    internal void ApplyGain()
+    {
+        _track.SetGain(AutoGainFactor);
+        Volatile.Write(ref _channelGain, ChannelGain);
+    }
 
     /// <summary>
     /// The tempo fader's ranges, as fractions either way: ±8% for fine matching, then ±16% and ±50% for bigger jumps.
@@ -361,9 +398,25 @@ sealed class Deck : IDisposable
     static double Fraction(double value) => value - Math.Floor(value);
 
     /// <summary>
-    /// The gain SDL_mixer has for the track, read back, for checking that <see cref="Gain"/> reached it.
+    /// The gain the deck plays at in the main mix, read back from SDL_mixer and the callback's setting, for checking
+    /// that <see cref="Gain"/> reached them.
     /// </summary>
-    internal float AppliedGain => _track.GetGain();
+    internal float AppliedGain => _track.GetGain() * Volatile.Read(ref _channelGain);
+
+    /// <summary>
+    /// Applies the fader and crossfader, easing from the last buffer's gain to this one's. On the audio thread.
+    /// </summary>
+    unsafe void ApplyChannelGain(float* samples, int count, int channels)
+    {
+        var target = Volatile.Read(ref _channelGain);
+        var from = _appliedChannelGain;
+        if (from == 1 && target == 1)
+            return;
+        var frames = Math.Max(1, count / Math.Max(1, channels));
+        for (var i = 0; i < count; i++)
+            samples[i] *= from + (target - from) * ((float)(i / channels + 1) / frames);
+        _appliedChannelGain = target;
+    }
 
     /// <summary>
     /// Where playback is, from SDL_mixer's audio thread, so it moves on between calls while playing.
@@ -820,7 +873,6 @@ sealed class Deck : IDisposable
         _track.Dispose();
         _loopAudio.Dispose();
         _audio.Dispose();
-        Meter.Dispose();
         if (_self.IsAllocated)
             _self.Free();
     }

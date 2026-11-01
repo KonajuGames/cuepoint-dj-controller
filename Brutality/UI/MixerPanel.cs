@@ -7,22 +7,23 @@ namespace Brutality.UI;
 /// The mixer between the decks, laid out as a DJ mixer is. Down the middle, the names of each channel's EQ and
 /// filter, with each deck's controls on its own side: bass, mids and treble from killed on the left, through
 /// unchanged in the middle, to boosted on the right, and the filter, a low-pass to the left and a high-pass to the
-/// right. Double-click any of them to put it back in the middle. At the outer edges, each deck's level as it plays
-/// and its volume fader; the crossfader across the bottom; and a switch for automatic gain. All in each deck's colour.
-/// Call <see cref="Refresh"/> once a frame.
+/// right. Double-click any of them to put it back in the middle. At the outer edges, each deck's level coming into
+/// its channel and its volume fader; under the EQ, each deck's PFL (send it to the headphones) either side of the
+/// automatic gain switch; then the headphones' blend of cue and main mix, and their volume; and the crossfader across
+/// the bottom. All in each deck's colour. Call <see cref="Refresh"/> once a frame.
 /// </summary>
 sealed class MixerPanel : Panel
 {
     public const float WIDTH = 340;
     const float PAD = 10;
-    const float ROW = 24;
+    const float ROW = 22;
     const float EQ_LENGTH = 72;
     const float LABEL_COLUMN = 48;
 
     /// <summary>
     /// A channel's controls: its EQ and filter, top to bottom as they're labelled, then its meter and fader.
     /// </summary>
-    sealed record Channel(Deck Deck, Label Name, Slider[] Eq, LevelMeter Meter, Slider Fader);
+    sealed record Channel(Deck Deck, Label Name, Slider[] Eq, LevelMeter Meter, Slider Fader, Button Pfl);
 
     static readonly string[] EqNames = ["HIGH", "MID", "LOW", "FILTER"];
 
@@ -34,6 +35,11 @@ sealed class MixerPanel : Panel
     readonly Label _crossLeft;
     readonly Label _crossRight;
     readonly Button _autoGain;
+    readonly Label _cueLabel;
+    readonly Slider _cueMix;
+    readonly Label _masterLabel;
+    readonly Label _phonesLabel;
+    readonly Slider _phonesVolume;
 
     public MixerPanel(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font bold)
     {
@@ -92,7 +98,10 @@ sealed class MixerPanel : Panel
                 }
             );
             fader.Changed += slider => deck.Volume = slider.Value;
-            _channels.Add(new Channel(deck, name, eq, meter, fader));
+
+            var pfl = Add(new Button(small, "PFL") { FocusColor = Theme.Focus, MinSize = new float2(44, 24) });
+            pfl.Clicked += _ => deck.Headphones = !deck.Headphones;
+            _channels.Add(new Channel(deck, name, eq, meter, fader, pfl));
         }
 
         _crossLeft = Add(new Label(bold, decks.Count > 0 ? decks[0].Name : "") { Color = decks.Count > 0 ? Theme.DeckColor(decks[0].Name) : Theme.Muted });
@@ -113,6 +122,28 @@ sealed class MixerPanel : Panel
 
         _autoGain = Add(new Button(small, "AUTO GAIN") { FocusColor = Theme.Focus, MinSize = new float2(90, 24) });
         _autoGain.Clicked += _ => engine.AutoGain = !engine.AutoGain;
+
+        // The headphones: from the cued decks alone to the main mix alone, and their volume.
+        _cueLabel = Add(new Label(small, "CUE") { Color = Theme.Muted });
+        _cueMix = Add(new Slider { Length = 64, Thickness = 14, TrackThickness = 3, HandleLength = 8, DefaultValue = 0, Value = engine.CueMix, FocusColor = Theme.Focus });
+        _cueMix.Changed += slider => engine.CueMix = slider.Value;
+        _masterLabel = Add(new Label(small, "MST") { Color = Theme.Muted });
+        _phonesLabel = Add(new Label(small, "VOL") { Color = Theme.Muted });
+        _phonesVolume = Add(
+            new Slider
+            {
+                Length = 48,
+                Thickness = 14,
+                TrackThickness = 3,
+                HandleLength = 8,
+                DefaultValue = 0.8f,
+                Value = engine.HeadphoneVolume,
+                ShowFill = true,
+                FillColor = Theme.Accent,
+                FocusColor = Theme.Focus,
+            }
+        );
+        _phonesVolume.Changed += slider => engine.HeadphoneVolume = slider.Value;
 
         Refresh();
     }
@@ -158,7 +189,21 @@ sealed class MixerPanel : Panel
                 if (!channel.Eq[row].IsDragging)
                     channel.Eq[row].Value = GetEq(channel.Deck.Equalizer, row);
             }
+
+            var color = Theme.DeckColor(channel.Deck.Name);
+            var cued = channel.Deck.Headphones;
+            channel.Pfl.Background = cued ? Theme.Mix(Theme.PanelRaised, color, 0.6f) : Colors.Hex(0x2A2A35);
+            channel.Pfl.HoverBackground = cued ? Theme.Mix(Theme.PanelRaised, color, 0.75f) : Colors.Hex(0x3A3A48);
+            channel.Pfl.TextColor = cued ? Colors.White : Theme.Muted;
         }
+        if (!_cueMix.IsDragging)
+            _cueMix.Value = _engine.CueMix;
+        if (!_phonesVolume.IsDragging)
+            _phonesVolume.Value = _engine.HeadphoneVolume;
+
+        // Without headphones there's nothing to hear these on, but they can still be set ready.
+        var phonesColor = _engine.Headphones is null ? Theme.Faint : Theme.Muted;
+        _cueLabel.Color = _masterLabel.Color = _phonesLabel.Color = phonesColor;
         if (!_crossfader.IsDragging)
             _crossfader.Value = _engine.Crossfader;
 
@@ -207,7 +252,30 @@ sealed class MixerPanel : Panel
             Place(channel.Name, (columnLeft + columnRight - channel.Name.Size.X) / 2, top - 6);
         }
 
-        Place(_autoGain, centre - _autoGain.Size.X / 2, eqTop + _eqLabels.Length * ROW + 4);
+        // Each deck's PFL either side of the automatic gain switch, its own side of the mixer.
+        var switchesY = eqTop + _eqLabels.Length * ROW + 2;
+        Place(_autoGain, centre - _autoGain.Size.X / 2, switchesY);
+        for (var i = 0; i < _channels.Count; i++)
+        {
+            var pfl = _channels[i].Pfl;
+            var onLeft = i < (_channels.Count + 1) / 2;
+            Place(pfl, onLeft ? centre - _autoGain.Size.X / 2 - 6 - pfl.Size.X : centre + _autoGain.Size.X / 2 + 6, switchesY);
+        }
+
+        // The headphones' row: CUE, the blend, MST, then VOL and the volume.
+        var phonesY = switchesY + _autoGain.Size.Y + 6;
+        var phonesWidth = _cueLabel.Size.X + 4 + _cueMix.Size.X + 4 + _masterLabel.Size.X + 14 + _phonesLabel.Size.X + 4 + _phonesVolume.Size.X;
+        var x = centre - phonesWidth / 2;
+        float Middle(Element child) => phonesY + (_cueMix.Size.Y - child.Size.Y) / 2;
+        Place(_cueLabel, x, Middle(_cueLabel));
+        x += _cueLabel.Size.X + 4;
+        Place(_cueMix, x, phonesY);
+        x += _cueMix.Size.X + 4;
+        Place(_masterLabel, x, Middle(_masterLabel));
+        x += _masterLabel.Size.X + 14;
+        Place(_phonesLabel, x, Middle(_phonesLabel));
+        x += _phonesLabel.Size.X + 4;
+        Place(_phonesVolume, x, phonesY);
 
         var crossY = position.Y + DeckPanel.HEIGHT - PAD - _crossfader.Size.Y;
         Place(_crossfader, centre - _crossfader.Size.X / 2, crossY);

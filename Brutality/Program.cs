@@ -76,6 +76,20 @@ static void Run()
     using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
     Deck[] decks = [deckA, deckB];
 
+    // Settings kept between runs, beside the library's database: for now, the headphones.
+    var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "settings.json");
+    var settings = AppSettings.Load(settingsPath);
+    audio.CueMix = settings.CueMix;
+    audio.HeadphoneVolume = settings.HeadphoneVolume;
+    var headphonesFound = audio.UseHeadphoneDevice(settings.HeadphoneDevice);
+    void SaveSettings()
+    {
+        settings.HeadphoneDevice = audio.HeadphoneDevice;
+        settings.CueMix = audio.CueMix;
+        settings.HeadphoneVolume = audio.HeadphoneVolume;
+        settings.Save(settingsPath);
+    }
+
     // The library scans now and reads tags in the background; songs load onto decks in the background too.
     using var library = new MusicLibrary(MUSIC_FOLDER);
 
@@ -117,6 +131,13 @@ static void Run()
     };
     screen.TitleBar.CloseClicked += () => window.ShouldClose = true;
     screen.TitleBar.OptionsClicked += screen.Options.Open;
+    screen.Options.HeadphonesChanged += device =>
+    {
+        SaveSettings();
+        screen.Log(device is null ? "Headphones off" : $"Headphones on {device}");
+    };
+    if (!headphonesFound)
+        screen.Log($"Couldn't find {settings.HeadphoneDevice} for the headphones; choose them again in the options");
     if (OperatingSystem.IsWindows())
         WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
 
@@ -278,6 +299,10 @@ static void Run()
         input.UpdateCursor();
         renderer.DrawFrame(ui);
     }
+
+    // The headphone blend and volume are set on the mixer as it plays, so they're kept as the app closes.
+    if (headphonesFound)
+        SaveSettings();
 
     if (OperatingSystem.IsWindows())
         WindowChrome.Remove();
