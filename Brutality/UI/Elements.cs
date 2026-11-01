@@ -430,6 +430,12 @@ sealed class Button : Panel
     public float4 PressedBackground { get; set; }
 
     /// <summary>
+    /// A picture to show in the middle, tinted the text's colour, for a button with no text (give it a
+    /// <see cref="Panel.MinSize"/>); none if null.
+    /// </summary>
+    public Image? Icon { get; set; }
+
+    /// <summary>
     /// The ring drawn around the button while it has keyboard focus.
     /// </summary>
     public float4 FocusColor { get; set; } = Colors.Hex(0x7AB8FF);
@@ -480,6 +486,9 @@ sealed class Button : Panel
 
         base.Draw(batch);
         _label.Color = color;
+
+        if (Icon is { } icon)
+            batch.AddImage(icon, ScreenPosition + (Size - new float2(icon.Size.X, icon.Size.Y)) / 2, Enabled ? color : color * new float4(1, 1, 1, 0.4f));
 
         if (KeyHint is { } hint && HintFont is { } hintFont)
         {

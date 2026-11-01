@@ -4,15 +4,24 @@ using Brutal.Numerics;
 namespace Brutality.UI;
 
 /// <summary>
-/// The app's pictures, packed into the atlas with the fonts: the logo, and small white icons for tinting. Each is a
-/// PNG built into the app (see Assets\draw_assets.py).
+/// The app's pictures, packed into the atlas with the fonts: the logo, and small white icons for tinting, among them
+/// the triangles drawn for arrows and the options button's cog. Each is a PNG built into the app (see
+/// Assets\draw_assets.py).
 /// </summary>
-sealed record Images(Image Logo, Image Played)
+sealed record Images(Image Logo, Image Played, Image TriangleRight, Image TriangleDown, Image TriangleLeft, Image Cog)
 {
     /// <summary>
     /// Adds every picture to <paramref name="atlas"/>, which mustn't be built yet.
     /// </summary>
-    public static Images Load(FontAtlas atlas) => new(Logo: atlas.AddImage(Read("logo-22.png")), Played: atlas.AddImage(Read("played-14.png")));
+    public static Images Load(FontAtlas atlas) =>
+        new(
+            Logo: atlas.AddImage(Read("logo-22.png")),
+            Played: atlas.AddImage(Read("played-14.png")),
+            TriangleRight: atlas.AddImage(Read("triangle-right-10.png")),
+            TriangleDown: atlas.AddImage(Read("triangle-down-10.png")),
+            TriangleLeft: atlas.AddImage(Read("triangle-left-10.png")),
+            Cog: atlas.AddImage(Read("cog-18.png"))
+        );
 
     /// <summary>
     /// A PNG built into the app, decoded. Throws if it's missing, which would mean a broken build.

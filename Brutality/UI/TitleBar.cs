@@ -7,7 +7,10 @@ namespace Brutality.UI;
 
 enum TitleIcon
 {
-    Menu,
+    /// <summary>
+    /// A picture, the button's <see cref="IconButton.Picture"/>: the options button's cog.
+    /// </summary>
+    Picture,
     Minimize,
     Maximize,
     Restore,
@@ -15,11 +18,16 @@ enum TitleIcon
 }
 
 /// <summary>
-/// A flat button with a drawn icon, for the title bar: the options menu and the window's own buttons.
+/// A flat button with an icon, for the title bar: the options' cog and the window's own buttons.
 /// </summary>
 sealed class IconButton(TitleIcon icon) : Element
 {
     public TitleIcon Icon { get; set; } = icon;
+
+    /// <summary>
+    /// The picture for <see cref="TitleIcon.Picture"/>, white for tinting with <see cref="IconColor"/>.
+    /// </summary>
+    public Image? Picture { get; init; }
     public float2 FixedSize { get; set; } = new(46, 34);
     public float4 IconColor { get; set; } = Theme.Text;
     public float4 HoverBackground { get; set; } = Colors.Hex(0xFFFFFF, 0.1f);
@@ -40,9 +48,8 @@ sealed class IconButton(TitleIcon icon) : Element
         var y = MathF.Round(ScreenPosition.Y + Size.Y / 2 - 5);
         switch (Icon)
         {
-            case TitleIcon.Menu:
-                for (var i = 0; i < 3; i++)
-                    batch.AddRect(new float2(x - 1, y + 1 + i * 4), new float2(12, 1), IconColor);
+            case TitleIcon.Picture when Picture is { } picture:
+                batch.AddImage(picture, ScreenPosition + (Size - new float2(picture.Size.X, picture.Size.Y)) / 2, IconColor);
                 break;
             case TitleIcon.Minimize:
                 batch.AddRect(new float2(x, y + 5), new float2(10, 1), IconColor);
@@ -169,13 +176,13 @@ sealed class TitleBar : Panel
     public event Action? MaximizeClicked;
     public event Action? CloseClicked;
 
-    public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold, Image logo)
+    public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold, Images images)
     {
         _engine = engine;
         Background = Theme.TitleBar;
 
         _left = Add(new Panel { Direction = Direction.Horizontal, Spacing = 10 });
-        _left.Add(new Picture(logo));
+        _left.Add(new Picture(images.Logo));
         _left.Add(new Label(bold, "Cuepoint") { Color = Theme.Text });
 
         // The decks' beat trackers, A over B, then a gap, then the master level and its name.
@@ -190,7 +197,7 @@ sealed class TitleBar : Panel
         _right.Add(new Spacer(16));
         _clock = _right.Add(new Label(body) { Color = Theme.Text });
         _right.Add(new Spacer(12));
-        var options = _right.Add(new IconButton(TitleIcon.Menu));
+        var options = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Cog });
         options.Clicked += _ => OptionsClicked?.Invoke();
         _right.Add(new Spacer(8));
         var minimize = _right.Add(new IconButton(TitleIcon.Minimize));

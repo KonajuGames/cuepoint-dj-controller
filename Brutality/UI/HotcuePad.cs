@@ -20,6 +20,14 @@ sealed class HotcuePad(Font font, int number) : Element
     /// number.
     /// </summary>
     public string? Text { get; set; }
+
+    /// <summary>
+    /// A picture beside <see cref="Text"/>, tinted as the text is: before it, or after it if <see cref="IconAfter"/>;
+    /// none if null.
+    /// </summary>
+    public Image? Icon { get; set; }
+
+    public bool IconAfter { get; set; }
     public float4 Color { get; set; } = Colors.White;
     public bool Enabled { get; set; } = true;
     public float2 FixedSize { get; set; } = new(34, 30);
@@ -89,8 +97,20 @@ sealed class HotcuePad(Font font, int number) : Element
         var text = Text ?? Number.ToString();
         var textFont = Text is not null && HintFont is { } small ? small : font;
         var extent = textFont.Measure(text);
-        var at = new float2(MathF.Round(ScreenPosition.X + (Size.X - extent.X) / 2), MathF.Round(ScreenPosition.Y + (Size.Y - extent.Y) / 2));
-        batch.AddText(textFont, text, at, Faded(IsSet ? Theme.TitleBar : Text is not null ? Theme.Text : Theme.Muted));
+        var textColor = Faded(IsSet ? Theme.TitleBar : Text is not null ? Theme.Text : Theme.Muted);
+
+        // The icon and the text centred together, a few pixels apart.
+        const float GAP = 4;
+        var iconWidth = Icon is { } image ? image.Size.X + GAP : 0;
+        var left = MathF.Round(ScreenPosition.X + (Size.X - extent.X - iconWidth) / 2);
+        var textX = Icon is not null && !IconAfter ? left + iconWidth : left;
+        var at = new float2(textX, MathF.Round(ScreenPosition.Y + (Size.Y - extent.Y) / 2));
+        batch.AddText(textFont, text, at, textColor);
+        if (Icon is { } icon)
+        {
+            var iconX = IconAfter ? textX + extent.X + GAP : left;
+            batch.AddImage(icon, new float2(iconX, ScreenPosition.Y + (Size.Y - icon.Size.Y) / 2), textColor);
+        }
 
         if (KeyHint is { } hint && HintFont is { } hintFont)
         {

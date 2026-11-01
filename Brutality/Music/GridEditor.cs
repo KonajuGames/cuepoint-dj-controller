@@ -77,19 +77,29 @@ sealed class GridEditor
     }
 
     /// <summary>
-    /// What a tool's pad says.
+    /// What a tool's pad says. The nudges' pads have an arrow too (see <see cref="Direction"/>).
     /// </summary>
     public static string Label(GridTool tool) =>
         tool switch
         {
             GridTool.SetBeat => "SET BEAT",
             GridTool.Downbeat => "DOWNBEAT",
-            GridTool.NudgeEarlier => "◄ NUDGE",
-            GridTool.NudgeLater => "NUDGE ►",
+            GridTool.NudgeEarlier or GridTool.NudgeLater => "NUDGE",
             GridTool.Halve => "×½",
             GridTool.Double => "×2",
             GridTool.Steady => "STEADY",
             _ => "RESET",
+        };
+
+    /// <summary>
+    /// Which way a tool moves the grid, for an arrow on its pad: -1 earlier, 1 later, 0 neither.
+    /// </summary>
+    public static int Direction(GridTool tool) =>
+        tool switch
+        {
+            GridTool.NudgeEarlier => -1,
+            GridTool.NudgeLater => 1,
+            _ => 0,
         };
 
     /// <summary>

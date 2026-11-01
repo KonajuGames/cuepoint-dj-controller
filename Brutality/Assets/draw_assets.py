@@ -1,4 +1,5 @@
-"""Draws Cuepoint's images as PNGs: the logo (title bar and window icon) and the list's small icons.
+"""Draws Cuepoint's images as PNGs: the logo (title bar and window icon), the list's small icons, the triangles
+used for arrows (the folder list's, the loop buttons', the nudge pads'), and the options button's cog.
 
 Run with any Python 3; it needs nothing installed. Shapes are distance fields, sampled 8x8 times per pixel so edges
 come out smooth at every size, and written with zlib as straight-alpha RGBA. Small icons are white, for the app to
@@ -106,6 +107,11 @@ def intersect(a, b):
     return lambda x, y: max(a(x, y), b(x, y))
 
 
+def union(*shapes):
+    return lambda x, y: min(shape(x, y) for shape in shapes)
+
+
+
 def render(layers, size, units, background=None):
     """layers: (shape, colour) pairs, bottom first, or (shape, function of x, y giving a colour). The drawing is
     `units` across, scaled to `size` pixels, over `background` if given."""
@@ -176,6 +182,42 @@ LOGO = [
 # A tick, for a song played this session.
 PLAYED = [(segment(3.2, 8.4, 6.4, 11.6, 2.4), hex_colour(WHITE)), (segment(6.4, 11.6, 12.8, 4.4, 2.4), hex_colour(WHITE))]
 
+# Arrows: small triangles with their corners softened, pointing right, down and left.
+TRIANGLE_RIGHT = [(rounded(polygon([(3.6, 1.8), (8.6, 5), (3.6, 8.2)]), 0.5), hex_colour(WHITE))]
+TRIANGLE_DOWN = [(rounded(polygon([(1.8, 3.4), (8.2, 3.4), (5, 8.4)]), 0.5), hex_colour(WHITE))]
+TRIANGLE_LEFT = [(rounded(polygon([(6.4, 1.8), (1.4, 5), (6.4, 8.2)]), 0.5), hex_colour(WHITE))]
+
+
+def outline(shape, width):
+    """A line of `width` just inside `shape`'s edge."""
+    return lambda x, y: abs(shape(x, y) + width / 2) - width / 2
+
+
+def cog(cx, cy, teeth, body, tip, base_width, tip_width):
+    """A cog's outline shape: a disc of radius `body` with `teeth` tapering teeth out to `tip`."""
+    shapes = [circle(cx, cy, body)]
+    for i in range(teeth):
+        angle = 2 * math.pi * i / teeth
+        ux, uy = math.cos(angle), math.sin(angle)
+        vx, vy = -uy, ux
+        inner, outer = body - 0.8, tip
+        shapes.append(
+            polygon(
+                [
+                    (cx + ux * inner + vx * base_width / 2, cy + uy * inner + vy * base_width / 2),
+                    (cx + ux * outer + vx * tip_width / 2, cy + uy * outer + vy * tip_width / 2),
+                    (cx + ux * outer - vx * tip_width / 2, cy + uy * outer - vy * tip_width / 2),
+                    (cx + ux * inner - vx * base_width / 2, cy + uy * inner - vy * base_width / 2),
+                ]
+            )
+        )
+    return rounded(union(*shapes), 0.25)
+
+
+# The options button: a cog in outline, six teeth (more blur together this small), with a ring at its middle, in
+# lines as thin as the window buttons' beside it.
+COG = [(union(outline(cog(8, 8, 6, 4.6, 7.4, 3.6, 2.6), 1.1), ring(8, 8, 2.0, 1.1)), hex_colour(WHITE))]
+
 
 def main():
     preview = "preview" in sys.argv[1:]
@@ -186,9 +228,13 @@ def main():
         ("logo-48.png", LOGO, 48, 64),
         ("logo-256.png", LOGO, 256, 64),
         ("played-14.png", PLAYED, 14, 16),
+        ("triangle-right-10.png", TRIANGLE_RIGHT, 10, 10),
+        ("triangle-down-10.png", TRIANGLE_DOWN, 10, 10),
+        ("triangle-left-10.png", TRIANGLE_LEFT, 10, 10),
+        ("cog-18.png", COG, 18, 16),
     ]
     # Previews go over the title bar's colour, since the icons are white.
-    previews = [("preview-logo.png", LOGO, 512, 64), ("preview-logo-small.png", LOGO, 22, 64), ("preview-played.png", PLAYED, 256, 16)]
+    previews = [("preview-logo.png", LOGO, 512, 64), ("preview-logo-small.png", LOGO, 22, 64), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16)]
     for name, layers, size, units in jobs:
         path = os.path.join(HERE, name)
         write_png(path, size, size, render(layers, size, units))

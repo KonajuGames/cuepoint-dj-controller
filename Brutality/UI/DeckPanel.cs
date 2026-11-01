@@ -52,6 +52,7 @@ sealed class DeckPanel : Panel
     readonly Button _keyLock;
     readonly Button? _gridMode;
     readonly GridEditor? _grid;
+    readonly Images? _images;
 
     /// <summary>
     /// The width of the tempo fader's column down the right-hand side, and the space before it.
@@ -89,9 +90,11 @@ sealed class DeckPanel : Panel
         Font big,
         IReadOnlyList<string>? padKeys = null,
         DeckKeyHints? keys = null,
-        GridEditor? grid = null
+        GridEditor? grid = null,
+        Images? images = null
     )
     {
+        _images = images;
         _grid = grid;
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
@@ -143,11 +146,11 @@ sealed class DeckPanel : Panel
         _sync.Clicked += _ => _deck.Sync();
 
         // The loop: halve it, start or stop it (its size on the button), double it.
-        _halveLoop = Add(new Button(bold, "\u25C4") { MinSize = new float2(26, 30), FocusColor = Theme.Focus });
+        _halveLoop = Add(new Button(bold, "") { Icon = images?.TriangleLeft, MinSize = new float2(26, 30), FocusColor = Theme.Focus });
         _halveLoop.Clicked += _ => _deck.HalveLoop();
         _loop = Add(new Button(bold, "LOOP 4") { MinSize = new float2(84, 30), FocusColor = Theme.Focus });
         _loop.Clicked += _ => _deck.ToggleLoop();
-        _doubleLoop = Add(new Button(bold, "\u25BA") { MinSize = new float2(26, 30), FocusColor = Theme.Focus });
+        _doubleLoop = Add(new Button(bold, "") { Icon = images?.TriangleRight, MinSize = new float2(26, 30), FocusColor = Theme.Focus });
         _doubleLoop.Clicked += _ => _deck.DoubleLoop();
 
         // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
@@ -305,6 +308,9 @@ sealed class DeckPanel : Panel
             var hotcue = _deck.Hotcues[i];
             (_pads[i].Enabled, _pads[i].IsSet) = (true, hotcue is not null && !gridMode);
             _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : null;
+            var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : 0;
+            _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
+            _pads[i].IconAfter = direction > 0;
             _pads[i].Color = gridMode ? Theme.Accent : Theme.HotcueColor(i);
             if (hotcue is { } at)
                 flags.Add(((float)at.TotalSeconds, Theme.HotcueColor(i), (i + 1).ToString()));

@@ -49,6 +49,12 @@ sealed class TreeView<T> : Element
 
     public float4 TextColor { get; set; } = Colors.White;
     public float4 ArrowColor { get; set; } = Colors.Hex(0x9A9AA8);
+
+    /// <summary>
+    /// The arrows by an item that can be opened, pointing right while it's closed and down while it's open, tinted
+    /// <see cref="ArrowColor"/>; none are drawn if not given.
+    /// </summary>
+    public (Image Collapsed, Image Expanded)? Arrows { get; set; }
     public float4 HoverRow { get; set; } = Colors.Hex(0xFFFFFF, 0.07f);
     public float4 SelectedRow { get; set; } = Colors.Hex(0x3D6FB8, 0.7f);
     public float4 SelectedRowUnfocused { get; set; } = Colors.Hex(0x3D6FB8, 0.35f);
@@ -240,8 +246,12 @@ sealed class TreeView<T> : Element
 
             var x = position.X + 4 + depth * Indent;
             var textY = position.Y + 3;
-            if (CanExpand(item))
-                batch.AddText(Font, _expanded.Contains(item) ? "▼" : "►", new float2(x, textY), ArrowColor);
+            // Centred in its column and on the row.
+            if (CanExpand(item) && Arrows is { } arrows)
+            {
+                var image = _expanded.Contains(item) ? arrows.Expanded : arrows.Collapsed;
+                batch.AddImage(image, new float2(x + (CELL - image.Size.X) / 2 - 2, position.Y + (RowHeight - image.Size.Y) / 2), ArrowColor);
+            }
             x += CELL;
 
             if (IconColor?.Invoke(item) is { } icon)

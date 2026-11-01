@@ -61,7 +61,7 @@ sealed class MainScreen : Panel
     {
         Background = Theme.Background;
 
-        TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold, images.Logo));
+        TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold, images));
 
         foreach (var deck in decks)
         {
@@ -74,7 +74,7 @@ sealed class MainScreen : Panel
         // Left to right: the first half of the decks, the mixer, the rest.
         // Decks right of the mixer are laid out as reflections, so each deck's mixing controls sit nearest the mixer.
         var deckPanels = decks
-            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i), gridEditors?.Invoke(deck))
+            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i), gridEditors?.Invoke(deck), images)
             {
                 Mirrored = i >= (decks.Count + 1) / 2,
             })
@@ -99,6 +99,7 @@ sealed class MainScreen : Panel
                 Children = node => node.Children,
                 CanExpand = node => node.CanExpand,
                 IconColor = IconFor,
+                Arrows = (images.TriangleRight, images.TriangleDown),
                 Roots = folders,
                 ScrollOwner = _folderScroll,
                 TextColor = Theme.Text,
