@@ -6,9 +6,10 @@ namespace Brutality.UI;
 /// <summary>
 /// A deck's controls and read-out, in the deck's colour: its letter, what's loaded, the tempo where it's playing and
 /// its key, how far in it is and how long's left, the whole song's waveform to see and seek in with its hotcues
-/// marked, Cue and Play, a loop of so many beats to start and stop, halve and double, and a pad for each hotcue:
-/// press an empty one to set it where the deck is, a set one to jump there, and Shift-click or right-click one to
-/// clear it.
+/// marked, Cue and Play, a loop of so many beats to start and stop, halve and double, a pad for each hotcue (press an
+/// empty one to set it where the deck is, a set one to jump there, and Shift-click or right-click one to clear it),
+/// and down the right-hand side the tempo fader: down is faster, as on a turntable, double-click puts it back to
+/// zero, and the button under it changes its range. The tempo and key shown are what's coming out, fader and all.
 /// Sized by whoever lays it out, with <see cref="Width"/>. Call <see cref="Refresh"/> once a frame.
 /// </summary>
 sealed class DeckPanel : Panel
@@ -35,6 +36,15 @@ sealed class DeckPanel : Panel
     readonly Button _halveLoop;
     readonly Button _loop;
     readonly Button _doubleLoop;
+    readonly Label _tempoReadout;
+    readonly Slider _tempoFader;
+    readonly Button _tempoRange;
+
+    /// <summary>
+    /// The width of the tempo fader's column down the right-hand side, and the space before it.
+    /// </summary>
+    const float TEMPO_COLUMN = 48;
+    const float TEMPO_GAP = 10;
 
     const float PAD_GAP = 4;
     const float PAD_HEIGHT = 28;
@@ -97,6 +107,31 @@ sealed class DeckPanel : Panel
         _doubleLoop = Add(new Button(bold, "\u25BA") { MinSize = new float2(30, 30), FocusColor = Theme.Focus });
         _doubleLoop.Clicked += _ => _deck.DoubleLoop();
 
+        // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
+        _tempoReadout = Add(new Label(small) { Color = Theme.Muted });
+        _tempoFader = Add(
+            new Slider
+            {
+                Orientation = Orientation.Vertical,
+                Min = (float)deck.TempoRange,
+                Max = -(float)deck.TempoRange,
+                Value = (float)deck.Tempo,
+                DefaultValue = 0,
+                Thickness = 22,
+                HandleLength = 10,
+                FocusColor = Theme.Focus,
+            }
+        );
+        _tempoFader.Marks.Add(0);
+        _tempoFader.Changed += slider => _deck.Tempo = slider.Value;
+        _tempoRange = Add(new Button(small, "±8%") { MinSize = new float2(TEMPO_COLUMN, 22), Padding = 3, FocusColor = Theme.Focus });
+        _tempoRange.Clicked += _ =>
+        {
+            var ranges = Deck.TempoRanges;
+            var next = ranges[(ranges.ToList().IndexOf(_deck.TempoRange) + 1) % ranges.Count];
+            _deck.TempoRange = next;
+        };
+
         for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
         {
             var index = i;
@@ -119,6 +154,7 @@ sealed class DeckPanel : Panel
 
     public void Refresh()
     {
+        RefreshTempo();
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
 
         if (!_deck.IsLoaded)
@@ -159,9 +195,11 @@ sealed class DeckPanel : Panel
         // The tempo where the deck is, which moves on through a song whose tempo varies; "~" says it does.
         if (_deck.Analysis is { } analysis)
         {
-            _bpm.Text = $"{(analysis.Grid.IsVariable ? "~" : "")}{analysis.Grid.BpmAt(position.TotalSeconds):F2}";
-            _key.Text = $"{analysis.Key.Camelot}  {analysis.Key.ShortName}";
-            _key.Color = Theme.CamelotColor(analysis.Key.CamelotNumber);
+            // As heard: the fader speeds the tempo up and, past about 3%, moves the key a semitone or more.
+            var key = _deck.Key ?? analysis.Key;
+            _bpm.Text = $"{(analysis.Grid.IsVariable ? "~" : "")}{_deck.Bpm ?? analysis.Bpm:F2}";
+            _key.Text = $"{key.Camelot}  {key.ShortName}{(_deck.KeyShift != 0 ? $"  ({_deck.KeyShift:+0;-0})" : "")}";
+            _key.Color = Theme.CamelotColor(key.CamelotNumber);
             _gain.Text = $"Auto gain {analysis.AutoGainDb:+0.0;-0.0;0.0} dB";
         }
         else
@@ -202,6 +240,20 @@ sealed class DeckPanel : Panel
         _playPause.HoverBackground = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Colors.Hex(0x3A3A48);
     }
 
+    /// <summary>
+    /// The tempo fader follows the deck, which keyboard or code may have moved, except while it's being dragged.
+    /// </summary>
+    void RefreshTempo()
+    {
+        _tempoFader.Min = (float)_deck.TempoRange;
+        _tempoFader.Max = -(float)_deck.TempoRange;
+        if (!_tempoFader.IsDragging)
+            _tempoFader.Value = (float)_deck.Tempo;
+        _tempoReadout.Text = $"{_deck.Tempo * 100:+0.0;-0.0;0.0}%";
+        _tempoReadout.Color = _deck.Tempo == 0 ? Theme.Muted : Theme.Text;
+        _tempoRange.Text = $"±{_deck.TempoRange * 100:0}%";
+    }
+
     void RefreshLoop()
     {
         _loop.Text = $"LOOP {FormatBeats(_deck.LoopBeats)}";
@@ -225,13 +277,20 @@ sealed class DeckPanel : Panel
         _bpm.Measure();
         _key.Measure();
         var right = MathF.Max(MathF.Max(_bpm.Size.X, _key.Size.X), 90);
-        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, Width - 2 * PAD - 40 - right - 16);
-        _overview.Length = Width - 2 * PAD;
+        var content = Width - 2 * PAD - TEMPO_COLUMN - TEMPO_GAP;
+        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, content - 40 - right - 16);
+        _overview.Length = content;
         // The pads share the width between them; the loading line gets what the buttons either side leave it.
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
         foreach (var pad in _pads)
             pad.FixedSize = new float2(padWidth, PAD_HEIGHT);
-        _loading.MaxWidth = MathF.Max(0, Width - 2 * PAD - 72 - 8 - 96 - 24 - (30 + 4 + 96 + 4 + 30) - 12);
+        _loading.MaxWidth = MathF.Max(0, content - 72 - 8 - 96 - 24 - (30 + 4 + 96 + 4 + 30) - 12);
+
+        // The fader fills its column between the readout above and the range button below, down to the transport.
+        _tempoReadout.Measure();
+        _tempoRange.Measure();
+        var columnHeight = HEIGHT - 2 * PAD - PAD_HEIGHT - ROW_GAP;
+        _tempoFader.Length = columnHeight - _tempoReadout.Size.Y - 4 - _tempoRange.Size.Y - 6;
 
         foreach (var child in Children)
             child.Measure();
@@ -242,7 +301,8 @@ sealed class DeckPanel : Panel
     {
         ArrangeSelf(position);
         var left = position.X + PAD;
-        var right = position.X + Width - PAD;
+        var columnLeft = position.X + Width - PAD - TEMPO_COLUMN;
+        var right = columnLeft - TEMPO_GAP;
         var top = position.Y + PAD;
         void Place(Element child, float x, float y) => child.Arrange(new float2(MathF.Round(x), MathF.Round(y)));
 
@@ -276,6 +336,11 @@ sealed class DeckPanel : Panel
         Place(_doubleLoop, right - _doubleLoop.Size.X, buttonsY);
         Place(_loop, right - _doubleLoop.Size.X - 4 - _loop.Size.X, buttonsY);
         Place(_halveLoop, right - _doubleLoop.Size.X - 4 - _loop.Size.X - 4 - _halveLoop.Size.X, buttonsY);
+
+        Place(_tempoReadout, columnLeft + (TEMPO_COLUMN - _tempoReadout.Size.X) / 2, top - 2);
+        var faderTop = top - 2 + _tempoReadout.Size.Y + 4;
+        Place(_tempoFader, columnLeft + (TEMPO_COLUMN - _tempoFader.Size.X) / 2, faderTop);
+        Place(_tempoRange, columnLeft, faderTop + _tempoFader.Size.Y + 6);
     }
 
     public override void Draw(Batch batch)

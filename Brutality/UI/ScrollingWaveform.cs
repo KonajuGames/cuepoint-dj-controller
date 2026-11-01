@@ -53,7 +53,8 @@ sealed class ScrollingWaveform : Element
         if (!_deck.IsPlaying || _drag is not null)
             return _shown = reported;
 
-        _shown += dt;
+        // The song moves on at the deck's tempo, not the clock's.
+        _shown += dt * _deck.TempoRatio;
         var behind = reported - _shown;
         if (Math.Abs(behind) > 0.15)
             _shown = reported;

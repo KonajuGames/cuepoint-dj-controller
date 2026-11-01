@@ -176,20 +176,19 @@ static class LibraryTree
     }
 
     /// <summary>
-    /// Whether <paramref name="song"/> mixes with what's on <paramref name="deck"/>: a key that mixes in harmony,
-    /// and a tempo close to the deck's where it's playing now.
+    /// Whether <paramref name="song"/> mixes with what's coming out of <paramref name="deck"/>: a key that mixes in
+    /// harmony, and a tempo close to the deck's where it's playing now, both as its tempo fader has moved them.
     /// </summary>
     public static bool IsCompatible(Song song, Deck deck)
     {
-        if (song.Analysis is not { } analysis || deck.Analysis is not { } playing)
+        if (song.Analysis is not { } analysis || deck.Bpm is not { } deckBpm || deck.Key is not { } deckKey)
             return false;
         if (string.Equals(song.Path, deck.FilePath, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var deckBpm = playing.Grid.BpmAt(deck.Position.TotalSeconds);
         var ratio = analysis.Bpm / deckBpm;
         var closest = new[] { ratio, ratio * 2, ratio / 2 }.MinBy(r => Math.Abs(Math.Log(r)));
-        return Math.Abs(closest - 1) <= COMPATIBLE_TEMPO && analysis.Key.MixesWith(playing.Key);
+        return Math.Abs(closest - 1) <= COMPATIBLE_TEMPO && analysis.Key.MixesWith(deckKey);
     }
 
     static IEnumerable<LibraryNode> Drives(MusicLibrary library)

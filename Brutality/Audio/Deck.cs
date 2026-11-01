@@ -5,8 +5,8 @@ using Brutality.Audio.Analysis;
 namespace Brutality.Audio;
 
 /// <summary>
-/// One player: a song loaded onto an SDL_mixer track, with play/pause, cue, hotcues, loops and a position. Get one
-/// from <see cref="AudioEngine.CreateDeck"/>. Everything except decoding happens on the thread that calls it, which
+/// One player: a song loaded onto an SDL_mixer track, with play/pause, cue, hotcues, loops, a tempo fader and a
+/// position. Get one from <see cref="AudioEngine.CreateDeck"/>. Everything except decoding happens on the thread that calls it, which
 /// should be the UI thread; call <see cref="Update"/> once a frame to finish background loads.
 /// </summary>
 /// <remarks>
@@ -183,6 +183,69 @@ sealed class Deck : IDisposable
     public static float VolumeTaper(float position) => position * position;
 
     internal void ApplyGain() => _track.SetGain(Gain);
+
+    /// <summary>
+    /// The tempo fader's ranges, as fractions either way: ±8% for fine matching, then ±16% and ±50% for bigger jumps.
+    /// </summary>
+    public static readonly IReadOnlyList<double> TempoRanges = [0.08, 0.16, 0.5];
+
+    double _tempo;
+    double _tempoRange = TempoRanges[0];
+
+    /// <summary>
+    /// The tempo fader: how much faster (or, below zero, slower) than recorded the deck plays, as a fraction, within
+    /// <see cref="TempoRange"/>. Like a turntable it changes the key with the speed. It stays where it is when
+    /// another song loads, as a fader would.
+    /// </summary>
+    public double Tempo
+    {
+        get => _tempo;
+        set
+        {
+            _tempo = Math.Clamp(value, -_tempoRange, _tempoRange);
+            _track.SetFrequencyRatio((float)TempoRatio);
+        }
+    }
+
+    /// <summary>
+    /// How far the tempo fader reaches either way, as a fraction: one of <see cref="TempoRanges"/>. Narrowing it
+    /// brings the tempo within it.
+    /// </summary>
+    public double TempoRange
+    {
+        get => _tempoRange;
+        set
+        {
+            _tempoRange = Math.Clamp(value, TempoRanges[0], TempoRanges[^1]);
+            Tempo = _tempo;
+        }
+    }
+
+    /// <summary>
+    /// How fast the deck plays against the recording: 1.02 at +2%.
+    /// </summary>
+    public double TempoRatio => 1 + _tempo;
+
+    /// <summary>
+    /// The speed SDL_mixer has for the track, read back, for checking that <see cref="Tempo"/> reached it.
+    /// </summary>
+    internal float AppliedTempoRatio => _track.GetFrequencyRatio();
+
+    /// <summary>
+    /// The beats per minute coming out of the deck: the song's tempo where it's playing, sped up or slowed down by
+    /// the tempo fader. Null until the song is analysed.
+    /// </summary>
+    public double? Bpm => _analysis?.Grid.BpmAt(Position.TotalSeconds) * TempoRatio;
+
+    /// <summary>
+    /// How many semitones the tempo fader has moved the key, to the nearest: a semitone takes about 6% faster.
+    /// </summary>
+    public int KeyShift => (int)Math.Round(12 * Math.Log2(TempoRatio));
+
+    /// <summary>
+    /// The key coming out of the deck: the song's, moved by the tempo fader. Null until the song is analysed.
+    /// </summary>
+    public MusicalKey? Key => _analysis?.Key.Transposed(KeyShift);
 
     /// <summary>
     /// The gain SDL_mixer has for the track, read back, for checking that <see cref="Gain"/> reached it.

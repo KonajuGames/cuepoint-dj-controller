@@ -37,6 +37,11 @@ readonly record struct MusicalKey(int Tonic, bool IsMinor)
     }
 
     /// <summary>
+    /// The key <paramref name="semitones"/> higher (or lower, if negative), as playing faster or slower moves it.
+    /// </summary>
+    public MusicalKey Transposed(int semitones) => this with { Tonic = ((Tonic + semitones) % 12 + 12) % 12 };
+
+    /// <summary>
     /// Whether the two mix in harmony by the Camelot rules: the same key, one step round the wheel either way, or
     /// its relative major or minor.
     /// </summary>
