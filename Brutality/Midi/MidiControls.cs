@@ -93,9 +93,14 @@ sealed class MidiControls : IDisposable
     public Action<Deck, int>? PadReleased { get; set; }
 
     /// <summary>
-    /// A deck's pad mode button was pressed: true for loop rolls, false for hotcues.
+    /// A deck's roll mode button was pressed, to turn ROLL mode on or off.
     /// </summary>
-    public event Action<Deck, bool>? RollModePressed;
+    public event Action<Deck>? RollModePressed;
+
+    /// <summary>
+    /// A deck's hotcue mode button was pressed, to put the pads back to hotcues.
+    /// </summary>
+    public event Action<Deck>? HotcueModePressed;
 
     public Func<Deck, bool>? IsRollMode { get; set; }
 
@@ -370,10 +375,10 @@ sealed class MidiControls : IDisposable
                 GridModePressed?.Invoke(deck);
                 break;
             case "roll":
-                RollModePressed?.Invoke(deck, true);
+                RollModePressed?.Invoke(deck);
                 break;
             case "hotcues":
-                RollModePressed?.Invoke(deck, false);
+                HotcueModePressed?.Invoke(deck);
                 break;
             default:
                 if (Hotcue(action) is { } hotcue)
@@ -508,6 +513,8 @@ sealed class MidiControls : IDisposable
             "roll" => IsRollMode?.Invoke(deck) == true,
             "hotcues" => IsRollMode?.Invoke(deck) != true && IsGridMode?.Invoke(deck) != true,
             _ when Roll(action) is { } roll => deck.RollBeats == RollPads.Sizes[roll],
+            // In ROLL mode a pad lights while it's rolling; otherwise while its hotcue's set.
+            _ when Hotcue(action) is { } pad && IsRollMode?.Invoke(deck) == true => !action.EndsWith(".delete") && pad < RollPads.Sizes.Count && deck.RollBeats == RollPads.Sizes[pad],
             _ => Hotcue(action) is { } hotcue && hotcue < deck.Hotcues.Count && deck.Hotcues[hotcue] is not null,
         };
     }

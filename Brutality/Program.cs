@@ -373,13 +373,18 @@ static void Run()
         };
         controllers.PadReleased = (deck, pad) => RollPadsFor(deck)?.Up(pad);
 
-        // The controller's pad mode buttons: its rolls page puts the pads on screen in ROLL mode too, and HOT CUE
-        // puts them back to hotcues.
-        controllers.RollModePressed += (deck, on) =>
+        // The controller's roll mode button turns ROLL mode on and off, its pads then rolling loops; HOT CUE puts
+        // them back to hotcues, from ROLL or GRID.
+        controllers.RollModePressed += deck =>
         {
             if (RollPadsFor(deck) is { } roll)
-                roll.Active = on;
-            if (!on && GridEditorFor(deck) is { } editor)
+                roll.Active = !roll.Active;
+        };
+        controllers.HotcueModePressed += deck =>
+        {
+            if (RollPadsFor(deck) is { } roll)
+                roll.Active = false;
+            if (GridEditorFor(deck) is { } editor)
                 editor.Active = false;
         };
         controllers.IsRollMode = deck => RollPadsFor(deck)?.Active == true;
