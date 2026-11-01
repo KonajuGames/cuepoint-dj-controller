@@ -437,6 +437,16 @@ sealed class Button : Panel
     /// </summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// The key that presses this button, shown small in its top-right corner in <see cref="HintFont"/>; none if
+    /// null.
+    /// </summary>
+    public string? KeyHint { get; set; }
+
+    public Font? HintFont { get; set; }
+
+    public float4 HintColor { get; set; } = Colors.Hex(0xFFFFFF, 0.3f);
+
     public override bool IsInteractive => Enabled;
 
     public override bool IsFocusable => Enabled;
@@ -468,6 +478,13 @@ sealed class Button : Panel
 
         base.Draw(batch);
         _label.Color = color;
+
+        if (KeyHint is { } hint && HintFont is { } hintFont)
+        {
+            var hintSize = hintFont.Measure(hint);
+            var hintAt = new float2(MathF.Round(ScreenPosition.X + Size.X - hintSize.X - 2), ScreenPosition.Y);
+            batch.AddText(hintFont, hint, hintAt, Enabled ? HintColor : HintColor * new float4(1, 1, 1, 0.4f));
+        }
 
         if (ShowFocus)
             batch.AddBorder(ScreenPosition, Size, 2, FocusColor);

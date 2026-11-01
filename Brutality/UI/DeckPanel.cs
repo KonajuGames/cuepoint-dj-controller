@@ -77,7 +77,8 @@ sealed class DeckPanel : Panel
     public event Action<DeckPanel, Song>? SongDropped;
 
     /// <param name="padKeys">The keys that press the hotcue pads, in order, to label them with.</param>
-    public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big, IReadOnlyList<string>? padKeys = null)
+    /// <param name="keys">The keys that press its buttons, to label them with.</param>
+    public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big, IReadOnlyList<string>? padKeys = null, DeckKeyHints? keys = null)
     {
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
@@ -162,6 +163,12 @@ sealed class DeckPanel : Panel
             var next = ranges[(ranges.ToList().IndexOf(_deck.TempoRange) + 1) % ranges.Count];
             _deck.TempoRange = next;
         };
+
+        if (keys is not null)
+        {
+            foreach (var (button, hint) in new[] { (_cue, keys.Cue), (_playPause, keys.Play), (_sync, keys.Sync), (_halveLoop, keys.HalveLoop), (_loop, keys.Loop), (_doubleLoop, keys.DoubleLoop), (_keyLock, keys.KeyLock) })
+                (button.KeyHint, button.HintFont) = (hint, small);
+        }
 
         for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
         {

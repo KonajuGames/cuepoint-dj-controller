@@ -41,7 +41,8 @@ sealed class MixerPanel : Panel
     readonly Label _phonesLabel;
     readonly Slider _phonesVolume;
 
-    public MixerPanel(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font bold)
+    /// <param name="pflKeys">The key for each deck's PFL button, in order, to label them with.</param>
+    public MixerPanel(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font bold, IReadOnlyList<string?>? pflKeys = null)
     {
         _engine = engine;
         Background = Theme.Panel;
@@ -99,7 +100,15 @@ sealed class MixerPanel : Panel
             );
             fader.Changed += slider => deck.Volume = slider.Value;
 
-            var pfl = Add(new Button(small, "PFL") { FocusColor = Theme.Focus, MinSize = new float2(44, 24) });
+            var pfl = Add(
+                new Button(small, "PFL")
+                {
+                    FocusColor = Theme.Focus,
+                    MinSize = new float2(44, 24),
+                    KeyHint = pflKeys?.ElementAtOrDefault(_channels.Count),
+                    HintFont = small,
+                }
+            );
             pfl.Clicked += _ => deck.Headphones = !deck.Headphones;
             _channels.Add(new Channel(deck, name, eq, meter, fader, pfl));
         }

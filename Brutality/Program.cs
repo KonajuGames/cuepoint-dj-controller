@@ -104,7 +104,7 @@ static void Run()
     var folders = LibraryTree.Build(library, decks, history);
 
     var ui = new Root();
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, HotcueKeys.Labels));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, HotcueKeys.Labels, KeyboardControls.HintsFor));
     using var input = new GlfwUiInput(window, ui);
     var browser = screen.Browser;
 
@@ -240,6 +240,7 @@ static void Run()
     // App shortcuts go through the UI first, so Escape in the search box only leaves the box, and typing there
     // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored. Escape no longer
     // quits, now there's a close button, since a stray press mid-set would be a disaster.
+    var controls = new KeyboardControls(decks, audio);
     input.UnhandledKey += (key, action, mods) =>
     {
         if (action == GlfwKeyAction.Repeat)
@@ -259,6 +260,8 @@ static void Run()
             return;
         }
 
+        controls.Key(key, action, mods);
+
         switch (key)
         {
             case GlfwKey.Escape when pressed:
@@ -270,33 +273,10 @@ static void Run()
             case GlfwKey.Number2 when pressed && browser.SelectedSong is { } song:
                 Load(song, deckB);
                 break;
-            case GlfwKey.Z:
-                if (pressed)
-                    deckA.CueDown();
-                else
-                    deckA.CueUp();
-                break;
-            case GlfwKey.X when pressed:
-                deckA.TogglePlay();
-                break;
-            case GlfwKey.N:
-                if (pressed)
-                    deckB.CueDown();
-                else
-                    deckB.CueUp();
-                break;
-            case GlfwKey.M when pressed:
-                deckB.TogglePlay();
-                break;
-            case GlfwKey.C when pressed:
-                deckA.Sync();
-                break;
-            case GlfwKey.Comma when pressed:
-                deckB.Sync();
-                break;
         }
     };
 
+    var lastFrame = Glfw.Time;
     while (!window.ShouldClose)
     {
         Glfw.PollEvents();
@@ -322,6 +302,11 @@ static void Run()
         // New tags can change what matches a search.
         if (library.ApplyReadTags() > 0)
             browser.Refilter();
+
+        // Faders whose keys are held move by the time since the last frame.
+        var now = Glfw.Time;
+        controls.Update(now - lastFrame);
+        lastFrame = now;
 
         screen.ScreenSize = new float2(size.X, size.Y);
         screen.Update();

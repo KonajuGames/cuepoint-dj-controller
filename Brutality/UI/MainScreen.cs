@@ -47,7 +47,8 @@ sealed class MainScreen : Panel
         IReadOnlyList<LibraryNode> folders,
         string databasePath,
         Fonts fonts,
-        Func<int, IReadOnlyList<string>>? hotcueKeys = null
+        Func<int, IReadOnlyList<string>>? hotcueKeys = null,
+        Func<int, DeckKeyHints?>? deckKeys = null
     )
     {
         Background = Theme.Background;
@@ -60,12 +61,12 @@ sealed class MainScreen : Panel
         // Left to right: the first half of the decks, the mixer, the rest.
         // Decks right of the mixer are laid out as reflections, so each deck's mixing controls sit nearest the mixer.
         var deckPanels = decks
-            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i))
+            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i))
             {
                 Mirrored = i >= (decks.Count + 1) / 2,
             })
             .ToList();
-        _mixer = new MixerPanel(engine, decks, fonts.Small, fonts.Bold);
+        _mixer = new MixerPanel(engine, decks, fonts.Small, fonts.Bold, decks.Select((_, i) => deckKeys?.Invoke(i)?.Pfl).ToList());
         for (var i = 0; i < deckPanels.Count; i++)
         {
             if (i == (deckPanels.Count + 1) / 2)
