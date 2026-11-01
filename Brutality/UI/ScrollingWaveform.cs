@@ -120,10 +120,11 @@ sealed class ScrollingWaveform : Element
         if (_deck.Analysis?.Grid is not { } grid)
             return;
 
-        // Only over the song itself.
+        // Across the whole view, before the song and after it too: the grid carries on at its first tempo and
+        // phase before the first beat, and at its last after the end, so the beats can still be lined up there.
         var halfSeconds = Size.X / 2 / PixelsPerSecond;
-        var first = Math.Ceiling(grid.BeatNumberAt(Math.Max(0, position - halfSeconds)));
-        var last = Math.Floor(grid.BeatNumberAt(Math.Min(_deck.Duration.TotalSeconds, position + halfSeconds)));
+        var first = Math.Ceiling(grid.BeatNumberAt(position - halfSeconds));
+        var last = Math.Floor(grid.BeatNumberAt(position + halfSeconds));
         var tick = MathF.Round(Size.Y * 0.18f);
         for (var beat = first; beat <= last; beat++)
         {
