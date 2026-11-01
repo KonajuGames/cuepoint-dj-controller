@@ -12,9 +12,10 @@ namespace Brutality.Audio.Analysis;
 /// at the right tempo the hits all land in the same place in the fold and make the tallest peak.</item>
 /// <item>Each beat, followed out both ways from the stretch with the strongest beats (found by Ellis's dynamic
 /// programming beat tracker), taking only strong onsets close to where the next beat is due, so it can't slip onto
-/// the off-beats, and coasting at the tempo so far through breakdowns. Where the steady grid drifts off those beats,
-/// the song gets a variable grid instead: the beats split into sections of steady tempo, at the points that fit them
-/// best.</item>
+/// the off-beats, and coasting at the tempo so far through breakdowns. The tracker's own beats over the whole song are
+/// used instead when they sit clearly better on the onsets, as in a song with no drums where swung handclaps and
+/// voices pull the follower off the beat. Where the steady grid drifts off those beats, the song gets a variable grid
+/// instead: the beats split into sections of steady tempo, at the points that fit them best.</item>
 /// </list>
 /// </summary>
 static class BeatDetector
@@ -87,6 +88,26 @@ static class BeatDetector
     /// </summary>
     const double FOLLOW_TEMPO_RANGE = 0.15;
 
+    /// <summary>
+    /// How many beats a stretch is when judging whether beats sit on the onsets, and how much more onset energy has
+    /// to be on its beats than halfway between them for the stretch to count as on the beat (or, the other way
+    /// round, on the off-beats).
+    /// </summary>
+    const int JUDGE_BEATS = 16;
+
+    const double ON_BEAT_RATIO = 2;
+
+    /// <summary>
+    /// How much better, as a share of the song's stretches, the grid from the tracker's beats has to sit on the
+    /// onsets before it's used over the one from the followed beats, which hold steadier through breakdowns; and how
+    /// well the tracker's beats have to sit on them in their own right (see <see cref="OnBeatScore"/>). In dance music with an off-beat bass, the onsets
+    /// halfway between beats are as strong as those on them, so no beats score well and the difference between two
+    /// sets says nothing: those keep the followed beats.
+    /// </summary>
+    const double PREFER_TRACKED_BY = 0.15;
+
+    const double TRACKED_ON_BEAT = 0.5;
+
     public readonly record struct Result(BeatGrid Grid, double Confidence);
 
     /// <summary>
@@ -100,8 +121,19 @@ static class BeatDetector
 
         cancel.ThrowIfCancellationRequested();
         var period = 60.0 * sampleRate / HOP / steady.Markers[0].Bpm;
-        var beats = FollowBeats(envelope, TrackBeats(envelope, period), period, sampleRate);
-        var grid = VariableGrid(beats, steady) ?? steady;
+        var tracked = TrackBeats(envelope, period);
+        var followed = FollowBeats(envelope, tracked, period, sampleRate);
+        var grid = VariableGrid(followed, steady) ?? steady;
+
+        // The tracker's own beats, where they're clearly on the beat and the grid made from them sits clearly
+        // better on the onsets than the one from the followed beats.
+        var whole = tracked.Select(beat => new TrackedBeat(FrameToSeconds(beat.Frame, sampleRate), beat.Strength)).ToList();
+        if (OnBeatScore(envelope, whole.Select(beat => beat.Time).ToList(), sampleRate) >= TRACKED_ON_BEAT)
+        {
+            var fromTracked = VariableGrid(whole, steady) ?? steady;
+            if (OnBeatScore(envelope, fromTracked.Beats().ToList(), sampleRate) >= OnBeatScore(envelope, grid.Beats().ToList(), sampleRate) + PREFER_TRACKED_BY)
+                grid = fromTracked;
+        }
         return new Result(grid, confidence);
     }
 
@@ -145,6 +177,44 @@ static class BeatDetector
         var confidence = best.Mean > 0 ? best.Score / best.Mean - 1 : 0;
         return (BeatGrid.Constant(tempo, firstBeat, duration), confidence);
     }
+
+    /// <summary>
+    /// How well beats sit on the song's onsets: of each <see cref="JUDGE_BEATS"/> in turn, the share where the onsets
+    /// are clearly on the beats, less the share where they're clearly halfway between, so from -1 (all on the
+    /// off-beats) to 1.
+    /// </summary>
+    internal static double OnBeatScore(float[] envelope, IReadOnlyList<double> beats, int sampleRate)
+    {
+        double Strongest(double seconds, double reach)
+        {
+            var from = (int)Math.Floor(SecondsToFrame(seconds - reach, sampleRate));
+            var to = (int)Math.Ceiling(SecondsToFrame(seconds + reach, sampleRate));
+            var strongest = 0.0;
+            for (var i = Math.Max(0, from); i <= Math.Min(envelope.Length - 1, to); i++)
+                strongest = Math.Max(strongest, envelope[i]);
+            return strongest;
+        }
+
+        int stretches = 0, on = 0, off = 0;
+        for (var start = 0; start + JUDGE_BEATS < beats.Count; start += JUDGE_BEATS)
+        {
+            double onBeat = 0, offBeat = 0;
+            for (var i = start; i < start + JUDGE_BEATS; i++)
+            {
+                var span = beats[i + 1] - beats[i];
+                onBeat += Strongest(beats[i], 0.04 * span);
+                offBeat += Strongest(beats[i] + span / 2, 0.04 * span);
+            }
+            stretches++;
+            if (onBeat > ON_BEAT_RATIO * offBeat)
+                on++;
+            else if (offBeat > ON_BEAT_RATIO * onBeat)
+                off++;
+        }
+        return stretches == 0 ? 0 : (double)(on - off) / stretches;
+    }
+
+    static double SecondsToFrame(double seconds, int sampleRate) => (seconds * sampleRate - FRAME * ONSET_POSITION + HOP / 2.0) / HOP;
 
     /// <summary>
     /// Envelope frames (fractional) from the start to seconds, allowing for where in a frame an onset sits when the

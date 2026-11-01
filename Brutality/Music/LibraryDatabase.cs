@@ -17,7 +17,7 @@ sealed class LibraryDatabase
     /// <summary>
     /// Bump this when analysis changes enough that earlier results should be redone.
     /// </summary>
-    public const int ANALYSIS_VERSION = 3;
+    public const int ANALYSIS_VERSION = 4;
 
     const int FILE_VERSION = 1;
 
