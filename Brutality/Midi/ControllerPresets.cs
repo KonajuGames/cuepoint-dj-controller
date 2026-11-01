@@ -15,7 +15,11 @@ static class ControllerPresets
     /// <summary>
     /// Pioneer's DDJ layout, as on the DDJ-SB3: each deck's controls on its own channel (deck 1 on 1, deck 2 on 2),
     /// its pads on another (8 and 9), and the shared mixer and browser on 7. Shift + FX FADE puts the pads in ROLL
-    /// mode, and HOT CUE back to hotcues; the pads send the same notes either way. Faders and knobs send fourteen bits,
+    /// mode, and HOT CUE back to hotcues; the pads send the same notes either way.
+    ///
+    /// FX FADE's pads (notes 16 to 23) play transition effects by working other controls over time, which is all
+    /// there is to map for them: the filter swept, the channel fader faded, and loops set (notes 0x4A and 0x4C, 4 and
+    /// 1 beats), halved (the halve button's own note) and left (0x4D). Faders and knobs send fourteen bits,
     /// the fine half 32 above the coarse. Shift sends different messages rather than changing what the app does, so
     /// shifted controls are bound like any other: pads with Shift held come 8 notes higher, and the jog wheel
     /// turned with Shift comes on its own controls.
@@ -53,10 +57,14 @@ static class ControllerPresets
             Note($"{deck}.loop", channel, 0x14);
             Note($"{deck}.loop.halve", channel, 0x12);
             Note($"{deck}.loop.double", channel, 0x13);
+            Note($"{deck}.loop.beats4", channel, 0x4A);
+            Note($"{deck}.loop.beats1", channel, 0x4C);
+            Note($"{deck}.loop.exit", channel, 0x4D);
             for (var pad = 0; pad < ControlCatalog.HOTCUES; pad++)
             {
                 Note($"{deck}.hotcue{pad + 1}", pads, pad);
                 Note($"{deck}.hotcue{pad + 1}.delete", pads, pad + 8);
+                Note($"{deck}.fxfade", pads, 0x10 + pad);
             }
             Note($"{deck}.hotcues", channel, 0x1B);
             Note($"{deck}.roll", channel, 0x6B);

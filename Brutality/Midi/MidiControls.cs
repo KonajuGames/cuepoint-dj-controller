@@ -368,6 +368,18 @@ sealed class MidiControls : IDisposable
             case "loop.double":
                 deck.DoubleLoop();
                 break;
+            case "loop.exit":
+                deck.ExitLoop();
+                break;
+            case "loop.beats1" or "loop.beats2" or "loop.beats4" or "loop.beats8":
+                // A loop of that size: started if there isn't one, or the one going on made that size.
+                deck.LoopBeats = int.Parse(action["loop.beats".Length..]);
+                if (!deck.IsLooping)
+                    deck.ToggleLoop();
+                break;
+            case "fxfade":
+                // The controller plays the effect itself, by sending the filter, fader and loop controls it works.
+                break;
             case "tempo.reset":
                 deck.Tempo = 0;
                 break;
