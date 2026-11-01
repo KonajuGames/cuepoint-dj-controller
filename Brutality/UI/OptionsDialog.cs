@@ -31,6 +31,13 @@ sealed class OptionsDialog : Panel
     /// </summary>
     public event Action<string?>? HeadphonesChanged;
 
+    /// <summary>
+    /// The main output was moved to another device (null for the system's default).
+    /// </summary>
+    public event Action<string?>? OutputChanged;
+
+    readonly Button _output;
+
     readonly Button _headphones;
     readonly Label _controller;
     readonly Button _lighting;
@@ -92,7 +99,23 @@ sealed class OptionsDialog : Panel
         _autoGain.Clicked += _ => engine.AutoGain = !engine.AutoGain;
         _box.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
 
-        // Each click moves the headphones on to the next playback device, and after the last, off.
+        // Each click moves the main mix on to the next playback device, and after the last, back to the default.
+        var outputRow = Row("Main output", body);
+        _output = outputRow.Add(new Button(bold, "") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
+        _output.Clicked += _ =>
+        {
+            var names = AudioEngine.PlaybackDevices().Select(device => device.Name).ToList();
+            var at = engine.OutputDevice is { } current ? names.IndexOf(current) : -1;
+            var moved = false;
+            for (var i = at + 1; i < names.Count && !moved; i++)
+                moved = engine.UseOutputDevice(names[i]);
+            if (!moved)
+                engine.UseOutputDevice(null);
+            OutputChanged?.Invoke(engine.OutputDevice);
+        };
+
+        // Each click moves the headphones on to the next playback device, and after the last, off. The main output's
+        // own device is offered too if it has channels 3 and 4 to put them on, as a DJ controller's sound card does.
         var phonesRow = Row("Headphones", body);
         _headphones = phonesRow.Add(new Button(bold, "Off") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
         _headphones.Clicked += _ =>
@@ -112,7 +135,12 @@ sealed class OptionsDialog : Panel
                 engine.UseHeadphoneDevice(null);
             HeadphonesChanged?.Invoke(engine.HeadphoneDevice);
         };
-        _box.Add(new Label(body, "A second sound card or output, to hear decks with PFL on before the room does.") { Color = Theme.Muted });
+        _box.Add(
+            new Label(body, "A second sound card, or a controller's own channels 3 and 4, to hear decks with PFL on before the room does.")
+            {
+                Color = Theme.Muted,
+            }
+        );
 
         var zoomRow = Row("Waveform shows", body);
         WaveformSeconds = zoomRow.Add(
@@ -212,7 +240,8 @@ sealed class OptionsDialog : Panel
     public override float2 Measure()
     {
         _autoGain.Text = _engine.AutoGain ? "On" : "Off";
-        _headphones.Text = _engine.HeadphoneDevice ?? "Off";
+        _output.Text = _engine.OutputDevice ?? "System default";
+        _headphones.Text = _engine.HeadphoneDevice is { } phones ? _engine.HeadphonesOnOutput ? $"{phones} (channels 3-4)" : phones : "Off";
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";
         var lighting = LightingEnabled?.Invoke() ?? false;
         _lighting.Text = lighting ? "On" : "Off";

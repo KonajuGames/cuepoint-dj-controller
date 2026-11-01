@@ -17,7 +17,13 @@ sealed class AppSettings
     };
 
     /// <summary>
-    /// The playback device the headphones are on, by name; null for none.
+    /// The playback device the main mix goes out of, by name; null for the system's default.
+    /// </summary>
+    public string? OutputDevice { get; set; }
+
+    /// <summary>
+    /// The playback device the headphones are on, by name; null for none. The output device's own name means its
+    /// channels 3 and 4.
     /// </summary>
     public string? HeadphoneDevice { get; set; }
 

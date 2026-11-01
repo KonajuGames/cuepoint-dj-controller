@@ -87,14 +87,17 @@ static void Run()
     using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
     Deck[] decks = [deckA, deckB];
 
-    // Settings kept between runs, beside the library's database: for now, the headphones.
+    // Settings kept between runs, beside the library's database. The output goes first, as headphones on its channels
+    // 3 and 4 need it there.
     var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "settings.json");
     var settings = AppSettings.Load(settingsPath);
     audio.CueMix = settings.CueMix;
     audio.HeadphoneVolume = settings.HeadphoneVolume;
+    var outputFound = audio.UseOutputDevice(settings.OutputDevice);
     var headphonesFound = audio.UseHeadphoneDevice(settings.HeadphoneDevice);
     void SaveSettings()
     {
+        settings.OutputDevice = audio.OutputDevice;
         settings.HeadphoneDevice = audio.HeadphoneDevice;
         settings.CueMix = audio.CueMix;
         settings.HeadphoneVolume = audio.HeadphoneVolume;
@@ -157,8 +160,19 @@ static void Run()
     screen.Options.HeadphonesChanged += device =>
     {
         SaveSettings();
-        screen.Log(device is null ? "Headphones off" : $"Headphones on {device}");
+        screen.Log(
+            device is null ? "Headphones off"
+            : audio.HeadphonesOnOutput ? $"Headphones on {device}, channels 3 and 4"
+            : $"Headphones on {device}"
+        );
     };
+    screen.Options.OutputChanged += device =>
+    {
+        SaveSettings();
+        screen.Log($"Main output on {device ?? "the system default"}{(settings.HeadphoneDevice is null && audio.OutputCanCarryHeadphones ? "; headphones can go on its channels 3 and 4" : "")}");
+    };
+    if (!outputFound)
+        screen.Log($"Couldn't find {settings.OutputDevice} for the main output, so it's on the system default; choose it again in the options");
     if (!headphonesFound)
         screen.Log($"Couldn't find {settings.HeadphoneDevice} for the headphones; choose them again in the options");
     if (OperatingSystem.IsWindows())
@@ -568,7 +582,8 @@ static void Run()
     }
 
     // The headphone blend and volume are set on the mixer as it plays, so they're kept as the app closes.
-    if (headphonesFound)
+    // (Not if a device chosen before wasn't found, so it's still chosen once it's plugged in again.)
+    if (headphonesFound && outputFound)
         SaveSettings();
 
     WindowsShell.KeepAwake(false);

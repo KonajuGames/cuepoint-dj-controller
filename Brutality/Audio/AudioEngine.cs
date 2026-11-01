@@ -15,20 +15,26 @@ enum CrossfaderSide
 }
 
 /// <summary>
-/// SDL's audio subsystem and one SDL_mixer mixer on the default output device, plus the crossfader between its decks.
-/// Decks play through it. Only one should exist at a time, since it starts and stops SDL's audio for the whole
-/// process.
+/// SDL's audio subsystem and one SDL_mixer mixer, plus the crossfader between its decks, playing out of an output
+/// device (the system's default unless chosen). Decks play through it. Only one should exist at a time, since it
+/// starts and stops SDL's audio for the whole process.
 /// </summary>
 /// <remarks>
+/// The mixer mixes at a fixed 48 kHz in stereo; the output (see <see cref="AudioOutput"/>) pulls from it as the
+/// device needs, and SDL converts to the device's own format.
+///
 /// Headphones: each mixing cycle, decks sent to the headphones add their audio (after EQ, before their faders) into
 /// a cue buffer from their track callbacks; then, once the mix is done, its callback blends the cue with the main mix
-/// and sends that to the headphone output, on a device of its own.
+/// and sends that to the headphone output: a device of its own, or the output device's channels 3 and 4 if it has
+/// them, as a DJ controller's sound card does.
 /// </remarks>
 sealed unsafe class AudioEngine : IDisposable
 {
     const uint DEFAULT_PLAYBACK_DEVICE = 0xFFFFFFFFu; // SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK
 
     internal MixMixer Mixer { get; }
+
+    AudioOutput? _output;
 
     /// <summary>
     /// The level of the final mix, as it goes to the speakers.
@@ -60,10 +66,12 @@ sealed unsafe class AudioEngine : IDisposable
         SdlMixer.Init();
         try
         {
-            // Null takes the device's own format, so SDL doesn't convert on the way out.
-            Mixer = SdlMixer.CreateMixerDevice(DEFAULT_PLAYBACK_DEVICE, null);
+            // Not on a device: the output pulls from it, so it can go out of any device, in any layout.
+            var spec = new SdlAudioSpec { format = SdlAudioFormat.F32, channels = AudioOutput.CHANNELS, freq = AudioOutput.RATE };
+            Mixer = SdlMixer.CreateMixer(&spec);
             _self = GCHandle.Alloc(this);
             SdlMixer.PInvoke.SetPostMixCallback(Mixer, &MixDone, (void*)GCHandle.ToIntPtr(_self));
+            _output = new AudioOutput(this, DEFAULT_PLAYBACK_DEVICE, null, null);
 
             var decoders = new string[SdlMixer.GetNumAudioDecoders()];
             for (var i = 0; i < decoders.Length; i++)
@@ -72,6 +80,8 @@ sealed unsafe class AudioEngine : IDisposable
         }
         catch
         {
+            if (_self.IsAllocated)
+                _self.Free();
             SdlMixer.Quit();
             Sdl.Init.Quit();
             throw;
@@ -187,9 +197,102 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// The name of the device the headphones are on, if they're on an SDL device.
+    /// The name of the device the headphones are on, if they're on one: a device of their own, or the output device
+    /// when they're on its channels 3 and 4.
     /// </summary>
-    public string? HeadphoneDevice => (_headphones as SdlHeadphones)?.DeviceName;
+    public string? HeadphoneDevice =>
+        _headphones switch
+        {
+            SdlHeadphones own => own.DeviceName,
+            ChannelHeadphones => _output?.DeviceName,
+            _ => null,
+        };
+
+    /// <summary>
+    /// Whether the headphones are on the output device's channels 3 and 4.
+    /// </summary>
+    public bool HeadphonesOnOutput => _headphones is ChannelHeadphones;
+
+    /// <summary>
+    /// The output device's name, or null for the system's default.
+    /// </summary>
+    public string? OutputDevice => _output?.DeviceName;
+
+    /// <summary>
+    /// Whether the output device (one chosen, not the default) can carry the headphones too, on channels 3 and 4.
+    /// </summary>
+    public bool OutputCanCarryHeadphones => _output is { DeviceName: not null, DeviceChannels: >= 4 };
+
+    /// <summary>
+    /// Plays the main mix out of the playback device called <paramref name="deviceName"/>, or the system's default
+    /// with null. Headphones on the old output's channels 3 and 4 go with it if the new one has them, and come off if
+    /// not. Returns false, keeping the output as it was, if there's no such device or it can't be opened.
+    /// </summary>
+    public bool UseOutputDevice(string? deviceName)
+    {
+        if (Find(deviceName) is not { } id)
+            return false;
+        var split = _headphones is ChannelHeadphones && deviceName is not null && AudioOutput.ChannelsOf(id) >= 4;
+        var (oldName, oldSplit) = (_output?.DeviceName, _output?.SplitHeadphones is not null);
+        if (!Reopen(id, deviceName, split))
+            return false;
+        if (oldSplit && !split)
+            Headphones = null;
+        return true;
+    }
+
+    /// <summary>
+    /// A device's id by name, or the default's for null; null if there's no such device. Ids change as devices come
+    /// and go, so they're looked up each time.
+    /// </summary>
+    static uint? Find(string? deviceName) =>
+        deviceName is null ? DEFAULT_PLAYBACK_DEVICE
+        : PlaybackDevices().FirstOrDefault(device => device.Name == deviceName) is { Name: not null } found ? found.Id
+        : null;
+
+    /// <summary>
+    /// Opens the output on a device, carrying the headphones on channels 3 and 4 or not. If that won't open, it goes
+    /// back to how it was and returns false.
+    /// </summary>
+    bool Reopen(uint id, string? deviceName, bool splitHeadphones)
+    {
+        var (oldName, oldSplit) = (_output?.DeviceName, _output?.SplitHeadphones);
+
+        // Closed first, so the device is free when it's the same one in a new layout.
+        _output?.Dispose();
+        _output = null;
+        try
+        {
+            _output = new AudioOutput(this, id, deviceName, splitHeadphones ? _headphones as ChannelHeadphones ?? new ChannelHeadphones() : null);
+            return true;
+        }
+        catch (SdlException)
+        {
+            try
+            {
+                if (Find(oldName) is { } oldId)
+                    _output = new AudioOutput(this, oldId, oldName, oldSplit);
+            }
+            catch (SdlException)
+            {
+                // Nothing to play out of; another choice in the options may do.
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Mixes the next <paramref name="samples"/> (interleaved stereo) into <paramref name="buffer"/>, running the
+    /// decks' and the mix's callbacks. Called by the output, on its audio thread.
+    /// </summary>
+    internal void Generate(float* buffer, int samples)
+    {
+        var bytes = samples * sizeof(float);
+        var made = SdlMixer.Generate(Mixer, buffer, bytes);
+        // Whatever it didn't make (or all of it, on an error) is silence.
+        var start = Math.Clamp(made, 0, bytes) / sizeof(float);
+        new Span<float>(buffer + start, samples - start).Clear();
+    }
 
     /// <summary>
     /// The playback devices there are, such as speakers and second sound cards, by name.
@@ -215,10 +318,19 @@ sealed unsafe class AudioEngine : IDisposable
 
     /// <summary>
     /// Puts the headphones on the playback device called <paramref name="deviceName"/>, or takes them off with null.
-    /// Returns false, with the headphones off, if there's no such device or it can't be opened.
+    /// The output device itself means its channels 3 and 4, if it has them. Returns false, with the headphones off, if
+    /// there's no such device or it can't be opened.
     /// </summary>
     public bool UseHeadphoneDevice(string? deviceName)
     {
+        // Off the output's channels 3 and 4, if they were there, before going anywhere else.
+        if (_headphones is ChannelHeadphones && deviceName != _output?.DeviceName)
+        {
+            Headphones = null;
+            if (Find(_output?.DeviceName) is { } outputId)
+                Reopen(outputId, _output?.DeviceName, false);
+        }
+
         if (deviceName is null)
         {
             Headphones = null;
@@ -226,6 +338,23 @@ sealed unsafe class AudioEngine : IDisposable
         }
         if (PlaybackDevices().FirstOrDefault(device => device.Name == deviceName) is not { Name: not null } found)
         {
+            Headphones = null;
+            return false;
+        }
+
+        // The output device: its channels 3 and 4, which only a device with four or more has.
+        if (deviceName == _output?.DeviceName)
+        {
+            if (_headphones is ChannelHeadphones)
+                return true;
+            if (!OutputCanCarryHeadphones)
+            {
+                Headphones = null;
+                return false;
+            }
+            Headphones = new ChannelHeadphones();
+            if (Reopen(found.Id, deviceName, true))
+                return true;
             Headphones = null;
             return false;
         }
@@ -292,8 +421,10 @@ sealed unsafe class AudioEngine : IDisposable
 
     public void Dispose()
     {
-        // The mixer first, which stops its callbacks, so nothing is still measuring or feeding the headphones when
-        // they go.
+        // The output first, which stops it pulling from the mixer, then the mixer, so nothing is still measuring or
+        // feeding the headphones when they go.
+        _output?.Dispose();
+        _output = null;
         Mixer.Dispose();
         _headphones?.Dispose();
         _headphones = null;
