@@ -57,7 +57,17 @@ sealed class SongBrowser : Panel
     /// </summary>
     public event Action<VirtualFolder, IReadOnlyList<Song>, int>? MoveRequested;
 
-    public SongBrowser(MusicLibrary library, LibraryAnalyser analyser, IEnumerable<string> deckNames, Font body, Font bold)
+    /// <summary>
+    /// Songs were right-clicked: the selection, and where, for a menu.
+    /// </summary>
+    public event Action<IReadOnlyList<Song>, float2>? SongsSecondaryClicked;
+
+    /// <summary>
+    /// Whether a song counts as played this session, for its tick in the first column.
+    /// </summary>
+    public Func<Song, bool> IsPlayed { get; set; } = _ => false;
+
+    public SongBrowser(MusicLibrary library, LibraryAnalyser analyser, IEnumerable<string> deckNames, Font body, Font bold, Images images)
     {
         _library = library;
         _analyser = analyser;
@@ -79,6 +89,12 @@ sealed class SongBrowser : Panel
             AlternateRow = Colors.Hex(0xFFFFFF, 0.03f),
         };
         _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title);
+        List.Columns.Add(
+            new ListColumn<Song>("", 30, _ => "")
+            {
+                Icon = song => IsPlayed(song) ? (images.Played, Theme.Played) : null,
+            }
+        );
         List.Columns.Add(_titleColumn);
         List.Columns.Add(new ListColumn<Song>("Artist", 220, song => song.Artist));
         List.Columns.Add(new ListColumn<Song>("Album", 200, song => song.Album) { Color = _ => Theme.Muted });
@@ -107,6 +123,7 @@ sealed class SongBrowser : Panel
             if (_source?.Folder is { } folder)
                 RemoveRequested?.Invoke(folder, songs);
         };
+        List.ItemsSecondaryClicked += (songs, at) => SongsSecondaryClicked?.Invoke(songs, at);
         List.Reordered += (songs, before) =>
         {
             if (_source?.Folder is { } folder)

@@ -126,7 +126,8 @@ sealed unsafe class OverlayRenderer : IDisposable
     {
         var image = new GpuImage(
             gpu,
-            VkFormat.R8UNorm,
+            // sRGB, so colour images are read back in linear light like everything else; alpha stays linear.
+            VkFormat.R8G8B8A8SRGB,
             new VkExtent2D(atlas.Width, atlas.Height),
             1,
             VkImageUsageFlags.SampledBit | VkImageUsageFlags.TransferDstBit,

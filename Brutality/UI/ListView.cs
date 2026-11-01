@@ -21,6 +21,11 @@ sealed class ListColumn<T>(string title, float width, Func<T, string> text)
     /// A colour for an item's text in this column, in place of the list's own; null for the list's.
     /// </summary>
     public Func<T, float4?>? Color { get; init; }
+
+    /// <summary>
+    /// An icon to show for an item, before any text, tinted with the colour given; none if null.
+    /// </summary>
+    public Func<T, (Image Image, float4 Tint)?>? Icon { get; init; }
 }
 
 /// <summary>
@@ -119,6 +124,12 @@ sealed class ListView<T> : Element
     /// they were dropped before, or the count for the end. The list doesn't move them itself.
     /// </summary>
     public event Action<IReadOnlyList<T>, int>? Reordered;
+
+    /// <summary>
+    /// A row was right-clicked, at a point: the selection then, in list order, for a menu of what to do with it.
+    /// Right-clicking a selected row keeps the selection; any other row is selected alone first.
+    /// </summary>
+    public event Action<IReadOnlyList<T>, float2>? ItemsSecondaryClicked;
 
     IReadOnlyList<T> _items = [];
 
@@ -311,10 +322,19 @@ sealed class ListView<T> : Element
                 var text = column.Text(_items[row]);
                 var cellLeft = x + CellPadding;
                 var cellWidth = MathF.Max(0, column.Width - 2 * CellPadding);
-                var textX = column.AlignRight ? cellLeft + cellWidth - Font.Advance(text) : cellLeft;
 
                 batch.PushClip(new float2(cellLeft, rowPosition.Y), new float2(cellWidth, RowHeight));
-                batch.AddText(Font, text, new float2(textX, rowPosition.Y + 3), column.Color?.Invoke(_items[row]) ?? TextColor);
+                if (column.Icon?.Invoke(_items[row]) is var (image, tint))
+                {
+                    batch.AddImage(image, new float2(cellLeft, rowPosition.Y + (RowHeight - image.Size.Y) / 2), tint);
+                    cellLeft += image.Size.X + 4;
+                    cellWidth = MathF.Max(0, cellWidth - image.Size.X - 4);
+                }
+                if (text.Length > 0)
+                {
+                    var textX = column.AlignRight ? cellLeft + cellWidth - Font.Advance(text) : cellLeft;
+                    batch.AddText(Font, text, new float2(textX, rowPosition.Y + 3), column.Color?.Invoke(_items[row]) ?? TextColor);
+                }
                 batch.PopClip();
                 x += column.Width;
             }
@@ -360,6 +380,16 @@ sealed class ListView<T> : Element
 
     // Only meaningful while IsHovered: once the pointer leaves, this stops being called, so Draw checks both.
     public override void PointerMove(float2 point) => _hovered = RowAt(point);
+
+    public override void SecondaryClick(float2 point)
+    {
+        var row = RowAt(point);
+        if (row < 0)
+            return;
+        if (!_selection.Contains(_items[row]))
+            SelectedIndex = row;
+        ItemsSecondaryClicked?.Invoke(SelectedItems, point);
+    }
 
     public override void PointerDown(float2 point, Modifiers modifiers)
     {

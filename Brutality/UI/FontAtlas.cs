@@ -9,6 +9,23 @@ namespace Brutality.UI;
 readonly record struct Glyph(int2 Size, int2 Bearing, float Advance, float2 UvMin, float2 UvMax);
 
 /// <summary>
+/// A picture in the atlas: an icon or logo, drawn with <see cref="Batch.AddImage"/>. Get one from
+/// <see cref="FontAtlas.AddImage(Png.Image)"/>; its UVs are set when the atlas is built.
+/// </summary>
+sealed class Image
+{
+    internal Image(int2 size) => Size = size;
+
+    /// <summary>
+    /// Its size in pixels, which is the size it's drawn at unless told otherwise.
+    /// </summary>
+    public int2 Size { get; }
+
+    public float2 UvMin { get; internal set; }
+    public float2 UvMax { get; internal set; }
+}
+
+/// <summary>
 /// A typeface at one pixel size. Get one from <see cref="FontAtlas.Add"/>.
 /// </summary>
 sealed class Font
@@ -71,8 +88,11 @@ sealed class Font
 }
 
 /// <summary>
-/// Rasterises fonts with FreeType and packs their glyphs, plus a white texel for solid fills, into one single-channel
-/// coverage texture. Add every font first; <see cref="Build"/> then lays out the texture and fixes each glyph's UVs.
+/// Rasterises fonts with FreeType and packs their glyphs, any images, and a white texel for solid fills, into one
+/// RGBA texture (sRGB, straight alpha). A glyph is white with its coverage as alpha, so text, fills and images all
+/// draw the same way: the texel times the vertex colour, which tints white icons and leaves colour images as they
+/// are under white. Add every font and image first; <see cref="Build"/> then lays out the texture and fixes their
+/// UVs.
 /// </summary>
 sealed unsafe class FontAtlas
 {
@@ -104,10 +124,34 @@ sealed unsafe class FontAtlas
 
     readonly List<PendingGlyph> _pending = [];
     readonly List<Font> _fonts = [];
+    readonly List<(Image Image, byte[] Pixels)> _pendingImages = [];
+
+    public const int BYTES_PER_TEXEL = 4;
 
     public int Width { get; private set; }
     public int Height { get; private set; }
+
+    /// <summary>
+    /// The built texture, <see cref="BYTES_PER_TEXEL"/> bytes (red, green, blue, alpha) a texel, rows from the top.
+    /// </summary>
     public byte[]? Pixels { get; private set; }
+
+    /// <summary>
+    /// Adds an image, to be packed when the atlas is built.
+    /// </summary>
+    public Image AddImage(Png.Image png)
+    {
+        if (Pixels is not null)
+            throw new InvalidOperationException("Images can't be added after the atlas is built");
+        var image = new Image(new int2(png.Width, png.Height));
+        _pendingImages.Add((image, png.Pixels));
+        return image;
+    }
+
+    /// <summary>
+    /// Adds a PNG image from a stream. Throws <see cref="InvalidDataException"/> if it can't be read.
+    /// </summary>
+    public Image AddImage(Stream png) => AddImage(Png.Decode(png));
 
     /// <summary>
     /// The UV of a texel that's fully covered, so solid rectangles share the text pipeline.
@@ -203,23 +247,30 @@ sealed unsafe class FontAtlas
     }
 
     /// <summary>
-    /// Packs every glyph into rows, tallest first, in the narrowest power-of-two texture that fits.
+    /// Packs every glyph and image into rows, tallest first, in the narrowest power-of-two texture that fits.
     /// </summary>
     public void Build()
     {
         if (Pixels is not null)
             return;
 
-        var glyphs = _pending.OrderByDescending(g => g.Size.Y).ThenByDescending(g => g.Size.X).ToList();
-        var area = glyphs.Sum(g => (g.Size.X + PADDING) * (g.Size.Y + PADDING));
-        Width = (int)Math.Max(128, System.Numerics.BitOperations.RoundUpToPowerOf2((uint)MathF.Ceiling(MathF.Sqrt(area))));
+        // Glyphs and images alike, as (size, index): an index below the glyph count is a glyph, the rest images.
+        var items = _pending
+            .Select((glyph, i) => (glyph.Size, Index: i))
+            .Concat(_pendingImages.Select((image, i) => (image.Image.Size, Index: _pending.Count + i)))
+            .OrderByDescending(item => item.Size.Y)
+            .ThenByDescending(item => item.Size.X)
+            .ToList();
+        var area = items.Sum(item => (item.Size.X + PADDING) * (item.Size.Y + PADDING));
+        var widest = items.Count == 0 ? 0 : items.Max(item => item.Size.X);
+        Width = (int)Math.Max(128, System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(widest + WHITE_SIZE + PADDING, MathF.Ceiling(MathF.Sqrt(area)))));
 
-        // Lay out rows: the white block first, then glyphs left to right.
-        var positions = new int2[glyphs.Count];
+        // Lay out rows: the white block first, then everything else left to right.
+        var positions = new int2[items.Count];
         int x = WHITE_SIZE + PADDING, y = 0, rowHeight = WHITE_SIZE;
-        for (var i = 0; i < glyphs.Count; i++)
+        for (var i = 0; i < items.Count; i++)
         {
-            var size = glyphs[i].Size;
+            var size = items[i].Size;
             if (x + size.X > Width)
             {
                 y += rowHeight + PADDING;
@@ -230,36 +281,53 @@ sealed unsafe class FontAtlas
             x += size.X + PADDING;
             rowHeight = Math.Max(rowHeight, size.Y);
         }
-        Height = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)(y + rowHeight));
+        Height = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, y + rowHeight));
 
-        Pixels = new byte[Width * Height];
+        Pixels = new byte[Width * Height * BYTES_PER_TEXEL];
         for (var row = 0; row < WHITE_SIZE; row++)
-            Pixels.AsSpan(row * Width, WHITE_SIZE).Fill(255);
+            Pixels.AsSpan(row * Width * BYTES_PER_TEXEL, WHITE_SIZE * BYTES_PER_TEXEL).Fill(255);
         WhiteUv = new float2(WHITE_SIZE / 2f, WHITE_SIZE / 2f) / new float2(Width, Height); // Centre of the block.
 
         var texel = new float2(1f / Width, 1f / Height);
-        for (var i = 0; i < glyphs.Count; i++)
+        for (var i = 0; i < items.Count; i++)
         {
-            var glyph = glyphs[i];
             var position = positions[i];
-            for (var row = 0; row < glyph.Size.Y; row++)
-                glyph
-                    .Coverage.AsSpan(row * glyph.Size.X, glyph.Size.X)
-                    .CopyTo(Pixels.AsSpan((position.Y + row) * Width + position.X));
-
-            glyph.Font.Glyphs[glyph.CodePoint] = new Glyph(
-                glyph.Size,
-                glyph.Bearing,
-                glyph.Advance,
+            var (uvMin, uvMax) = (
                 new float2(position.X, position.Y) * texel,
-                new float2(position.X + glyph.Size.X, position.Y + glyph.Size.Y) * texel
+                new float2(position.X + items[i].Size.X, position.Y + items[i].Size.Y) * texel
             );
+
+            if (items[i].Index < _pending.Count)
+            {
+                // A glyph: white, its coverage as alpha.
+                var glyph = _pending[items[i].Index];
+                for (var row = 0; row < glyph.Size.Y; row++)
+                {
+                    var target = Pixels.AsSpan(((position.Y + row) * Width + position.X) * BYTES_PER_TEXEL, glyph.Size.X * BYTES_PER_TEXEL);
+                    var coverage = glyph.Coverage.AsSpan(row * glyph.Size.X, glyph.Size.X);
+                    for (var column = 0; column < coverage.Length; column++)
+                    {
+                        target.Slice(column * BYTES_PER_TEXEL, 3).Fill(255);
+                        target[column * BYTES_PER_TEXEL + 3] = coverage[column];
+                    }
+                }
+                glyph.Font.Glyphs[glyph.CodePoint] = new Glyph(glyph.Size, glyph.Bearing, glyph.Advance, uvMin, uvMax);
+            }
+            else
+            {
+                var (image, pixels) = _pendingImages[items[i].Index - _pending.Count];
+                var rowBytes = image.Size.X * BYTES_PER_TEXEL;
+                for (var row = 0; row < image.Size.Y; row++)
+                    pixels.AsSpan(row * rowBytes, rowBytes).CopyTo(Pixels.AsSpan(((position.Y + row) * Width + position.X) * BYTES_PER_TEXEL));
+                (image.UvMin, image.UvMax) = (uvMin, uvMax);
+            }
         }
 
         foreach (var font in _fonts)
             font.Fallback = font.Glyphs.GetValueOrDefault(0xFFFD, font.Glyphs.GetValueOrDefault('?'));
 
         _pending.Clear();
+        _pendingImages.Clear();
     }
 
     /// <summary>

@@ -44,7 +44,7 @@ static class Colors
 }
 
 /// <summary>
-/// Collects the triangles for one frame of UI: solid rectangles and text, drawn in the order they're added.
+/// Collects the triangles for one frame of UI: solid rectangles, text and images, drawn in the order they're added.
 /// </summary>
 sealed class Batch
 {
@@ -138,6 +138,21 @@ sealed class Batch
             }
             penX += glyph.Advance;
         }
+    }
+
+    /// <summary>
+    /// Draws <paramref name="image"/> with its top-left at <paramref name="position"/>, at its own size unless given
+    /// another, times <paramref name="tint"/>: white leaves a colour image as it is, and colours a white icon.
+    /// </summary>
+    public void AddImage(Image image, float2 position, float4 tint, float2? size = null)
+    {
+        // Whole pixels at its own size, so it maps texel for texel and stays sharp.
+        var drawn = size ?? new float2(image.Size.X, image.Size.Y);
+        if (size is null)
+            position = new float2(MathF.Round(position.X), MathF.Round(position.Y));
+        if (tint.W <= 0 || drawn.X <= 0 || drawn.Y <= 0)
+            return;
+        AddQuad(position, position + drawn, image.UvMin, image.UvMax, tint);
     }
 
     void AddQuad(float2 min, float2 max, float2 uvMin, float2 uvMax, float4 color)

@@ -47,13 +47,14 @@ sealed class MainScreen : Panel
         IReadOnlyList<LibraryNode> folders,
         string databasePath,
         Fonts fonts,
+        Images images,
         Func<int, IReadOnlyList<string>>? hotcueKeys = null,
         Func<int, DeckKeyHints?>? deckKeys = null
     )
     {
         Background = Theme.Background;
 
-        TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold));
+        TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold, images.Logo));
 
         foreach (var deck in decks)
             _waveforms.Add(Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name), fonts.Small)));
@@ -93,7 +94,7 @@ sealed class MainScreen : Panel
         );
         FolderTree.ScrollOwner = _folderScroll;
 
-        Browser = Add(new SongBrowser(library, analyser, decks.Select(deck => deck.Name), fonts.Body, fonts.Bold));
+        Browser = Add(new SongBrowser(library, analyser, decks.Select(deck => deck.Name), fonts.Body, fonts.Bold, images));
         FolderTree.SelectionChanged += node =>
         {
             if (node.HasSongs)

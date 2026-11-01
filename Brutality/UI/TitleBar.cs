@@ -143,13 +143,13 @@ sealed class TitleBar : Panel
     public event Action? MaximizeClicked;
     public event Action? CloseClicked;
 
-    public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold)
+    public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold, Image logo)
     {
         _engine = engine;
         Background = Theme.TitleBar;
 
         _left = Add(new Panel { Direction = Direction.Horizontal, Spacing = 10 });
-        _left.Add(new Badge(bold, "C", Theme.Accent, Theme.TitleBar, 22));
+        _left.Add(new Picture(logo));
         _left.Add(new Label(bold, "Cuepoint") { Color = Theme.Text });
 
         // The decks' beat trackers, A over B, then a gap, then the master level and its name.

@@ -66,6 +66,15 @@ static void Run()
         Heading: atlas.Add(bold, 18),
         Big: atlas.Add(bold, 26)
     );
+    var images = Images.Load(atlas);
+
+    // The logo on the taskbar and in Alt+Tab too. GLFW copies the pixels, so they needn't outlive the call.
+    unsafe
+    {
+        var icon = Images.Read("logo-32.png");
+        fixed (byte* pixels = icon.Pixels)
+            window.SetIcon(1, new GlfwImage { Width = icon.Width, Height = icon.Height, Pixels = pixels });
+    }
 
     using var gpu = new GpuContext(window, ENABLE_VALIDATION);
     using var renderer = new Renderer(gpu, window, atlas);
@@ -116,7 +125,7 @@ static void Run()
     var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
 
     var ui = new Root();
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, HotcueKeys.Labels, KeyboardControls.HintsFor));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor));
     using var input = new GlfwUiInput(window, ui);
     var browser = screen.Browser;
 
@@ -154,10 +163,15 @@ static void Run()
     if (OperatingSystem.IsWindows())
         WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
 
+    // Songs played out for ten seconds or more get a tick in the list.
+    var plays = new SessionPlays();
+    browser.IsPlayed = song => plays.Contains(song.Path);
+
     foreach (var deck in decks)
     {
         deck.Loaded += loaded =>
         {
+            plays.Restart(loaded);
             screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
             loaded.Analysis = loaded.FilePath is { } path ? library.Find(path)?.Analysis : null;
             if (loaded.FilePath is { } file)
@@ -446,6 +460,26 @@ static void Run()
         );
     };
 
+    // A menu for songs in the list, acting on the selection.
+    browser.SongsSecondaryClicked += (songs, at) =>
+    {
+        var played = songs.Where(song => plays.Contains(song.Path)).ToList();
+        menu.Show(
+            at,
+            [
+                new MenuItem(
+                    played.Count > 1 ? $"Mark {played.Count} songs as not played" : "Mark as not played",
+                    () =>
+                    {
+                        plays.Forget(played.Select(song => song.Path));
+                        screen.Log(played.Count == 1 ? $"{played[0].Title} is marked as not played" : $"{played.Count} songs are marked as not played");
+                    },
+                    Enabled: played.Count > 0
+                ),
+            ]
+        );
+    };
+
     browser.RemoveRequested += (folder, songs) =>
     {
         var error = virtualFolders.Remove(folder, songs);
@@ -487,6 +521,7 @@ static void Run()
         // Faders whose keys are held move by the time since the last frame.
         var now = Glfw.Time;
         controls.Update(now - lastFrame);
+        plays.Update(decks, now - lastFrame);
         controllers?.Update(now, now - lastFrame);
         lastFrame = now;
 

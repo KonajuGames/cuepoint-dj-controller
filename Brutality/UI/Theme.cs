@@ -10,6 +10,11 @@ static class Theme
 {
     public static readonly float4 Background = Colors.Hex(0x121318);
     public static readonly float4 TitleBar = Colors.Hex(0x0B0C0F);
+
+    /// <summary>
+    /// The tick on a song played this session.
+    /// </summary>
+    public static readonly float4 Played = Colors.Hex(0x6CCB7A);
     public static readonly float4 Panel = Colors.Hex(0x1B1C22);
     public static readonly float4 PanelRaised = Colors.Hex(0x23242C);
     public static readonly float4 PanelBorder = Colors.Hex(0x2E3039);

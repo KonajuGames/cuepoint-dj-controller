@@ -32,6 +32,8 @@
   <ItemGroup>
     <!-- GLSL is compiled to SPIR-V at startup, so the sources ship next to the executable. -->
     <None Include="Shaders\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Images, by file name; Assets\draw_assets.py draws them. -->
+    <EmbeddedResource Include="Assets\*.png" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
