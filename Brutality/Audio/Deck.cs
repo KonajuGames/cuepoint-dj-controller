@@ -290,9 +290,34 @@ sealed class Deck : IDisposable
         set
         {
             _tempo = Math.Clamp(value, -_tempoRange, _tempoRange);
-            _track.SetFrequencyRatio((float)TempoRatio);
-            Volatile.Write(ref _speed, (float)TempoRatio);
+            ApplySpeed();
         }
+    }
+
+    double _bend;
+
+    /// <summary>
+    /// A momentary push or drag on the speed, as a fraction on top of the tempo, from a jog wheel nudged to bring
+    /// the beats in line by ear: 0.05 plays 5% faster than the tempo says while it lasts. It doesn't move the tempo
+    /// fader or count against sync, and key lock holds the key through it.
+    /// </summary>
+    public double Bend
+    {
+        get => _bend;
+        set
+        {
+            _bend = Math.Clamp(value, -MAX_BEND, MAX_BEND);
+            ApplySpeed();
+        }
+    }
+
+    public const double MAX_BEND = 0.5;
+
+    void ApplySpeed()
+    {
+        var speed = (float)(TempoRatio * (1 + _bend));
+        _track.SetFrequencyRatio(speed);
+        Volatile.Write(ref _speed, speed);
     }
 
     /// <summary>

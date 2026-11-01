@@ -4,6 +4,7 @@ using Brutal.VulkanApi;
 using Brutality;
 using Brutality.Audio;
 using Brutality.Input;
+using Brutality.Midi;
 using Brutality.Music;
 using Brutality.Rendering;
 using Brutality.UI;
@@ -241,6 +242,42 @@ static void Run()
     // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored. Escape no longer
     // quits, now there's a close button, since a stray press mid-set would be a disaster.
     var controls = new KeyboardControls(decks, audio);
+
+    // DJ controllers, found as they're plugged in. The load buttons take the selected song; the browse knob works
+    // the list (and with Shift, the folders) as the arrow keys do.
+    using var midiDevices = OperatingSystem.IsWindows() ? new MidiDevices(new WinMidi()) : null;
+    ControllerDialog? controllerDialog = null;
+    using var controllers = midiDevices is null
+        ? null
+        : new MidiControls(midiDevices, decks, audio, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "controllers"));
+    if (controllers is not null)
+    {
+        controllers.Log += screen.Log;
+        controllers.LoadRequested += deck =>
+        {
+            if (browser.SelectedSong is { } song)
+                Load(song, deck);
+            else
+                screen.Log("Pick a song in the list to load");
+        };
+        void Step(Element element, int steps)
+        {
+            for (var i = 0; i < Math.Abs(steps); i++)
+                element.KeyDown(steps > 0 ? Key.Down : Key.Up, Modifiers.None);
+        }
+        controllers.Browse += steps => Step(browser.List, steps);
+        controllers.BrowseFolders += steps => Step(screen.FolderTree, steps);
+        controllers.BrowsePressed += () => screen.FolderTree.KeyDown(Key.Enter, Modifiers.None);
+
+        // Mapping, opened from the options, over everything else.
+        controllerDialog = ui.Add(new ControllerDialog(controllers, midiDevices!, fonts.Body, fonts.Bold, fonts.Heading));
+        screen.Options.ControllerStatus = () => midiDevices!.Devices.Count == 0 ? null : string.Join(", ", midiDevices.Devices.Select(device => device.Name));
+        screen.Options.MapControllerClicked += () =>
+        {
+            screen.Options.Close();
+            controllerDialog.Open();
+        };
+    }
     input.UnhandledKey += (key, action, mods) =>
     {
         if (action == GlfwKeyAction.Repeat)
@@ -265,7 +302,8 @@ static void Run()
         switch (key)
         {
             case GlfwKey.Escape when pressed:
-                screen.Options.Close();
+                if (controllerDialog?.Escape() != true)
+                    screen.Options.Close();
                 break;
             case GlfwKey.Number1 when pressed && browser.SelectedSong is { } song:
                 Load(song, deckA);
@@ -306,9 +344,12 @@ static void Run()
         // Faders whose keys are held move by the time since the last frame.
         var now = Glfw.Time;
         controls.Update(now - lastFrame);
+        controllers?.Update(now, now - lastFrame);
         lastFrame = now;
 
         screen.ScreenSize = new float2(size.X, size.Y);
+        if (controllerDialog is not null)
+            controllerDialog.ScreenSize = screen.ScreenSize;
         screen.Update();
         ui.Layout(screen.ScreenSize);
         input.UpdateCursor();

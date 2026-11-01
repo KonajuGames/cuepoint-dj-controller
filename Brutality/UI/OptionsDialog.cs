@@ -32,6 +32,17 @@ sealed class OptionsDialog : Panel
     public event Action<string?>? HeadphonesChanged;
 
     readonly Button _headphones;
+    readonly Label _controller;
+
+    /// <summary>
+    /// What's said about connected controllers; none if null.
+    /// </summary>
+    public Func<string?>? ControllerStatus { get; set; }
+
+    /// <summary>
+    /// Map controls was clicked, to open the controller's mapping.
+    /// </summary>
+    public event Action? MapControllerClicked;
 
     public OptionsDialog(AudioEngine engine, string musicFolder, string databasePath, Font body, Font bold, Font heading)
     {
@@ -98,6 +109,11 @@ sealed class OptionsDialog : Panel
         WaveformSeconds.Changed += slider => seconds.Text = $"{slider.Value:F0} seconds";
         seconds.Text = $"{WaveformSeconds.Value:F0} seconds";
 
+        var controllerRow = Row("Controller", body);
+        _controller = controllerRow.Add(new Label(body) { Color = Theme.Text, MaxWidth = 200 });
+        var map = controllerRow.Add(new Button(bold, "Map controls") { FocusColor = Theme.Focus });
+        map.Clicked += _ => MapControllerClicked?.Invoke();
+
         Row("Music library", body).Add(new Label(body, musicFolder) { Color = Theme.Text, MaxWidth = 340 });
         Row("Analysis saved in", body).Add(new Label(body, databasePath) { Color = Theme.Text, MaxWidth = 340 });
 
@@ -106,20 +122,26 @@ sealed class OptionsDialog : Panel
         foreach (var (key, action) in new[]
         {
             ("1 / 2", "Load the selected song to deck A / B"),
-            ("Z / X", "Cue / Play deck A"),
-            ("N / M", "Cue / Play deck B"),
-            ("C / ,", "Sync deck A / B to the other"),
-            ("Tab", "Next control"),
-            ("Enter", "Press, submit or load"),
-            ("Esc", "Leave a box, or close this"),
+            ("Z X C V", "Deck A: cue, play, sync, loop"),
+            ("N M , .", "Deck B: cue, play, sync, loop"),
+            ("3 4 / 9 0", "Halve / double the loop, deck A / B"),
+            ("5 6 / 7 8", "Tempo down / up (hold); both together reset it"),
+            ("Shift + those", "Volume down / up (hold)"),
+            ("T / Y", "Headphones for deck A / B"),
+            ("G / H", "Key lock deck A / B"),
+            ("F1 F2 F3", "Kill A's low, mid, high; F9 F10 F11 for B"),
+            ("F4 / F12", "Reset deck A / B's EQ and filter"),
+            ("F5 F6 / F7 F8", "Filter A / B toward low-pass / high-pass (hold)"),
+            ("[ ]  B", "Crossfader left, right (hold); B centres it"),
+            ("Ctrl", "With a held key, moves a quarter as fast"),
             ("Q W E R", "Hotcues 1 to 4 on deck A; A S D F for 5 to 8"),
             ("U I O P", "Hotcues 1 to 4 on deck B; J K L ; for 5 to 8"),
             ("Shift", "With a hotcue key, or clicking a pad, clears it"),
-            ("Right-click", "Clears a hotcue pad too"),
+            ("Tab / Enter / Esc", "Next control / press / leave a box or close this"),
         })
         {
             var row = keys.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
-            row.Add(new Panel { MinSize = new float2(84, 0) }).Add(new Label(body, key) { Color = Theme.Text });
+            row.Add(new Panel { MinSize = new float2(130, 0) }).Add(new Label(body, key) { Color = Theme.Text });
             row.Add(new Label(body, action) { Color = Theme.Muted });
         }
 
@@ -157,6 +179,7 @@ sealed class OptionsDialog : Panel
     {
         _autoGain.Text = _engine.AutoGain ? "On" : "Off";
         _headphones.Text = _engine.HeadphoneDevice ?? "Off";
+        _controller.Text = ControllerStatus?.Invoke() ?? "None connected";
         _autoGain.Background = _engine.AutoGain ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
 
         _box.Measure();
