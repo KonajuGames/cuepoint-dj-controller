@@ -28,6 +28,12 @@ sealed class MidiControls : IDisposable
     const double BEND_FADE_SECONDS = 0.12;
 
     /// <summary>
+    /// How long the short and long backspins take to spin down, in seconds.
+    /// </summary>
+    public const double SHORT_BACKSPIN_SECONDS = 0.8;
+    public const double LONG_BACKSPIN_SECONDS = 2;
+
+    /// <summary>
     /// How near the middle a centred knob counts as the middle, as a fraction of its half-travel.
     /// </summary>
     const float CENTRE_DETENT = 0.01f;
@@ -326,6 +332,13 @@ sealed class MidiControls : IDisposable
             return;
         }
 
+        // Touching the jog wheel holds the record, for scratching; letting go sets it free.
+        if (action == "jog.touch")
+        {
+            deck.JogTouch(pressed);
+            return;
+        }
+
         // A loop roll lasts as long as its pad's held.
         if (Roll(action) is { } roll)
         {
@@ -376,6 +389,12 @@ sealed class MidiControls : IDisposable
                 deck.LoopBeats = int.Parse(action["loop.beats".Length..]);
                 if (!deck.IsLooping)
                     deck.ToggleLoop();
+                break;
+            case "backspin.short":
+                deck.Backspin(SHORT_BACKSPIN_SECONDS);
+                break;
+            case "backspin.long":
+                deck.Backspin(LONG_BACKSPIN_SECONDS);
                 break;
             case "fxfade":
                 // The controller plays the effect itself, by sending the filter, fader and loop controls it works.
@@ -488,6 +507,9 @@ sealed class MidiControls : IDisposable
                 break;
             case "search":
                 deck.Seek(deck.Position + TimeSpan.FromSeconds(steps * SEARCH_PER_STEP));
+                break;
+            case "scratch":
+                deck.Scratch(steps);
                 break;
         }
     }

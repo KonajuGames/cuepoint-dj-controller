@@ -58,6 +58,8 @@ static class ControlCatalog
                     new($"{deck}.loop.beats4", $"Deck {deck} 4-beat loop", ControlKind.Button),
                     new($"{deck}.loop.beats8", $"Deck {deck} 8-beat loop", ControlKind.Button),
                     new($"{deck}.fxfade", $"Deck {deck} FX FADE pad (the controller plays the effect by working other controls)", ControlKind.Button),
+                    new($"{deck}.backspin.short", $"Deck {deck} short backspin", ControlKind.Button),
+                    new($"{deck}.backspin.long", $"Deck {deck} long backspin", ControlKind.Button),
                     new($"{deck}.grid", $"Deck {deck} grid mode (pads fix the beat grid)", ControlKind.Button, HasLight: true),
                     new($"{deck}.roll", $"Deck {deck} roll mode (pads roll loops)", ControlKind.Button, HasLight: true),
                     new($"{deck}.hotcues", $"Deck {deck} hotcue mode (pads back to hotcues)", ControlKind.Button, HasLight: true),
@@ -80,6 +82,8 @@ static class ControlCatalog
                     new($"{deck}.eq.low", $"Deck {deck} low", ControlKind.Knob),
                     new($"{deck}.filter", $"Deck {deck} filter", ControlKind.Knob),
                     new($"{deck}.jog", $"Deck {deck} jog wheel", ControlKind.Encoder),
+                    new($"{deck}.jog.touch", $"Deck {deck} jog wheel touched (holds the record to scratch)", ControlKind.Button),
+                    new($"{deck}.scratch", $"Deck {deck} scratch (the touched jog wheel moving the record)", ControlKind.Encoder),
                     new($"{deck}.search", $"Deck {deck} fast search", ControlKind.Encoder),
                 ]
             );

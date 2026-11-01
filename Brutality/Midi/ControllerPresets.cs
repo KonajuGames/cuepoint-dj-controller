@@ -17,9 +17,11 @@ static class ControllerPresets
     /// its pads on another (8 and 9), and the shared mixer and browser on 7. Shift + FX FADE puts the pads in ROLL
     /// mode, and HOT CUE back to hotcues; the pads send the same notes either way.
     ///
-    /// FX FADE's pads (notes 16 to 23) play transition effects by working other controls over time, which is all
-    /// there is to map for them: the filter swept, the channel fader faded, and loops set (notes 0x4A and 0x4C, 4 and
-    /// 1 beats), halved (the halve button's own note) and left (0x4D). Faders and knobs send fourteen bits,
+    /// FX FADE's pads (notes 16 to 23) play transition effects by working other controls over time, which is mostly
+    /// all there is to map for them: the filter swept, the channel fader faded, and loops set (notes 0x4A and 0x4C, 4
+    /// and 1 beats), halved (the halve button's own note) and left (0x4D). The backspins (pads 4 and 8) send the same
+    /// flick of the wheel as each other, so they're told apart by their pads. PAD SCRATCH's patterns touch the wheel
+    /// and turn it (CC 0x22, the record held), with fader cuts, from hotcue 4. Faders and knobs send fourteen bits,
     /// the fine half 32 above the coarse. Shift sends different messages rather than changing what the app does, so
     /// shifted controls are bound like any other: pads with Shift held come 8 notes higher, and the jog wheel
     /// turned with Shift comes on its own controls.
@@ -64,7 +66,7 @@ static class ControllerPresets
             {
                 Note($"{deck}.hotcue{pad + 1}", pads, pad);
                 Note($"{deck}.hotcue{pad + 1}.delete", pads, pad + 8);
-                Note($"{deck}.fxfade", pads, 0x10 + pad);
+                Note(pad switch { 3 => $"{deck}.backspin.short", 7 => $"{deck}.backspin.long", _ => $"{deck}.fxfade" }, pads, 0x10 + pad);
             }
             Note($"{deck}.hotcues", channel, 0x1B);
             Note($"{deck}.roll", channel, 0x6B);
@@ -81,6 +83,9 @@ static class ControllerPresets
             // The wheel's top (touched) and its outer edge both nudge or move through the song.
             Control($"{deck}.jog", channel, 0x21, fine: false);
             mapping.Bindings.Add(new MidiBinding { Control = $"{deck}.jog", Kind = MidiKind.ControlChange, Channel = channel, Number = 0x23 });
+            Note($"{deck}.jog.touch", channel, 0x36);
+            Note($"{deck}.jog.touch", channel, 0x67);
+            Control($"{deck}.scratch", channel, 0x22, fine: false);
             Control($"{deck}.search", channel, 0x1F, fine: false);
             Control($"{deck}.search", channel, 0x26, fine: false);
 

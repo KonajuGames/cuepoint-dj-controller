@@ -17,7 +17,7 @@ namespace Brutality.Audio;
 /// on at the matching place. Positions on the track are then counted from the loop's start, which
 /// <see cref="Position"/> allows for.
 /// </remarks>
-sealed class Deck : IDisposable
+sealed partial class Deck : IDisposable
 {
     /// <summary>
     /// A decoded song, ready to put on a deck: done off the UI thread, so loading doesn't stall the screen.
@@ -292,7 +292,10 @@ sealed class Deck : IDisposable
         {
             var deck = (Deck)GCHandle.FromIntPtr((nint)userData).Target!;
             var channels = spec->channels;
-            deck._keyLock.Process(samples, count, channels, spec->freq, Volatile.Read(ref deck._speed));
+            // A scratched or spinning record's sound is rendered by the platter, its pitch following the record, so
+            // key lock is passed over meanwhile.
+            if (!deck.RenderPlatter(samples, count, channels, spec->freq))
+                deck._keyLock.Process(samples, count, channels, spec->freq, Volatile.Read(ref deck._speed));
             deck.Equalizer.Process(samples, count, channels, spec->freq);
             deck.Meter.Measure(samples, count, channels);
             if (deck.Headphones)
@@ -375,6 +378,7 @@ sealed class Deck : IDisposable
     internal void ApplyGain()
     {
         _track.SetGain(InputGain);
+        Volatile.Write(ref _inputGain, InputGain);
         Volatile.Write(ref _channelGain, ChannelGain);
     }
 
@@ -576,9 +580,9 @@ sealed class Deck : IDisposable
     /// <see cref="KeyLocked"/> on, that's a little behind the track, by the key lock's delay.
     /// </summary>
     public TimeSpan Position =>
-        IsLoaded && _pcm is not null
-            ? TimeSpan.FromTicks(Math.Max(0, (ToTime(SongFrame) - TimeSpan.FromSeconds(_keyLock.LatencySeconds)).Ticks))
-            : TimeSpan.Zero;
+        !IsLoaded || _pcm is null ? TimeSpan.Zero
+        : IsPlatterActive ? TimeSpan.FromSeconds(Volatile.Read(ref _platterHead) / SampleRate)
+        : TimeSpan.FromTicks(Math.Max(0, (ToTime(SongFrame) - TimeSpan.FromSeconds(_keyLock.LatencySeconds)).Ticks));
 
     /// <summary>
     /// Where playback is in the song, in frames: the track's position, plus the loop's start while it's playing the
@@ -592,7 +596,11 @@ sealed class Deck : IDisposable
 
     long ToFrames(TimeSpan time) => (long)Math.Round(time.TotalSeconds * SampleRate);
 
-    public bool IsPlaying => IsLoaded && _track.Playing() && !_track.Paused();
+    /// <summary>
+    /// Whether the deck's playing: while the platter has the sound (scratched, or spinning), whether it'll play on
+    /// once it lets go.
+    /// </summary>
+    public bool IsPlaying => IsLoaded && (IsPlatterActive ? _motor : _track.Playing() && !_track.Paused());
 
     /// <summary>
     /// Decodes <paramref name="path"/> and puts it on the deck, paused at the start, before returning. Decoding up
@@ -622,6 +630,7 @@ sealed class Deck : IDisposable
     /// </summary>
     public void Update()
     {
+        UpdatePlatter();
         UpdateRoll();
         if (_pending is not { Task.IsCompleted: true } done)
             return;
@@ -685,6 +694,7 @@ sealed class Deck : IDisposable
     void Apply(DecodedSong song)
     {
         _rolls.Clear();
+        (_platterMode, _touched) = ((int)PlatterMode.Off, false);
         _track.Stop(0);
         _track.SetAudio(song.Audio);
         _audio.Dispose();
@@ -713,6 +723,12 @@ sealed class Deck : IDisposable
     {
         // Play during a cue preview keeps it playing once Cue is let go, as on a CDJ.
         _previewing = false;
+        if (IsPlatterActive)
+        {
+            // Under a scratch, it plays on once the record's let go.
+            _motor = true;
+            return;
+        }
         if (!IsLoaded || IsPlaying)
             return;
 
@@ -727,6 +743,11 @@ sealed class Deck : IDisposable
     public void Pause()
     {
         _previewing = false;
+        if (IsPlatterActive)
+        {
+            _motor = false;
+            return;
+        }
         if (IsPlaying)
             _track.Pause();
     }
@@ -758,6 +779,7 @@ sealed class Deck : IDisposable
     {
         if (!IsLoaded || _previewing)
             return;
+        ReleasePlatter();
 
         // Cueing works on the whole song, so it leaves a loop first.
         ExitLoop();
@@ -851,6 +873,8 @@ sealed class Deck : IDisposable
         if (!IsLoaded)
             return;
 
+        // A jump takes the sound back from a scratch or spin first.
+        ReleasePlatter();
         var clamped = TimeSpan.FromTicks(Math.Clamp(position.Ticks, 0, Duration.Ticks));
         var frames = ToFrames(clamped);
         if (IsRolling)
@@ -1043,7 +1067,7 @@ sealed class Deck : IDisposable
     /// </summary>
     public void RollDown(double beats)
     {
-        if (!CanLoop || !IsPlaying || _analysis?.Grid is null)
+        if (!CanLoop || !IsPlaying || IsPlatterActive || _analysis?.Grid is null)
             return;
         beats = Math.Clamp(beats, MIN_LOOP_BEATS, MAX_LOOP_BEATS);
         if (_rolls.Count == 0)
