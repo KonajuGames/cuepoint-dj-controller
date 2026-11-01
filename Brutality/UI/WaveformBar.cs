@@ -40,6 +40,13 @@ sealed class WaveformBar : Slider
     public float4 RegionColor { get; set; } = Colors.Hex(0x48D17A);
 
     /// <summary>
+    /// Where to shade from to the end, in <see cref="WarningColor"/>, for a song about to run out; none if null.
+    /// </summary>
+    public float? WarningFrom { get; set; }
+
+    public float4 WarningColor { get; set; } = Theme.Warning;
+
+    /// <summary>
     /// Beats pinned by hand, as values between <see cref="Slider.Min"/> and <see cref="Slider.Max"/>: each a line
     /// in <see cref="PinColor"/> with a block at its top and bottom.
     /// </summary>
@@ -87,9 +94,20 @@ sealed class WaveformBar : Slider
         }
 
         DrawRegion(batch, left);
+        DrawWarning(batch, left);
         DrawGrid(batch, left);
         DrawPins(batch, left);
         DrawFlags(batch, left);
+    }
+
+    void DrawWarning(Batch batch, float left)
+    {
+        if (WarningFrom is not { } from || Max <= Min)
+            return;
+        var start = MathF.Round(left + OffsetOf(Math.Clamp((from - Min) / (Max - Min), 0, 1)));
+        var end = MathF.Round(left + OffsetOf(1));
+        if (end > start)
+            batch.AddRect(new float2(start, ScreenPosition.Y), new float2(end - start, Size.Y), Faded(Theme.Fade(WarningColor, 0.35f)));
     }
 
     void DrawPins(Batch batch, float left)

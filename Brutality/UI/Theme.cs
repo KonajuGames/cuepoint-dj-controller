@@ -32,6 +32,11 @@ static class Theme
     /// </summary>
     public static readonly float4 Loop = Colors.Hex(0x48D17A);
 
+    /// <summary>
+    /// A song about to run out.
+    /// </summary>
+    public static readonly float4 Warning = Colors.Hex(0xFF4D3A);
+
     public static readonly float4 DeckA = Colors.Hex(0x2F8FFF);
     public static readonly float4 DeckB = Colors.Hex(0xEE4444);
 

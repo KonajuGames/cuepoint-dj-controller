@@ -77,9 +77,14 @@ sealed class SongBrowser : Panel
     public event Action<float2>? ColumnMenuRequested;
 
     /// <summary>
-    /// Whether a song counts as played this session, for its tick in the first column.
+    /// Whether a song counts as played this session, for its tick in its column.
     /// </summary>
     public Func<Song, bool> IsPlayed { get; set; } = _ => false;
+
+    /// <summary>
+    /// The decks a song's loaded on, by name, for their letters in the first column.
+    /// </summary>
+    public Func<Song, IReadOnlyList<string>> DecksOf { get; set; } = _ => [];
 
     public SongBrowser(MusicLibrary library, LibraryAnalyser analyser, IEnumerable<string> deckNames, Font body, Font bold, Images images)
     {
@@ -104,6 +109,15 @@ sealed class SongBrowser : Panel
         };
         // The title takes whatever width the rest leave, so it's the one column that isn't sized by hand.
         _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title) { SortKey = song => Text(song.Title), Resizable = false };
+        _columns.Add(
+            new ListColumn<Song>("", 26, song => string.Concat(DecksOf(song)))
+            {
+                Id = "Deck",
+                Color = song => DecksOf(song) is [var deck, ..] ? Theme.DeckColor(deck) : null,
+                SortKey = song => DecksOf(song) is { Count: > 0 } decks ? string.Concat(decks) : null,
+                Resizable = false,
+            }
+        );
         _columns.Add(
             new ListColumn<Song>("", 30, _ => "")
             {

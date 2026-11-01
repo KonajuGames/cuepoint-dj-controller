@@ -187,6 +187,27 @@ sealed class ScrollingWaveform : Element
 
         // Where the deck is.
         batch.AddRect(new float2(centre - 1, ScreenPosition.Y), new float2(2, Size.Y), Colors.White);
+        DrawLabel(batch);
+    }
+
+    /// <summary>
+    /// Which deck's lane this is, as its letter in a badge of its colour at the left, and what's missing when it's
+    /// empty.
+    /// </summary>
+    void DrawLabel(Batch batch)
+    {
+        // In the top corner, framed in the background's colour so it stands out over the waveform.
+        var letter = _font.Measure(_deck.Name);
+        var badge = new float2(MathF.Max(letter.X, letter.Y) + 8, letter.Y + 4);
+        var at = new float2(ScreenPosition.X + 5, ScreenPosition.Y + 5);
+        batch.AddRect(at - new float2(2, 2), badge + new float2(4, 4), Background);
+        batch.AddRect(at, badge, _deck.IsLoaded ? Color : Theme.Fade(Color, 0.4f));
+        batch.AddText(_font, _deck.Name, new float2(MathF.Round(at.X + (badge.X - letter.X) / 2), at.Y + 2), Theme.TitleBar);
+        if (!_deck.IsLoaded)
+        {
+            var text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "No track loaded";
+            batch.AddText(_font, text, new float2(at.X + badge.X + 8, MathF.Round(at.Y + (badge.Y - _font.Measure(text).Y) / 2)), Theme.Faint);
+        }
     }
 
     void DrawBeats(Batch batch, double position, float centre)

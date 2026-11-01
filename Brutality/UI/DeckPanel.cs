@@ -35,6 +35,13 @@ sealed class DeckPanel : Panel
     readonly Label _key;
     readonly Label _elapsed;
     readonly Label _remaining;
+
+    /// <summary>
+    /// How near its end a song's warned of, in seconds, and how fast the warning flashes.
+    /// </summary>
+    public const double END_WARNING_SECONDS = 30;
+
+    const double END_FLASH_SECONDS = 0.6;
     readonly Label _gain;
     readonly Label _cuePoint;
     readonly Label _loading;
@@ -264,6 +271,7 @@ sealed class DeckPanel : Panel
             _key.Text = "";
             _elapsed.Text = "";
             _remaining.Text = "";
+            _overview.WarningFrom = null;
             _gain.Text = "";
             _cuePoint.Text = "";
             _cue.Enabled = false;
@@ -291,6 +299,12 @@ sealed class DeckPanel : Panel
         var position = _deck.Position;
         _elapsed.Text = $"{Format(position)} / {Format(_deck.Duration)}";
         _remaining.Text = $"-{Format(_deck.Duration - position)}";
+
+        // The song's last moments: the time left, and the end of the waveform, go red, flashing while it plays.
+        var ending = _deck.Duration.TotalSeconds > END_WARNING_SECONDS && (_deck.Duration - position).TotalSeconds <= END_WARNING_SECONDS;
+        var flashOn = !_deck.IsPlaying || Clock.Seconds() % END_FLASH_SECONDS < END_FLASH_SECONDS / 2;
+        _remaining.Color = !ending ? _color : flashOn ? Theme.Warning : Theme.Text;
+        _overview.WarningFrom = ending && flashOn ? (float)(_deck.Duration.TotalSeconds - END_WARNING_SECONDS) : null;
         _cuePoint.Text = $"Cue {Format(_deck.CuePoint)}";
 
         // The tempo where the deck is, which moves on through a song whose tempo varies; "~" says it does.

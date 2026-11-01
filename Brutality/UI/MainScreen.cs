@@ -109,6 +109,16 @@ sealed class MainScreen : Panel
         FolderTree.ScrollOwner = _folderScroll;
 
         Browser = Add(new SongBrowser(library, analyser, decks.Select(deck => deck.Name), fonts.Body, fonts.Bold, images));
+        Browser.DecksOf = song =>
+        {
+            List<string>? on = null;
+            foreach (var deck in decks)
+            {
+                if (deck.IsLoaded && string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase))
+                    (on ??= []).Add(deck.Name);
+            }
+            return on ?? (IReadOnlyList<string>)[];
+        };
         FolderTree.SelectionChanged += node =>
         {
             if (node.HasSongs)
