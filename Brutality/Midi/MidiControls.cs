@@ -174,6 +174,7 @@ sealed class MidiControls : IDisposable
                 _bends.Remove(deck);
         }
 
+        _now = now;
         UpdateLights();
     }
 
@@ -415,6 +416,18 @@ sealed class MidiControls : IDisposable
     }
 
     /// <summary>
+    /// How long a flashing light takes to go on and off once, in seconds.
+    /// </summary>
+    public const double FLASH_SECONDS = 1;
+
+    double _now;
+
+    /// <summary>
+    /// Whether a flashing light is in the on half of its flash now.
+    /// </summary>
+    bool FlashOn => _now % FLASH_SECONDS < FLASH_SECONDS / 2;
+
+    /// <summary>
     /// Whether a control's light should be on now.
     /// </summary>
     bool LightOn(string id)
@@ -424,7 +437,8 @@ sealed class MidiControls : IDisposable
             return false;
         return action switch
         {
-            "play" => deck.IsPlaying,
+            // Steady while playing; flashing while a song's loaded and paused, ready to go.
+            "play" => deck.IsPlaying || deck.IsLoaded && FlashOn,
             "cue" => deck.IsLoaded && !deck.IsPlaying,
             "sync" => deck.IsInSync,
             "pfl" => deck.Headphones,
