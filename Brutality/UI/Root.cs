@@ -11,6 +11,11 @@ enum Cursor
     Arrow,
     Hand,
     Text,
+
+    /// <summary>
+    /// Left and right, as over an edge that can be dragged to resize.
+    /// </summary>
+    ResizeHorizontal,
 }
 
 /// <summary>

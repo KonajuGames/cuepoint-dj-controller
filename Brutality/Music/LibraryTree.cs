@@ -236,6 +236,35 @@ static class LibraryTree
         return Math.Abs(closest - 1) <= COMPATIBLE_TEMPO && analysis.Key.MixesWith(deckKey);
     }
 
+    /// <summary>
+    /// The names from the top of the list down to <paramref name="node"/>, to find it again by.
+    /// </summary>
+    public static IReadOnlyList<string> PathOf(LibraryNode node)
+    {
+        var names = new List<string>();
+        for (var at = node; at is not null; at = at.Parent)
+            names.Insert(0, at.Name);
+        return names;
+    }
+
+    /// <summary>
+    /// The node at the end of <paramref name="path"/> (from <see cref="PathOf"/>) among <paramref name="roots"/>,
+    /// looking only along the way; null if it isn't there now (a drive taken out, or a folder gone).
+    /// </summary>
+    public static LibraryNode? Find(IReadOnlyList<LibraryNode> roots, IReadOnlyList<string> path)
+    {
+        LibraryNode? found = null;
+        var nodes = roots;
+        foreach (var name in path)
+        {
+            found = nodes.FirstOrDefault(node => node.Name == name);
+            if (found is null)
+                return null;
+            nodes = found.Children;
+        }
+        return found;
+    }
+
     static IEnumerable<LibraryNode> Drives(MusicLibrary library)
     {
         foreach (var drive in DriveInfo.GetDrives())

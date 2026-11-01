@@ -6,7 +6,9 @@ namespace Brutality.UI;
 /// <summary>
 /// The songs in whatever's chosen in the folder list, searchable, with a "Load" button for each deck and a status
 /// line along the bottom. Songs are analysed as they come into view, each row filling like a progress bar meanwhile,
-/// and their tempo and key appear when done. It raises events rather than loading anything itself. Sized by whoever
+/// and their tempo and key appear when done. Clicking a column's heading sorts by it, A to Z, then Z to A, then back
+/// to the order they came in; a column's edge drags to resize it, and right-clicking the headings chooses which
+/// columns show (see <see cref="Layout"/>). It raises events rather than loading anything itself. Sized by whoever
 /// lays it out, with <see cref="FixedSize"/>; call <see cref="Update"/> once a frame.
 /// </summary>
 sealed class SongBrowser : Panel
@@ -28,6 +30,13 @@ sealed class SongBrowser : Panel
     readonly ScrollPanel _scroll;
     readonly Label _status;
     readonly ListColumn<Song> _titleColumn;
+
+    // Every column there is, in order, shown or not, and how wide each starts.
+    readonly List<ListColumn<Song>> _columns = [];
+    readonly Dictionary<ListColumn<Song>, float> _defaultWidths = [];
+    readonly HashSet<ListColumn<Song>> _hidden = [];
+    ListColumn<Song>? _sortColumn;
+    bool _sortDescending;
     LibraryNode? _source;
     IReadOnlyList<Song> _sourceSongs = [];
     DateTime _refreshedAt;
@@ -63,6 +72,11 @@ sealed class SongBrowser : Panel
     public event Action<IReadOnlyList<Song>, float2>? SongsSecondaryClicked;
 
     /// <summary>
+    /// The column headings were right-clicked, where, for a menu of <see cref="ColumnMenu"/>.
+    /// </summary>
+    public event Action<float2>? ColumnMenuRequested;
+
+    /// <summary>
     /// Whether a song counts as played this session, for its tick in the first column.
     /// </summary>
     public Func<Song, bool> IsPlayed { get; set; } = _ => false;
@@ -88,19 +102,26 @@ sealed class SongBrowser : Panel
             ProgressColor = Theme.Fade(Theme.Accent, 0.1f),
             AlternateRow = Colors.Hex(0xFFFFFF, 0.03f),
         };
-        _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title);
-        List.Columns.Add(
+        // The title takes whatever width the rest leave, so it's the one column that isn't sized by hand.
+        _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title) { SortKey = song => Text(song.Title), Resizable = false };
+        _columns.Add(
             new ListColumn<Song>("", 30, _ => "")
             {
+                Id = "Played",
                 Icon = song => IsPlayed(song) ? (images.Played, Theme.Played) : null,
+                SortKey = song => IsPlayed(song) ? 0 : null,
+                Resizable = false,
             }
         );
-        List.Columns.Add(_titleColumn);
-        List.Columns.Add(new ListColumn<Song>("Artist", 220, song => song.Artist));
-        List.Columns.Add(new ListColumn<Song>("Album", 200, song => song.Album) { Color = _ => Theme.Muted });
-        List.Columns.Add(new ListColumn<Song>("Key", 84, FormatKey) { Color = KeyColor });
-        List.Columns.Add(new ListColumn<Song>("Length", 66, song => Format(song.Duration)) { AlignRight = true });
-        List.Columns.Add(new ListColumn<Song>("BPM", 70, FormatBpm) { AlignRight = true });
+        _columns.Add(_titleColumn);
+        _columns.Add(new ListColumn<Song>("Artist", 220, song => song.Artist) { SortKey = song => Text(song.Artist) });
+        _columns.Add(new ListColumn<Song>("Album", 200, song => song.Album) { Color = _ => Theme.Muted, SortKey = song => Text(song.Album) });
+        _columns.Add(new ListColumn<Song>("Key", 84, FormatKey) { Color = KeyColor, SortKey = KeyOrder });
+        _columns.Add(new ListColumn<Song>("Length", 66, song => Format(song.Duration)) { AlignRight = true, SortKey = song => song.Duration });
+        _columns.Add(new ListColumn<Song>("BPM", 70, FormatBpm) { AlignRight = true, SortKey = song => song.Analysis?.Bpm });
+        foreach (var column in _columns)
+            _defaultWidths[column] = column.Width;
+        ShowColumns();
 
         foreach (var name in deckNames)
         {
@@ -114,6 +135,18 @@ sealed class SongBrowser : Panel
         }
 
         _header = Add(new ListHeader<Song>(List));
+        _header.ColumnClicked += column =>
+        {
+            // A to Z, then Z to A, then as they came.
+            if (column != _sortColumn)
+                (_sortColumn, _sortDescending) = (column, false);
+            else if (!_sortDescending)
+                _sortDescending = true;
+            else
+                _sortColumn = null;
+            Filter();
+        };
+        _header.MenuRequested += at => ColumnMenuRequested?.Invoke(at);
         _scroll = Add(new ScrollPanel());
         _scroll.Add(List);
         List.ScrollOwner = _scroll;
@@ -219,12 +252,111 @@ sealed class SongBrowser : Panel
     void Filter()
     {
         var query = _search.Text.Trim();
-        List.Items = query.Length == 0 ? _sourceSongs : _sourceSongs.Where(song => song.Matches(query)).ToList();
+        IEnumerable<Song> songs = query.Length == 0 ? _sourceSongs : _sourceSongs.Where(song => song.Matches(query));
 
-        // A virtual folder's songs can be put in a new order, but only seeing them all: dropping between two songs a
-        // search has brought together would be ambiguous.
-        List.CanReorder = _source?.Folder is not null && query.Length == 0;
+        // Sorted, those with nothing to sort by go last either way, and ties keep the order they came in.
+        if (_sortColumn?.SortKey is { } key)
+        {
+            var keyed = songs.Select(song => (Song: song, Key: key(song))).OrderBy(pair => pair.Key is null);
+            songs = (_sortDescending ? keyed.ThenByDescending(pair => pair.Key) : keyed.ThenBy(pair => pair.Key)).Select(pair => pair.Song);
+        }
+        List.Items = songs as IReadOnlyList<Song> ?? songs.ToList();
+        _header.SortColumn = _sortColumn;
+        _header.SortDescending = _sortDescending;
+
+        // A virtual folder's songs can be put in a new order, but only seeing them all, in their own order: dropping
+        // between two songs a search or sort has brought together would be ambiguous.
+        List.CanReorder = _source?.Folder is not null && query.Length == 0 && _sortColumn is null;
     }
+
+    /// <summary>
+    /// Lists the columns not hidden, in their order.
+    /// </summary>
+    void ShowColumns()
+    {
+        List.Columns.Clear();
+        List.Columns.AddRange(_columns.Where(column => !_hidden.Contains(column)));
+    }
+
+    /// <summary>
+    /// The choices for the column headings' menu: each column but the title, ticked if it shows, to show or hide it;
+    /// and putting them all back as they began.
+    /// </summary>
+    public IReadOnlyList<MenuItem> ColumnMenu()
+    {
+        var items = _columns
+            .Where(column => column != _titleColumn)
+            .Select(column => new MenuItem(
+                column.Id,
+                () =>
+                {
+                    if (!_hidden.Remove(column))
+                        _hidden.Add(column);
+                    if (_hidden.Contains(_sortColumn!))
+                    {
+                        _sortColumn = null;
+                        Filter();
+                    }
+                    ShowColumns();
+                },
+                Checked: !_hidden.Contains(column)
+            ))
+            .ToList();
+        items.Add(
+            new MenuItem(
+                "Reset columns",
+                () =>
+                {
+                    _hidden.Clear();
+                    foreach (var column in _columns)
+                        column.Width = _defaultWidths[column];
+                    ShowColumns();
+                }
+            )
+        );
+        return items;
+    }
+
+    /// <summary>
+    /// What the songs are sorted by, the columns' widths and which are hidden, to keep between runs. Set, anything
+    /// it doesn't know (a column since gone) is passed over, and any column it doesn't mention is as it began.
+    /// </summary>
+    public BrowserLayout Layout
+    {
+        get =>
+            new()
+            {
+                SortColumn = _sortColumn?.Id,
+                SortDescending = _sortDescending,
+                ColumnWidths = _columns.Where(column => column.Resizable).ToDictionary(column => column.Id, column => column.Width),
+                HiddenColumns = _columns.Where(_hidden.Contains).Select(column => column.Id).ToList(),
+            };
+        set
+        {
+            _hidden.Clear();
+            foreach (var column in _columns)
+            {
+                column.Width = column.Resizable && value.ColumnWidths.TryGetValue(column.Id, out var width) && width > 0
+                    ? MathF.Max(column.MinWidth, width)
+                    : _defaultWidths[column];
+                if (column != _titleColumn && value.HiddenColumns.Contains(column.Id))
+                    _hidden.Add(column);
+            }
+            _sortColumn = _columns.FirstOrDefault(column => column.Id == value.SortColumn && column.SortKey is not null && !_hidden.Contains(column));
+            _sortDescending = _sortColumn is not null && value.SortDescending;
+            ShowColumns();
+            Filter();
+        }
+    }
+
+    // Text to sort by, none for empty, so songs without (an album, say) go last.
+    static string? Text(string text) => text.Length > 0 ? text : null;
+
+    /// <summary>
+    /// Around the Camelot wheel: 1A, 1B, 2A, and so on.
+    /// </summary>
+    static IComparable? KeyOrder(Song song) =>
+        song.Analysis is { } analysis ? analysis.Key.CamelotNumber * 2 + (analysis.Key.Camelot.EndsWith('B') ? 1 : 0) : null;
 
     void UpdateButtons()
     {

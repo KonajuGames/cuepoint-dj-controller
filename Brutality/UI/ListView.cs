@@ -13,6 +13,29 @@ sealed class ListColumn<T>(string title, float width, Func<T, string> text)
     public Func<T, string> Text { get; } = text;
 
     /// <summary>
+    /// What to call it where its heading won't do (a column with none), and to know it by in saved settings; its
+    /// heading if not given.
+    /// </summary>
+    public string Id
+    {
+        get => field ?? Title;
+        init;
+    }
+
+    /// <summary>
+    /// What to sort items by in this column, for its heading to be clicked to sort by it; null where it can't be.
+    /// An item with nothing (null) to sort by goes after the rest, whichever way they're sorted.
+    /// </summary>
+    public Func<T, IComparable?>? SortKey { get; init; }
+
+    /// <summary>
+    /// Whether dragging the edge of its heading changes its width.
+    /// </summary>
+    public bool Resizable { get; init; } = true;
+
+    public float MinWidth { get; init; } = 40;
+
+    /// <summary>
     /// Right-aligns the text, for numbers and times.
     /// </summary>
     public bool AlignRight { get; init; }
@@ -483,28 +506,159 @@ sealed class ListView<T> : Element
 }
 
 /// <summary>
-/// The column headings for a <see cref="ListView{T}"/>, drawn to line up with its columns. Put it just above the
-/// list's scroll panel.
+/// The headings over a <see cref="ListView{T}"/>'s columns, lined up with them. Clicking a heading asks for the list
+/// to be sorted by it (<see cref="ColumnClicked"/>), with an arrow by the one it's sorted by; dragging the edge between
+/// two headings makes a column wider or narrower; right-clicking asks for a menu (<see cref="MenuRequested"/>).
 /// </summary>
-sealed class ListHeader<T>(ListView<T> list) : Element
+sealed class ListHeader<T> : Element
     where T : class
 {
+    // How close to an edge between headings counts as on it, either side.
+    const float EDGE_GRIP = 4;
+    const float ARROW = 4;
+
+    readonly ListView<T> _list;
+    float2? _pointer;
+
+    // The column being resized: the mouse's x and its width as the drag began, and which way its width follows the
+    // mouse (to the left for a column right of the edge).
+    (ListColumn<T> Column, float StartX, float StartWidth, float Direction)? _resizing;
+    ListColumn<T>? _pressedColumn;
+
+    public ListHeader(ListView<T> list)
+    {
+        _list = list;
+        PressEnded += _ =>
+        {
+            if (_resizing is { } resizing)
+                ColumnResized?.Invoke(resizing.Column);
+        };
+        Clicked += _ =>
+        {
+            if (_resizing is null && _pressedColumn is { SortKey: not null } column)
+                ColumnClicked?.Invoke(column);
+        };
+    }
+
     public float4 Color { get; set; } = Colors.Hex(0x9A9AA8);
     public float4 Divider { get; set; } = Colors.Hex(0xFFFFFF, 0.12f);
 
-    public override float2 Measure() => Size = new float2(list.ContentWidth, list.Font.LineHeight + 6);
+    /// <summary>
+    /// The column the list is sorted by, for its arrow; null if none.
+    /// </summary>
+    public ListColumn<T>? SortColumn { get; set; }
+
+    public bool SortDescending { get; set; }
+
+    /// <summary>
+    /// A sortable column's heading was clicked.
+    /// </summary>
+    public event Action<ListColumn<T>>? ColumnClicked;
+
+    /// <summary>
+    /// A column was dragged to a new width, once the mouse came up.
+    /// </summary>
+    public event Action<ListColumn<T>>? ColumnResized;
+
+    /// <summary>
+    /// The headings were right-clicked, where, for a menu.
+    /// </summary>
+    public event Action<float2>? MenuRequested;
+
+    public override bool IsInteractive => true;
+    public override bool KeepsFocusOnClick => true;
+
+    public override Cursor Cursor =>
+        (IsPressed && _resizing is not null) || (_pointer is { } at && ResizableAt(at) is not null) ? Cursor.ResizeHorizontal
+        : _pointer is { } point && ColumnAt(point) is { SortKey: not null } ? Cursor.Hand
+        : Cursor.Arrow;
+
+    public override float2 Measure() => Size = new float2(_list.ContentWidth, _list.Font.LineHeight + 6);
+
+    public override void PointerMove(float2 point) => _pointer = point;
+
+    public override void PointerDown(float2 point, Modifiers modifiers)
+    {
+        _resizing = null;
+        _pressedColumn = null;
+        if (ResizableAt(point) is { } grip)
+            _resizing = (grip.Column, point.X, grip.Column.Width, grip.Direction);
+        else
+            _pressedColumn = ColumnAt(point);
+    }
+
+    public override void PointerDrag(float2 point)
+    {
+        _pointer = point;
+        if (_resizing is { } resizing)
+            resizing.Column.Width = MathF.Round(MathF.Max(resizing.Column.MinWidth, resizing.StartWidth + resizing.Direction * (point.X - resizing.StartX)));
+    }
+
+    public override void SecondaryClick(float2 point) => MenuRequested?.Invoke(point);
+
+    /// <summary>
+    /// The column whose heading is under <paramref name="point"/>, if any.
+    /// </summary>
+    public ListColumn<T>? ColumnAt(float2 point)
+    {
+        var x = ScreenPosition.X;
+        foreach (var column in _list.Columns)
+        {
+            if (point.X >= x && point.X < x + column.Width)
+                return column;
+            x += column.Width;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The column an edge under <paramref name="point"/> resizes, and which way: the one left of the edge if it can
+    /// be resized, otherwise the one right of it, whose width grows as the edge moves left. Null if there's no edge
+    /// there, or neither can be.
+    /// </summary>
+    (ListColumn<T> Column, float Direction)? ResizableAt(float2 point)
+    {
+        var columns = _list.Columns;
+        var x = ScreenPosition.X;
+        for (var i = 0; i < columns.Count; i++)
+        {
+            x += columns[i].Width;
+            if (MathF.Abs(point.X - x) > EDGE_GRIP)
+                continue;
+            if (columns[i].Resizable)
+                return (columns[i], 1);
+            if (i + 1 < columns.Count && columns[i + 1].Resizable)
+                return (columns[i + 1], -1);
+            return null;
+        }
+        return null;
+    }
 
     public override void Draw(Batch batch)
     {
         var x = ScreenPosition.X;
-        foreach (var column in list.Columns)
+        foreach (var column in _list.Columns)
         {
-            var cellLeft = x + list.CellPadding;
-            var cellWidth = MathF.Max(0, column.Width - 2 * list.CellPadding);
-            var textX = column.AlignRight ? cellLeft + cellWidth - list.Font.Advance(column.Title) : cellLeft;
+            var cellLeft = x + _list.CellPadding;
+            var cellWidth = MathF.Max(0, column.Width - 2 * _list.CellPadding);
+            var titleWidth = _list.Font.Advance(column.Title);
+            var textX = column.AlignRight ? cellLeft + cellWidth - titleWidth : cellLeft;
 
             batch.PushClip(new float2(cellLeft, ScreenPosition.Y), new float2(cellWidth, Size.Y));
-            batch.AddText(list.Font, column.Title, new float2(textX, ScreenPosition.Y + 3), Color);
+            batch.AddText(_list.Font, column.Title, new float2(textX, ScreenPosition.Y + 3), Color);
+
+            // The arrow by the heading the list is sorted by: up for A to Z, down for Z to A. Before a right-aligned
+            // heading, after any other.
+            if (column == SortColumn)
+            {
+                var arrowX = column.AlignRight ? textX - 2 * ARROW - 4 : textX + titleWidth + 5;
+                var middle = ScreenPosition.Y + MathF.Round(Size.Y / 2);
+                for (var i = 0; i < ARROW; i++)
+                {
+                    var y = SortDescending ? middle - ARROW / 2 + i : middle + ARROW / 2 - i - 1;
+                    batch.AddRect(new float2(arrowX + i, y), new float2(2 * (ARROW - i) - 1, 1), Color);
+                }
+            }
             batch.PopClip();
             x += column.Width;
         }

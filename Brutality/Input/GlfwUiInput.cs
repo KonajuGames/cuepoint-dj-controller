@@ -15,6 +15,7 @@ sealed class GlfwUiInput : IDisposable
     readonly Root _ui;
     readonly GlfwCursor _handCursor;
     readonly GlfwCursor _textCursor;
+    readonly GlfwCursor _resizeCursor;
     Cursor _shownCursor = Cursor.Arrow;
     readonly HashSet<GlfwKey> _keysHeldByUi = [];
 
@@ -35,6 +36,7 @@ sealed class GlfwUiInput : IDisposable
         _ui = ui;
         _handCursor = Glfw.CreateCursor(GlfwStandardCursor.PointingHand);
         _textCursor = Glfw.CreateCursor(GlfwStandardCursor.IBeam);
+        _resizeCursor = Glfw.CreateCursor(GlfwStandardCursor.ResizeEw);
 
         Clipboard.GetText = () => Glfw.Clipboard;
         Clipboard.SetText = text => Glfw.Clipboard = text;
@@ -174,6 +176,7 @@ sealed class GlfwUiInput : IDisposable
             {
                 Cursor.Hand => _handCursor,
                 Cursor.Text => _textCursor,
+                Cursor.ResizeHorizontal => _resizeCursor,
                 _ => default,
             }
         );
@@ -191,6 +194,7 @@ sealed class GlfwUiInput : IDisposable
         _window.SetCursor(default);
         _handCursor.Dispose();
         _textCursor.Dispose();
+        _resizeCursor.Dispose();
         Clipboard.GetText = () => null;
         Clipboard.SetText = _ => { };
     }

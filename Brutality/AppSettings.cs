@@ -1,11 +1,12 @@
 using System.Text.Json;
 using System.Text.Encodings.Web;
+using Brutality.UI;
 
 namespace Brutality;
 
 /// <summary>
-/// The app's settings, kept between runs in a JSON file: for now, the headphones. Anything missing or unreadable
-/// comes back as its default.
+/// The app's settings, kept between runs in a JSON file: the outputs and headphones, lighting, and how the song
+/// browser was left. Anything missing or unreadable comes back as its default.
 /// </summary>
 sealed class AppSettings
 {
@@ -43,6 +44,16 @@ sealed class AppSettings
     /// Lighting software to connect to as well as any found on the network, as host:port; null for none.
     /// </summary>
     public string? Os2lAddress { get; set; }
+
+    /// <summary>
+    /// How the song list was laid out: its sort, and its columns.
+    /// </summary>
+    public BrowserLayout Browser { get; set; } = new();
+
+    /// <summary>
+    /// What was last chosen in the folder list, by the names down to it; null for the library.
+    /// </summary>
+    public List<string>? BrowserFolder { get; set; }
 
     public static AppSettings Load(string path)
     {

@@ -140,11 +140,22 @@ static void Run()
     using var input = new GlfwUiInput(window, ui);
     var browser = screen.Browser;
 
-    // The library's own folder is what shows to begin with, with the virtual folders, lists and filters open below
-    // the drives.
+    // The virtual folders, lists and filters are open below the drives. What shows is what was chosen last time, if
+    // it's still there, opened out to; otherwise the library's own folder. The list is sorted and its columns laid out
+    // as they were left.
     foreach (var heading in folders.Where(node => node.Kind is LibraryNodeKind.VirtualFolders || node.Name is "Lists" or "Filters"))
         screen.FolderTree.SetExpanded(heading, true);
-    screen.FolderTree.Select(folders[0]);
+    browser.Layout = settings.Browser;
+    var lastFolder = settings.BrowserFolder is { } lastPath ? LibraryTree.Find(folders, lastPath) : null;
+    if (lastFolder is { HasSongs: true })
+    {
+        for (var parent = lastFolder.Parent; parent is not null; parent = parent.Parent)
+            screen.FolderTree.SetExpanded(parent, true);
+        screen.FolderTree.Select(lastFolder);
+        screen.FolderTree.ScrollIntoView(lastFolder);
+    }
+    else
+        screen.FolderTree.Select(folders[0]);
 
     screen.Log(
         library.Error is { } error ? $"Couldn't read {MUSIC_FOLDER}: {error}"
@@ -311,6 +322,7 @@ static void Run()
     };
 
     var menu = new ContextMenu(fonts.Body);
+    browser.ColumnMenuRequested += at => menu.Show(at, browser.ColumnMenu());
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
 
@@ -664,10 +676,15 @@ static void Run()
         }
     }
 
-    // The headphone blend and volume are set on the mixer as it plays, so they're kept as the app closes.
-    // (Not if a device chosen before wasn't found, so it's still chosen once it's plugged in again.)
+    // The headphone blend and volume are set on the mixer as it plays, so they're kept as the app closes, with how
+    // the browser was left. (Not the devices, if one chosen before wasn't found, so it's still chosen once it's
+    // plugged in again.)
+    settings.Browser = browser.Layout;
+    settings.BrowserFolder = browser.Source is { } shown && shown != folders[0] ? [.. LibraryTree.PathOf(shown)] : null;
     if (headphonesFound && outputFound)
         SaveSettings();
+    else
+        settings.Save(settingsPath);
 
     WindowsShell.KeepAwake(false);
     if (OperatingSystem.IsWindows())
