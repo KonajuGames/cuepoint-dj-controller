@@ -213,6 +213,24 @@ sealed class Deck : IDisposable
     /// </summary>
     public Equalizer Equalizer { get; } = new();
 
+    readonly KeyLock _keyLock = new();
+
+    /// <summary>
+    /// The deck's speed for the audio thread, as the tempo fader last set it.
+    /// </summary>
+    float _speed = 1;
+
+    /// <summary>
+    /// Whether the deck keeps the song's key whatever its tempo fader does, rather than the key moving with the
+    /// speed as on a turntable. It costs a delay of a few hundredths of a second, which <see cref="Position"/> allows
+    /// for, so what's shown and synced is what's heard.
+    /// </summary>
+    public bool KeyLocked
+    {
+        get => _keyLock.Enabled;
+        set => _keyLock.Enabled = value;
+    }
+
     /// <summary>
     /// SDL_mixer's callback for the deck's audio, after its gain and just before it's mixed, on the audio thread:
     /// the EQ changes it there, then the meter measures it.
@@ -224,6 +242,7 @@ sealed class Deck : IDisposable
         {
             var deck = (Deck)GCHandle.FromIntPtr((nint)userData).Target!;
             var channels = spec->channels;
+            deck._keyLock.Process(samples, count, channels, spec->freq, Volatile.Read(ref deck._speed));
             deck.Equalizer.Process(samples, count, channels, spec->freq);
             deck.Meter.Measure(samples, count, channels);
             if (deck.Headphones)
@@ -272,6 +291,7 @@ sealed class Deck : IDisposable
         {
             _tempo = Math.Clamp(value, -_tempoRange, _tempoRange);
             _track.SetFrequencyRatio((float)TempoRatio);
+            Volatile.Write(ref _speed, (float)TempoRatio);
         }
     }
 
@@ -306,9 +326,10 @@ sealed class Deck : IDisposable
     public double? Bpm => _analysis?.Grid.BpmAt(Position.TotalSeconds) * TempoRatio;
 
     /// <summary>
-    /// How many semitones the tempo fader has moved the key, to the nearest: a semitone takes about 6% faster.
+    /// How many semitones the tempo fader has moved the key, to the nearest: a semitone takes about 6% faster. None
+    /// with <see cref="KeyLocked"/> on.
     /// </summary>
-    public int KeyShift => (int)Math.Round(12 * Math.Log2(TempoRatio));
+    public int KeyShift => KeyLocked ? 0 : (int)Math.Round(12 * Math.Log2(TempoRatio));
 
     /// <summary>
     /// The key coming out of the deck: the song's, moved by the tempo fader. Null until the song is analysed.
@@ -419,9 +440,13 @@ sealed class Deck : IDisposable
     }
 
     /// <summary>
-    /// Where playback is, from SDL_mixer's audio thread, so it moves on between calls while playing.
+    /// Where playback is, as heard, from SDL_mixer's audio thread, so it moves on between calls while playing. With
+    /// <see cref="KeyLocked"/> on, that's a little behind the track, by the key lock's delay.
     /// </summary>
-    public TimeSpan Position => IsLoaded && _pcm is not null ? ToTime(SongFrame) : TimeSpan.Zero;
+    public TimeSpan Position =>
+        IsLoaded && _pcm is not null
+            ? TimeSpan.FromTicks(Math.Max(0, (ToTime(SongFrame) - TimeSpan.FromSeconds(_keyLock.LatencySeconds)).Ticks))
+            : TimeSpan.Zero;
 
     /// <summary>
     /// Where playback is in the song, in frames: the track's position, plus the loop's start while it's playing the

@@ -8,8 +8,9 @@ namespace Brutality.UI;
 /// its key, how far in it is and how long's left, the whole song's waveform to see and seek in with its hotcues
 /// marked, Cue and Play, a loop of so many beats to start and stop, halve and double, a pad for each hotcue (press an
 /// empty one to set it where the deck is, a set one to jump there, and Shift-click or right-click one to clear it),
-/// and the tempo fader: down is faster, as on a turntable, double-click puts it back to zero, and the button under it
-/// changes its range. The tempo and key shown are what's coming out, fader and all.
+/// and the tempo fader: down is faster, as on a turntable, double-click puts it back to zero, the button under it
+/// changes its range, and KEY under that keeps the song's key whatever the fader does. The tempo and key shown are
+/// what's coming out, fader and all.
 /// <para>
 /// The controls you reach for while mixing (the tempo fader, the tempo and key, the loop) sit on the side nearest
 /// the mixer, and the song's details, Cue and Play on the outer side. A deck to the right of the mixer is
@@ -46,6 +47,7 @@ sealed class DeckPanel : Panel
     readonly Label _tempoReadout;
     readonly Slider _tempoFader;
     readonly Button _tempoRange;
+    readonly Button _keyLock;
 
     /// <summary>
     /// The width of the tempo fader's column down the right-hand side, and the space before it.
@@ -142,6 +144,8 @@ sealed class DeckPanel : Panel
         _tempoFader.Marks.Add(0);
         _tempoFader.Changed += slider => _deck.Tempo = slider.Value;
         _tempoRange = Add(new Button(small, "±8%") { MinSize = new float2(TEMPO_COLUMN, 22), Padding = 3, FocusColor = Theme.Focus });
+        _keyLock = Add(new Button(small, "KEY") { MinSize = new float2(TEMPO_COLUMN, 22), Padding = 3, FocusColor = Theme.Focus });
+        _keyLock.Clicked += _ => _deck.KeyLocked = !_deck.KeyLocked;
         _tempoRange.Clicked += _ =>
         {
             var ranges = Deck.TempoRanges;
@@ -275,6 +279,12 @@ sealed class DeckPanel : Panel
         _tempoReadout.Text = $"{_deck.Tempo * 100:+0.0;-0.0;0.0}%";
         _tempoReadout.Color = _deck.Tempo == 0 ? Theme.Muted : Theme.Text;
         _tempoRange.Text = $"±{_deck.TempoRange * 100:0}%";
+
+        // Lit while the key is held, whatever the fader does.
+        var locked = _deck.KeyLocked;
+        _keyLock.Background = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+        _keyLock.HoverBackground = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+        _keyLock.TextColor = locked ? Colors.White : Theme.Muted;
     }
 
     void RefreshLoop()
@@ -313,7 +323,8 @@ sealed class DeckPanel : Panel
         _tempoReadout.Measure();
         _tempoRange.Measure();
         var columnHeight = HEIGHT - 2 * PAD - PAD_HEIGHT - ROW_GAP;
-        _tempoFader.Length = columnHeight - _tempoReadout.Size.Y - 4 - _tempoRange.Size.Y - 6;
+        _keyLock.Measure();
+        _tempoFader.Length = columnHeight - _tempoReadout.Size.Y - 4 - _tempoRange.Size.Y - 4 - _keyLock.Size.Y - 6;
 
         foreach (var child in Children)
             child.Measure();
@@ -378,6 +389,7 @@ sealed class DeckPanel : Panel
         var faderTop = top - 2 + _tempoReadout.Size.Y + 4;
         Place(_tempoFader, columnLeft + (TEMPO_COLUMN - _tempoFader.Size.X) / 2, faderTop);
         Place(_tempoRange, columnLeft, faderTop + _tempoFader.Size.Y + 6);
+        Place(_keyLock, columnLeft, faderTop + _tempoFader.Size.Y + 6 + _tempoRange.Size.Y + 4);
     }
 
     public override void Draw(Batch batch)
