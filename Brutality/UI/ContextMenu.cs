@@ -95,11 +95,16 @@ sealed class ContextMenu : Panel
         foreach (var button in box.Children.OfType<Button>())
             _items.Remove(button);
         box.Children.Clear();
-        foreach (var item in items)
+
+        // Where any item is ticked, every item's text moves along to leave a column for the ticks, so they line up.
+        var list = items.ToList();
+        var tickColumn = list.Any(item => item.Checked) ? _font.Advance("•") + 6 : 0;
+        foreach (var item in list)
         {
             var button = box.Add(
-                new Button(_font, item.Checked ? "• " + item.Text : item.Text)
+                new Button(_font, item.Text)
                 {
+                    TextIndent = tickColumn,
                     Padding = 6,
                     Enabled = item.Enabled,
                     Background = Colors.Transparent,
@@ -198,6 +203,20 @@ sealed class ContextMenu : Panel
     public override void Draw(Batch batch)
     {
         base.Draw(batch);
+
+        // The ticks, in their column.
+        foreach (var box in new[] { _box, _subBox })
+        {
+            if (!box.Visible)
+                continue;
+            foreach (var button in box.Children.OfType<Button>())
+            {
+                if (!_items[button].Checked)
+                    continue;
+                var at = button.ScreenPosition + new float2(button.Padding + button.BorderWidth, MathF.Round((button.Size.Y - _font.LineHeight) / 2));
+                batch.AddText(_font, "•", at, button.TextColor);
+            }
+        }
         // A small arrow at the right of each item with a submenu.
         foreach (var button in _box.Children.OfType<Button>())
         {

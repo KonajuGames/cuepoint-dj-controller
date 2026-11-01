@@ -37,6 +37,14 @@ sealed class TreeView<T> : Element
     /// </summary>
     public Func<T, float4?>? IconColor { get; init; }
 
+    /// <summary>
+    /// An icon for each item, tinted, before its text; in place of <see cref="IconColor"/>'s square. Null for an item
+    /// leaves the space empty.
+    /// </summary>
+    public Func<T, (Image Image, float4 Tint)?>? Icon { get; init; }
+
+    bool HasIcons => IconColor is not null || Icon is not null;
+
     public ScrollPanel? ScrollOwner { get; set; }
 
     public float Indent { get; set; } = 18;
@@ -207,7 +215,7 @@ sealed class TreeView<T> : Element
         return -1;
     }
 
-    float TextLeft(int depth) => 4 + depth * Indent + CELL + (IconColor is null ? 0 : CELL);
+    float TextLeft(int depth) => 4 + depth * Indent + CELL + (HasIcons ? CELL + 2 : 0);
 
     public override float2 Measure()
     {
@@ -254,13 +262,15 @@ sealed class TreeView<T> : Element
             }
             x += CELL;
 
-            if (IconColor?.Invoke(item) is { } icon)
+            if (Icon?.Invoke(item) is { } picture)
+                batch.AddImage(picture.Image, new float2(x - 1, position.Y + (RowHeight - picture.Image.Size.Y) / 2), picture.Tint);
+            else if (IconColor?.Invoke(item) is { } icon)
             {
                 var square = MathF.Round(Font.LineHeight * 0.55f);
                 batch.AddRect(new float2(x, MathF.Round(position.Y + (RowHeight - square) / 2)), new float2(square, square), icon);
             }
-            if (IconColor is not null)
-                x += CELL;
+            if (HasIcons)
+                x += CELL + 2;
 
             batch.AddText(Font, Text(item), new float2(x, textY), TextColor);
         }

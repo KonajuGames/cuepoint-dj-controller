@@ -25,6 +25,7 @@ sealed class SongBrowser : Panel
     readonly Label _heading;
     readonly Label _count;
     readonly TextBox _search;
+    readonly Button _clearSearch;
     readonly List<Button> _loadButtons = [];
     readonly ListHeader<Song> _header;
     readonly ScrollPanel _scroll;
@@ -96,8 +97,27 @@ sealed class SongBrowser : Panel
 
         _heading = Add(new Label(bold) { Color = Theme.Text });
         _count = Add(new Label(body) { Color = Theme.Muted });
-        _search = Add(new TextBox(body) { Width = 280, Placeholder = "Search title, artist or album", FocusColor = Theme.Focus });
+        _search = Add(new TextBox(body) { Width = 280, Placeholder = "Search title, artist or album", FocusColor = Theme.Focus, ClearOnEscape = true });
         _search.TextChanged += _ => Filter();
+
+        // A cross at the search box's end empties it, while there's anything to empty.
+        _clearSearch = Add(
+            new Button(body, "")
+            {
+                Icon = images.Cross,
+                Padding = 0,
+                Background = Colors.Transparent,
+                HoverBackground = Colors.Hex(0xFFFFFF, 0.1f),
+                PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
+                TextColor = Theme.Muted,
+                Visible = false,
+            }
+        );
+        _clearSearch.Clicked += _ =>
+        {
+            _search.Text = "";
+            Filter();
+        };
 
         List = new ListView<Song>(body)
         {
@@ -265,6 +285,7 @@ sealed class SongBrowser : Panel
 
     void Filter()
     {
+        _clearSearch.Visible = _search.Text.Length > 0;
         var query = _search.Text.Trim();
         IEnumerable<Song> songs = query.Length == 0 ? _sourceSongs : _sourceSongs.Where(song => song.Matches(query));
 
@@ -420,6 +441,9 @@ sealed class SongBrowser : Panel
             x -= 6;
         }
         Place(_search, x - 6 - _search.Size.X, y);
+        _clearSearch.MinSize = new float2(_search.Size.Y - 6, _search.Size.Y - 6);
+        _clearSearch.Measure();
+        Place(_clearSearch, x - 6 - _clearSearch.Size.X - 3, y + 3);
 
         y += rowHeight + 6;
         Place(_header, left, y);

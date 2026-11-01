@@ -99,7 +99,7 @@ sealed class MainScreen : Panel
                 Text = node => node.Name,
                 Children = node => node.Children,
                 CanExpand = node => node.CanExpand,
-                IconColor = IconFor,
+                Icon = node => IconFor(node, images.Folders),
                 Arrows = (images.TriangleRight, images.TriangleDown),
                 Roots = folders,
                 ScrollOwner = _folderScroll,
@@ -144,15 +144,26 @@ sealed class MainScreen : Panel
         Browser.Update();
     }
 
-    static float4? IconFor(LibraryNode node) =>
+    /// <summary>
+    /// A node's icon in the folder list, in a colour for its kind: the headings over the drives, virtual folders,
+    /// lists and filters have their kind's icon, dimmer.
+    /// </summary>
+    static (Image, float4)? IconFor(LibraryNode node, FolderIcons icons) =>
         node.Kind switch
         {
-            LibraryNodeKind.Library => Theme.Accent,
-            LibraryNodeKind.Drive => Colors.Hex(0x8FA3BF),
-            LibraryNodeKind.Folder => Colors.Hex(0xD9B45A),
-            LibraryNodeKind.List => Colors.Hex(0x5AC8D9),
-            LibraryNodeKind.VirtualFolder => Colors.Hex(0x6CCB7A),
-            LibraryNodeKind.Filter => Colors.Hex(0xB57BE0),
+            LibraryNodeKind.Library => (icons.Library, Theme.Accent),
+            LibraryNodeKind.Drive => (icons.Drive, Colors.Hex(0x8FA3BF)),
+            LibraryNodeKind.Folder => (icons.Folder, Colors.Hex(0xD9B45A)),
+            LibraryNodeKind.List => (node.Name == "History" ? icons.History : icons.List, Colors.Hex(0x5AC8D9)),
+            LibraryNodeKind.VirtualFolders => (icons.Playlist, Theme.Muted),
+            LibraryNodeKind.VirtualFolder => (icons.Playlist, Colors.Hex(0x6CCB7A)),
+            LibraryNodeKind.Filter => (icons.Filter, Colors.Hex(0xB57BE0)),
+            LibraryNodeKind.Group => node.Name switch
+            {
+                "Local drives" => (icons.Drive, Theme.Muted),
+                "Lists" => (icons.List, Theme.Muted),
+                _ => (icons.Filter, Theme.Muted),
+            },
             _ => null,
         };
 

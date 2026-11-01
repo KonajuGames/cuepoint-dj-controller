@@ -1,5 +1,6 @@
 """Draws Cuepoint's images as PNGs: the logo (title bar and window icon), the list's small icons, the triangles
-used for arrows (the folder list's, the loop buttons', the nudge pads'), and the options button's cog.
+used for arrows (the folder list's, the loop buttons', the nudge pads'), the options button's cog, the search box's
+clearing cross, and the folder list's icons.
 
 Run with any Python 3; it needs nothing installed. Shapes are distance fields, sampled 8x8 times per pixel so edges
 come out smooth at every size, and written with zlib as straight-alpha RGBA. Small icons are white, for the app to
@@ -219,6 +220,77 @@ def cog(cx, cy, teeth, body, tip, base_width, tip_width):
 COG = [(union(outline(cog(8, 8, 6, 4.6, 7.4, 3.6, 2.6), 1.1), ring(8, 8, 2.0, 1.1)), hex_colour(WHITE))]
 
 
+# The search box's clear button: a cross.
+CROSS = [(union(segment(2.5, 2.5, 7.5, 7.5, 1.5), segment(7.5, 2.5, 2.5, 7.5, 1.5)), hex_colour(WHITE))]
+
+# ---- The folder list's icons, 14 units square ----
+
+# The music library: a pair of quavers.
+NOTE = [
+    (
+        union(
+            rounded(polygon([(3.2, 9.6), (5.6, 9.6), (5.6, 12.0), (3.2, 12.0)]), 0.8),
+            rounded(polygon([(8.6, 8.4), (11.0, 8.4), (11.0, 10.8), (8.6, 10.8)]), 0.8),
+            segment(5.6, 10.6, 5.6, 2.8, 1.3),
+            segment(11.0, 9.4, 11.0, 1.6, 1.3),
+            segment(5.6, 3.0, 11.0, 1.8, 2.0),
+        ),
+        hex_colour(WHITE),
+    )
+]
+
+# A drive: a box with its light.
+DRIVE = [
+    (
+        union(
+            outline(rounded(polygon([(1.6, 4.0), (12.4, 4.0), (12.4, 10.0), (1.6, 10.0)]), 1.0), 1.3),
+            circle(9.8, 7.0, 0.9),
+            segment(3.6, 7.0, 6.6, 7.0, 1.1),
+        ),
+        hex_colour(WHITE),
+    )
+]
+
+# A folder: a tab and its body.
+FOLDER = [(rounded(polygon([(1.4, 3.0), (5.4, 3.0), (6.6, 4.4), (12.6, 4.4), (12.6, 11.4), (1.4, 11.4)]), 0.7), hex_colour(WHITE))]
+
+# A virtual folder: lines of a playlist, with a note.
+PLAYLIST = [
+    (
+        union(
+            segment(1.6, 3.2, 9.6, 3.2, 1.3),
+            segment(1.6, 6.4, 9.6, 6.4, 1.3),
+            segment(1.6, 9.6, 6.0, 9.6, 1.3),
+            rounded(polygon([(8.0, 10.6), (10.4, 10.6), (10.4, 12.6), (8.0, 12.6)]), 0.7),
+            segment(10.4, 11.4, 10.4, 6.2, 1.2),
+            segment(10.4, 6.6, 12.6, 7.6, 1.2),
+        ),
+        hex_colour(WHITE),
+    )
+]
+
+# A list: three bulleted lines.
+LIST = [
+    (
+        union(
+            circle(2.4, 3.4, 1.1),
+            circle(2.4, 7.0, 1.1),
+            circle(2.4, 10.6, 1.1),
+            segment(5.0, 3.4, 12.4, 3.4, 1.3),
+            segment(5.0, 7.0, 12.4, 7.0, 1.3),
+            segment(5.0, 10.6, 12.4, 10.6, 1.3),
+        ),
+        hex_colour(WHITE),
+    )
+]
+
+# History: a clock.
+CLOCK = [(union(ring(7, 7, 5.2, 1.3), segment(7, 7, 7, 3.8, 1.3), segment(7, 7, 9.4, 8.4, 1.3)), hex_colour(WHITE))]
+
+# A filter: a funnel.
+FUNNEL = [(rounded(polygon([(1.6, 2.4), (12.4, 2.4), (8.2, 7.4), (8.2, 11.8), (5.8, 10.6), (5.8, 7.4)]), 0.5), hex_colour(WHITE))]
+
+
 def main():
     preview = "preview" in sys.argv[1:]
     jobs = [
@@ -232,6 +304,14 @@ def main():
         ("triangle-down-10.png", TRIANGLE_DOWN, 10, 10),
         ("triangle-left-10.png", TRIANGLE_LEFT, 10, 10),
         ("cog-18.png", COG, 18, 16),
+        ("cross-10.png", CROSS, 10, 10),
+        ("icon-library-14.png", NOTE, 14, 14),
+        ("icon-drive-14.png", DRIVE, 14, 14),
+        ("icon-folder-14.png", FOLDER, 14, 14),
+        ("icon-playlist-14.png", PLAYLIST, 14, 14),
+        ("icon-list-14.png", LIST, 14, 14),
+        ("icon-history-14.png", CLOCK, 14, 14),
+        ("icon-filter-14.png", FUNNEL, 14, 14),
     ]
     # Previews go over the title bar's colour, since the icons are white.
     previews = [("preview-logo.png", LOGO, 512, 64), ("preview-logo-small.png", LOGO, 22, 64), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16)]

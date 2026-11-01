@@ -74,6 +74,11 @@ sealed class TextBox(Font font) : Element
     public event Action<TextBox>? Cancelled;
 
     /// <summary>
+    /// Whether Escape empties it, when there's anything in it, before (the next time) leaving it.
+    /// </summary>
+    public bool ClearOnEscape { get; set; }
+
+    /// <summary>
     /// The text changed by typing, deleting, cutting or pasting (not by setting <see cref="Text"/>).
     /// </summary>
     public event Action<TextBox>? TextChanged;
@@ -386,6 +391,12 @@ sealed class TextBox(Font font) : Element
         if (key == Key.Escape && Cancelled is { } cancelled)
         {
             cancelled(this);
+            return true;
+        }
+        if (key == Key.Escape && ClearOnEscape && _text.Length > 0)
+        {
+            Text = "";
+            TextChanged?.Invoke(this);
             return true;
         }
 

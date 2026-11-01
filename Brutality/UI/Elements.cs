@@ -436,6 +436,23 @@ sealed class Button : Panel
     public Image? Icon { get; set; }
 
     /// <summary>
+    /// Extra space before the text, for something drawn there, such as a menu's tick.
+    /// </summary>
+    public float TextIndent { get; set; }
+
+    public override float2 Measure()
+    {
+        var size = base.Measure();
+        return Size = float2.Max(size + new float2(TextIndent, 0), MinSize);
+    }
+
+    public override void Arrange(float2 position)
+    {
+        ArrangeSelf(position);
+        ArrangeChildren(position + new float2(Inset + TextIndent, Inset));
+    }
+
+    /// <summary>
     /// The ring drawn around the button while it has keyboard focus.
     /// </summary>
     public float4 FocusColor { get; set; } = Colors.Hex(0x7AB8FF);
