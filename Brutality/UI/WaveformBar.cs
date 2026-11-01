@@ -39,6 +39,14 @@ sealed class WaveformBar : Slider
 
     public float4 RegionColor { get; set; } = Colors.Hex(0x48D17A);
 
+    /// <summary>
+    /// Beats pinned by hand, as values between <see cref="Slider.Min"/> and <see cref="Slider.Max"/>: each a line
+    /// in <see cref="PinColor"/> with a block at its top and bottom.
+    /// </summary>
+    public IReadOnlyList<double> Pins { get; set; } = [];
+
+    public float4 PinColor { get; set; } = Colors.White;
+
     public Font? FlagFont { get; set; }
 
     public float4 GridColor { get; set; } = Colors.Hex(0xFFFFFF, 0.14f);
@@ -80,7 +88,21 @@ sealed class WaveformBar : Slider
 
         DrawRegion(batch, left);
         DrawGrid(batch, left);
+        DrawPins(batch, left);
         DrawFlags(batch, left);
+    }
+
+    void DrawPins(Batch batch, float left)
+    {
+        if (Max <= Min)
+            return;
+        foreach (var pin in Pins)
+        {
+            var x = MathF.Round(left + OffsetOf(Math.Clamp(((float)pin - Min) / (Max - Min), 0, 1)));
+            batch.AddRect(new float2(x, ScreenPosition.Y), new float2(1, Size.Y), Faded(Theme.Fade(PinColor, 0.8f)));
+            batch.AddRect(new float2(x - 2, ScreenPosition.Y), new float2(5, 3), Faded(PinColor));
+            batch.AddRect(new float2(x - 2, ScreenPosition.Y + Size.Y - 3), new float2(5, 3), Faded(PinColor));
+        }
     }
 
     void DrawRegion(Batch batch, float left)

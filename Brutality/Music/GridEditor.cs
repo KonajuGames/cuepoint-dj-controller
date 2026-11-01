@@ -8,7 +8,10 @@ namespace Brutality.Music;
 /// </summary>
 enum GridTool
 {
-    /// <summary>Pins the beat nearest the playhead to it: one pin shifts the grid, two set its tempo.</summary>
+    /// <summary>
+    /// Pins the beat nearest the playhead to it: one pin shifts the grid, two set its tempo, more set where it
+    /// changes. With Shift, takes out the pin nearest the playhead instead.
+    /// </summary>
     SetBeat,
 
     /// <summary>Makes the beat at the playhead the "one" of its bar.</summary>
@@ -28,10 +31,11 @@ enum GridTool
 
 /// <summary>
 /// Fixes the beat grid of the song on a deck by hand: while <see cref="Active"/> (the deck's pads in GRID mode),
-/// each pad is one of the <see cref="GridTool"/>s, acting at the playhead. Each change is saved with the song
-/// straight away, apart from its analysis, and given to the deck and the song, so everything that follows the grid
-/// (sync, loops, the waveforms, the beat trackers, lighting) follows it at once. While active, the deck clicks on
-/// the grid's beats, to hear it against the music.
+/// each pad is one of the <see cref="GridTool"/>s, acting at the playhead, and a beat on the scrolling waveform can be
+/// dragged onto the music (<see cref="BeginDrag"/>). Each change is saved with the song straight away, apart from its
+/// analysis, and given to the deck and the song, so everything that follows the grid (sync, loops, the waveforms, the
+/// beat trackers, lighting) follows it at once. While active, the deck clicks on the grid's beats, to hear it against
+/// the music.
 /// </summary>
 sealed class GridEditor
 {
@@ -41,6 +45,9 @@ sealed class GridEditor
     readonly MusicLibrary _library;
     readonly LibraryDatabase _database;
     bool _active;
+
+    // A beat being dragged: the song, the edit as the drag began, which beat, and the edit it would make now.
+    (string Path, TrackAnalysis Analysis, GridEdit Start, long Beat, GridEdit? Now)? _drag;
 
     public GridEditor(Deck deck, MusicLibrary library, LibraryDatabase database)
     {
@@ -86,9 +93,9 @@ sealed class GridEditor
         };
 
     /// <summary>
-    /// Where beats have been pinned by hand on the deck's song, in seconds.
+    /// Where beats have been pinned by hand on the deck's song, in seconds; mid-drag, where they'd be.
     /// </summary>
-    public IReadOnlyList<double> Pins => Current()?.Pins ?? [];
+    public IReadOnlyList<double> Pins => _drag is { Now: { } now } && _drag.Value.Path == Deck.FilePath ? now.Pins : Current()?.Pins ?? [];
 
     /// <summary>
     /// Whether the deck's song has a grid fixed by hand.
@@ -129,6 +136,12 @@ sealed class GridEditor
 
         var edit = _database.GetGridEdit(path, analysis.Grid.Duration) ?? new GridEdit(analysis.Grid, []);
         var playhead = Deck.Position.TotalSeconds;
+        if (tool == GridTool.SetBeat && fine)
+        {
+            RemovePin(playhead);
+            return;
+        }
+
         var step = fine ? GridEditing.FINE_NUDGE : GridEditing.NUDGE;
         var next = tool switch
         {
@@ -146,6 +159,7 @@ sealed class GridEditor
             tool switch
             {
                 GridTool.SetBeat when next.Pins.Count == 2 => $"Deck {Deck.Name}: two beats pinned; {next.Grid.MainBpm:F2} BPM between them",
+                GridTool.SetBeat when next.Pins.Count > 2 => $"Deck {Deck.Name}: {next.Pins.Count} beats pinned; {Tempos(next.Grid)}",
                 GridTool.SetBeat => $"Deck {Deck.Name}: beat pinned at {Format(playhead)}; the grid moves to it",
                 GridTool.Downbeat => $"Deck {Deck.Name}: the beat at {Format(playhead)} starts a bar",
                 GridTool.NudgeEarlier or GridTool.NudgeLater => $"Deck {Deck.Name}: grid {(tool == GridTool.NudgeLater ? "later" : "earlier")} by {step * 1000:F0} ms",
@@ -153,6 +167,74 @@ sealed class GridEditor
                 _ => $"Deck {Deck.Name}: steady at {next.Grid.MainBpm:F2} BPM",
             }
         );
+    }
+
+    /// <summary>
+    /// Starts dragging beat <paramref name="beat"/> of the deck's song's grid, to put it where the music's is. Returns
+    /// whether it can be: not without an analysed song.
+    /// </summary>
+    public bool BeginDrag(long beat)
+    {
+        if (Deck.FilePath is not { } path || Deck.Analysis is not { } analysis)
+            return false;
+        var edit = _database.GetGridEdit(path, analysis.Grid.Duration) ?? new GridEdit(analysis.Grid, []);
+        _drag = (path, analysis, edit, beat, null);
+        return true;
+    }
+
+    /// <summary>
+    /// The beat being dragged is now at <paramref name="seconds"/>: the grid follows, on the deck and the waveforms,
+    /// though nothing's saved until <see cref="EndDrag"/>.
+    /// </summary>
+    public void DragTo(double seconds)
+    {
+        if (_drag is not { } drag || drag.Path != Deck.FilePath)
+            return;
+        var now = GridEditing.MoveBeat(drag.Start, drag.Beat, seconds);
+        _drag = drag with { Now = now };
+        Deck.Analysis = drag.Analysis with { Grid = now.Grid };
+    }
+
+    /// <summary>
+    /// Lets go of the beat being dragged, saving where it was left.
+    /// </summary>
+    public void EndDrag()
+    {
+        if (_drag is not { } drag)
+            return;
+        _drag = null;
+        if (drag.Now is not { } now || drag.Path != Deck.FilePath)
+            return;
+        Use(drag.Path, _library.Find(drag.Path), drag.Analysis with { Grid = now.Grid }, now);
+        Log?.Invoke(
+            now.Pins.Count switch
+            {
+                1 => $"Deck {Deck.Name}: beat moved to {Format(now.Pins[0])}; the grid moves with it",
+                2 => $"Deck {Deck.Name}: two beats pinned; {now.Grid.MainBpm:F2} BPM between them",
+                var count => $"Deck {Deck.Name}: {count} beats pinned; {Tempos(now.Grid)}",
+            }
+        );
+    }
+
+    /// <summary>
+    /// Takes out the pin nearest <paramref name="seconds"/>, as Shift + SET BEAT does at the playhead.
+    /// </summary>
+    public void RemovePin(double seconds)
+    {
+        if (Deck.FilePath is not { } path || Deck.Analysis is not { } analysis || Current() is not { Pins.Count: > 0 } edit)
+            return;
+        var removed = GridEditing.RemovePin(edit, seconds);
+        Use(path, _library.Find(path), analysis with { Grid = removed.Grid }, removed);
+        Log?.Invoke($"Deck {Deck.Name}: pin taken out; {removed.Pins.Count switch { 0 => "none left", 1 => "1 left", var n => $"{n} left" }}");
+    }
+
+    /// <summary>
+    /// The tempos a grid goes through, slowest to fastest, for the status line.
+    /// </summary>
+    static string Tempos(BeatGrid grid)
+    {
+        var tempos = grid.Markers.Select(marker => marker.Bpm).ToList();
+        return tempos.Count == 1 ? $"{tempos[0]:F2} BPM" : $"{tempos.Min():F2} to {tempos.Max():F2} BPM";
     }
 
     /// <summary>

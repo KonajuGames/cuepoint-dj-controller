@@ -1,6 +1,7 @@
 using Brutal.Numerics;
 using Brutality.Audio;
 using Brutality.Input;
+using Brutality.Music;
 
 namespace Brutality.UI;
 
@@ -9,22 +10,42 @@ namespace Brutality.UI;
 /// coming is to the right. Drawn in the deck's colour, darker where bass dominates and brighter where treble does,
 /// so kicks, vocals and hi-hats look different, with a lighter core showing the average level inside the peaks, the
 /// beat grid over it with a brighter line on each bar, and the deck's hotcues as numbered lines in their colours. Drag
-/// it to move through the song. Sized by whoever lays it out, with <see cref="FixedSize"/>.
+/// it to move through the song. While its <see cref="Editor"/> is fixing the grid, a beat's line can be grabbed and
+/// dragged onto the music's beat instead, pinning it there, and a pin right-clicked to take it out. Sized by whoever
+/// lays it out, with <see cref="FixedSize"/>.
 /// </summary>
 sealed class ScrollingWaveform : Element
 {
+    /// <summary>
+    /// How close to a beat's line, in pixels either side, grabs it.
+    /// </summary>
+    const float GRAB = 4;
+
     readonly Deck _deck;
     readonly Font _font;
     double _shown;
     double _lastStep = double.NaN;
     (float X, double Position)? _drag;
+    float2? _pointer;
+
+    // A beat being dragged: how far its time was from the song's under the pointer as it was grabbed, so it doesn't
+    // jump to the pointer.
+    double? _beatGrabOffset;
 
     public ScrollingWaveform(Deck deck, float4 color, Font font)
     {
         _deck = deck;
         _font = font;
         Color = color;
-        PressEnded += _ => _drag = null;
+        PressEnded += _ =>
+        {
+            _drag = null;
+            if (_beatGrabOffset is not null)
+            {
+                _beatGrabOffset = null;
+                Editor?.EndDrag();
+            }
+        };
     }
 
     public float2 FixedSize { get; set; } = new(800, 64);
@@ -46,13 +67,51 @@ sealed class ScrollingWaveform : Element
     public float4 Color { get; set; }
 
     /// <summary>
-    /// Where beats have been pinned by hand, in seconds, shown as markers; none if null.
+    /// What fixes the deck's beat grid by hand: its pins are shown as markers, and while it's active, beats can be
+    /// dragged and pins taken out here. None if null.
     /// </summary>
-    public Func<IReadOnlyList<double>>? Pins { get; set; }
+    public GridEditor? Editor { get; set; }
+
     public float4 Background { get; set; } = Theme.Well;
 
     public override bool IsInteractive => _deck.IsLoaded;
-    public override Cursor Cursor => Cursor.Arrow;
+
+    public override Cursor Cursor =>
+        _beatGrabOffset is not null || (_pointer is { } at && BeatAt(at.X) is not null) ? Cursor.ResizeHorizontal : Cursor.Arrow;
+
+    /// <summary>
+    /// The song's time at <paramref name="x"/> on screen, as it's drawn.
+    /// </summary>
+    double TimeAt(float x) => _shown + (x - MathF.Round(ScreenPosition.X + Size.X / 2)) / SongPixelsPerSecond;
+
+    /// <summary>
+    /// The beat whose line is within <see cref="GRAB"/> pixels of <paramref name="x"/>, while the grid's being fixed;
+    /// null if none, or it isn't.
+    /// </summary>
+    long? BeatAt(float x)
+    {
+        if (Editor is not { Active: true } || _deck.Analysis?.Grid is not { } grid)
+            return null;
+        var beat = (long)Math.Round(grid.BeatNumberAt(TimeAt(x)));
+        var lineX = MathF.Round(ScreenPosition.X + Size.X / 2) + (float)((grid.TimeOfBeat(beat) - _shown) * SongPixelsPerSecond);
+        return MathF.Abs(lineX - x) <= GRAB ? beat : null;
+    }
+
+    /// <summary>
+    /// The pin within <see cref="GRAB"/> pixels of <paramref name="x"/>, while the grid's being fixed; null if none.
+    /// </summary>
+    double? PinAt(float x)
+    {
+        if (Editor is not { Active: true } editor)
+            return null;
+        var centre = MathF.Round(ScreenPosition.X + Size.X / 2);
+        foreach (var pin in editor.Pins)
+        {
+            if (MathF.Abs(centre + (float)((pin - _shown) * SongPixelsPerSecond) - x) <= GRAB + 1)
+                return pin;
+        }
+        return null;
+    }
 
     public override float2 Measure() => Size = FixedSize;
 
@@ -163,7 +222,7 @@ sealed class ScrollingWaveform : Element
     /// </summary>
     void DrawPins(Batch batch, double position, float centre)
     {
-        if (Pins?.Invoke() is not { Count: > 0 } pins)
+        if (Editor?.Pins is not { Count: > 0 } pins)
             return;
         var pps = SongPixelsPerSecond;
         foreach (var pin in pins)
@@ -215,16 +274,41 @@ sealed class ScrollingWaveform : Element
         }
     }
 
-    public override void PointerDown(float2 point, Modifiers modifiers) =>
-        _drag = (point.X, _deck.Position.TotalSeconds);
+    public override void PointerMove(float2 point) => _pointer = point;
+
+    public override void PointerDown(float2 point, Modifiers modifiers)
+    {
+        _drag = null;
+        _beatGrabOffset = null;
+        if (BeatAt(point.X) is { } beat && Editor!.BeginDrag(beat))
+            _beatGrabOffset = _deck.Analysis!.Grid.TimeOfBeat(beat) - TimeAt(point.X);
+        else
+            _drag = (point.X, _deck.Position.TotalSeconds);
+    }
 
     /// <summary>
-    /// Dragging moves the song with the pointer, as if pushing the waveform along.
+    /// Dragging moves the song with the pointer, as if pushing the waveform along; or, holding a beat's line, moves
+    /// the beat.
     /// </summary>
     public override void PointerDrag(float2 point)
     {
+        _pointer = point;
+        if (_beatGrabOffset is { } offset)
+        {
+            Editor?.DragTo(TimeAt(point.X) + offset);
+            return;
+        }
         if (_drag is not { } drag)
             return;
         _deck.Seek(TimeSpan.FromSeconds(Math.Max(0, drag.Position - (point.X - drag.X) / SongPixelsPerSecond)));
+    }
+
+    /// <summary>
+    /// Right-clicking a pin, while the grid's being fixed, takes it out.
+    /// </summary>
+    public override void SecondaryClick(float2 point)
+    {
+        if (PinAt(point.X) is { } pin)
+            Editor!.RemovePin(pin);
     }
 }

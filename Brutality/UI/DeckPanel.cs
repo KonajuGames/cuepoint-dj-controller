@@ -255,6 +255,7 @@ sealed class DeckPanel : Panel
             _overview.Grid = null;
             _overview.Flags = [];
             _overview.Region = null;
+            _overview.Pins = [];
             foreach (var pad in _pads)
                 (pad.Enabled, pad.IsSet) = (false, false);
             RefreshLoop();
@@ -289,6 +290,7 @@ sealed class DeckPanel : Panel
         _overview.Enabled = true;
         _overview.Waveform = _deck.Waveform;
         _overview.Grid = _deck.Analysis?.Grid;
+        _overview.Pins = _grid?.Pins ?? [];
         _overview.Max = (float)_deck.Duration.TotalSeconds;
         // While it's being dragged the slider leads and the deck follows, so don't pull it back.
         if (!_overview.IsDragging)

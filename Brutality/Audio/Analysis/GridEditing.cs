@@ -2,7 +2,8 @@ namespace Brutality.Audio.Analysis;
 
 /// <summary>
 /// A beat grid fixed by hand: the grid, and the pins it was made from, the times (in seconds) a beat was set to by
-/// hand. One pin shifts the grid; two set a steady tempo through both.
+/// hand, in order. One pin shifts the grid; two set a steady tempo through both; more set the tempo between each pair
+/// and the next, for a song whose tempo changes or drifts.
 /// </summary>
 sealed record GridEdit(BeatGrid Grid, IReadOnlyList<double> Pins);
 
@@ -20,9 +21,9 @@ static class GridEditing
     public const double FINE_NUDGE = 0.001;
 
     /// <summary>
-    /// How many pins there can be: two set a steady tempo, which is as far as editing goes for now.
+    /// How many pins there can be; pinning another beat past this replaces the nearest.
     /// </summary>
-    public const int MAX_PINS = 2;
+    public const int MAX_PINS = 64;
 
     /// <summary>
     /// The beat (by number, as <see cref="BeatGrid.BeatNumberAt"/> counts) nearest <paramref name="seconds"/>.
@@ -55,29 +56,96 @@ static class GridEditing
     }
 
     /// <summary>
-    /// A beat pinned at <paramref name="seconds"/>: the grid's nearest beat moved there. With no pin yet, the whole
-    /// grid shifts. With one, the grid becomes steady through both, at whatever tempo fits the beats between them
-    /// (as the grid counted them). With two already, the nearer one is replaced. Pinning the same beat as the other
-    /// pin just moves it, shifting the grid.
+    /// A beat pinned at <paramref name="seconds"/>: the grid's nearest beat moved there (see <see cref="MoveBeat"/>).
     ///
-    /// A pin means the grid's nearest beat, so a second pin far from the first should go where the grid is still
-    /// less than half a beat out; pinning a nearer beat first, then a farther one, gets there in steps.
+    /// A pin means the grid's nearest beat, so a pin far from the others should go where the grid is still less than
+    /// half a beat out; pinning a nearer beat first, then a farther one, gets there in steps.
     /// </summary>
-    public static GridEdit SetBeat(GridEdit edit, double seconds)
+    public static GridEdit SetBeat(GridEdit edit, double seconds) => MoveBeat(edit, NearestBeat(edit.Grid, seconds), seconds);
+
+    /// <summary>
+    /// Beat <paramref name="beat"/> of the grid (by number, as <see cref="BeatGrid.BeatNumberAt"/> counts) moved to
+    /// <paramref name="seconds"/>, and pinned there. With no pin yet, the whole grid shifts. A beat already pinned
+    /// moves with its pin: alone, shifting the grid; among others, changing the tempo either side. Any other beat
+    /// becomes a pin too, and the tempo between each pin and the next is whatever fits the beats between them (as the
+    /// grid counted them), carrying on at the first's before them and the last's after. A beat dragged past a
+    /// neighbouring pin goes no further than just short of it.
+    /// </summary>
+    public static GridEdit MoveBeat(GridEdit edit, long beat, double seconds)
     {
         var grid = edit.Grid;
-        var pins = edit.Pins.ToList();
-        if (pins.Count >= MAX_PINS)
-            pins.RemoveAt(pins[0] == pins[1] ? 1 : Math.Abs(pins[0] - seconds) <= Math.Abs(pins[1] - seconds) ? 0 : 1);
+        var pins = PinnedBeats(edit);
+        var index = pins.FindIndex(pin => pin.Beat == beat);
+        if (index < 0)
+        {
+            if (pins.Count >= MAX_PINS)
+                pins.RemoveAt(pins.Select((pin, i) => (Distance: Math.Abs(pin.Time - seconds), i)).Min().i);
+            pins.Add((seconds, beat));
+            pins.Sort((a, b) => a.Beat.CompareTo(b.Beat));
+            index = pins.FindIndex(pin => pin.Beat == beat);
+        }
 
-        var beat = NearestBeat(grid, seconds);
-        if (pins.Count == 0 || NearestBeat(grid, pins[0]) == beat)
-            return new GridEdit(Shift(grid, seconds - grid.TimeOfBeat(beat)), [seconds]);
+        // Kept where the tempo either side of it no more than doubles or halves, so it can't pass a neighbour.
+        var (low, high) = (double.NegativeInfinity, double.PositiveInfinity);
+        if (index > 0)
+        {
+            var before = pins[index - 1];
+            var span = grid.TimeOfBeat(beat) - grid.TimeOfBeat(before.Beat);
+            (low, high) = (before.Time + span / 2, before.Time + span * 2);
+        }
+        if (index + 1 < pins.Count)
+        {
+            var after = pins[index + 1];
+            var span = grid.TimeOfBeat(after.Beat) - grid.TimeOfBeat(beat);
+            (low, high) = (Math.Max(low, after.Time - span * 2), Math.Min(high, after.Time - span / 2));
+        }
+        pins[index] = (Math.Clamp(seconds, low, Math.Max(low, high)), beat);
 
-        var other = pins[0];
-        var otherBeat = NearestBeat(grid, other);
-        var bpm = 60 * Math.Abs(beat - otherBeat) / Math.Abs(seconds - other);
-        return new GridEdit(Steady(grid, other, otherBeat, bpm), [.. new[] { other, seconds }.Order()]);
+        if (pins.Count == 1)
+            return new GridEdit(Shift(grid, pins[0].Time - grid.TimeOfBeat(beat)), [pins[0].Time]);
+        return new GridEdit(Through(grid, pins), pins.Select(pin => pin.Time).ToList());
+    }
+
+    /// <summary>
+    /// The pin nearest <paramref name="seconds"/> taken out, and the grid made again from those left: the tempo
+    /// through them, or, with one or none left, the grid as it is.
+    /// </summary>
+    public static GridEdit RemovePin(GridEdit edit, double seconds)
+    {
+        if (edit.Pins.Count == 0)
+            return edit;
+        var pins = PinnedBeats(edit);
+        pins.RemoveAt(pins.Select((pin, i) => (Distance: Math.Abs(pin.Time - seconds), i)).Min().i);
+        var grid = pins.Count >= 2 ? Through(edit.Grid, pins) : edit.Grid;
+        return new GridEdit(grid, pins.Select(pin => pin.Time).ToList());
+    }
+
+    /// <summary>
+    /// Each pin with the beat it's on, in order.
+    /// </summary>
+    static List<(double Time, long Beat)> PinnedBeats(GridEdit edit) =>
+        edit.Pins.Order().Select(pin => (pin, NearestBeat(edit.Grid, pin))).ToList();
+
+    /// <summary>
+    /// A grid through <paramref name="pins"/> (at least two, each a time and the beat of <paramref name="before"/>
+    /// that's there, in order): from each to the next, the tempo that fits the beats between them, carrying on before
+    /// the first and after the last. Bars start on the same beats as before.
+    /// </summary>
+    static BeatGrid Through(BeatGrid before, IReadOnlyList<(double Time, long Beat)> pins)
+    {
+        var markers = new List<GridMarker>();
+        for (var i = 0; i + 1 < pins.Count; i++)
+        {
+            var bpm = 60 * (pins[i + 1].Beat - pins[i].Beat) / (pins[i + 1].Time - pins[i].Time);
+            // Where the tempo doesn't change, one marker carries on through.
+            if (markers.Count > 0 && Math.Abs(markers[^1].Bpm - bpm) < 1e-6)
+                continue;
+            markers.Add(new GridMarker(pins[i].Time, bpm));
+        }
+
+        // The first marker is beat 0 now; it starts its bar where its beat did.
+        var barPosition = before.BarPosition(pins[0].Beat);
+        return new BeatGrid(markers, before.Duration) { DownbeatOffset = ((-barPosition % BeatGrid.BEATS_PER_BAR) + BeatGrid.BEATS_PER_BAR) % BeatGrid.BEATS_PER_BAR };
     }
 
     /// <summary>
@@ -90,24 +158,17 @@ static class GridEditing
     }
 
     /// <summary>
-    /// The grid moved by <paramref name="seconds"/> (later for positive). With two pins, only the one nearer
-    /// <paramref name="playhead"/> moves, and the tempo between them follows; otherwise the whole grid moves, with
+    /// The grid moved by <paramref name="seconds"/> (later for positive). With two pins or more, only the one nearest
+    /// <paramref name="playhead"/> moves, and the tempo either side follows; otherwise the whole grid moves, with
     /// its pin.
     /// </summary>
     public static GridEdit Nudge(GridEdit edit, double seconds, double playhead)
     {
-        if (edit.Pins.Count < MAX_PINS)
+        if (edit.Pins.Count < 2)
             return new GridEdit(Shift(edit.Grid, seconds), edit.Pins.Select(pin => pin + seconds).ToList());
 
-        var moving = Math.Abs(edit.Pins[0] - playhead) <= Math.Abs(edit.Pins[1] - playhead) ? 0 : 1;
-        var (fixedPin, movingPin) = (edit.Pins[1 - moving], edit.Pins[moving]);
-        var beats = Math.Abs(NearestBeat(edit.Grid, movingPin) - NearestBeat(edit.Grid, fixedPin));
-        var moved = movingPin + seconds;
-        if (beats == 0 || Math.Abs(moved - fixedPin) < 1e-3)
-            return edit;
-        var bpm = 60 * beats / Math.Abs(moved - fixedPin);
-        var grid = Steady(edit.Grid, fixedPin, NearestBeat(edit.Grid, fixedPin), bpm);
-        return new GridEdit(grid, [.. new[] { fixedPin, moved }.Order()]);
+        var nearest = edit.Pins.MinBy(pin => Math.Abs(pin - playhead));
+        return MoveBeat(edit, NearestBeat(edit.Grid, nearest), nearest + seconds);
     }
 
     /// <summary>
