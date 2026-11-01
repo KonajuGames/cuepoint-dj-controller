@@ -30,9 +30,18 @@ sealed class ScrollingWaveform : Element
     public float2 FixedSize { get; set; } = new(800, 64);
 
     /// <summary>
-    /// How fast it scrolls, which is how much of the song shows: at 100, a 1,200 pixel wide strip shows 12 seconds.
+    /// How fast it scrolls, in pixels a second as it plays, which is how much time shows: at 100, a 1,200 pixel wide
+    /// strip shows 12 seconds' playing. It's the same for every deck whatever its tempo, so two decks in sync scroll
+    /// by together with their beats the same distance apart.
     /// </summary>
     public float PixelsPerSecond { get; set; } = 100;
+
+    /// <summary>
+    /// How many pixels a second of the song takes: <see cref="PixelsPerSecond"/> squeezed by the tempo fader, since a
+    /// deck playing at +5% gets through 1.05 seconds of song a second. (Not by a jog wheel's momentary push, which
+    /// would make the grid shiver while nudging.)
+    /// </summary>
+    float SongPixelsPerSecond => PixelsPerSecond / (float)_deck.TempoRatio;
 
     public float4 Color { get; set; }
     public float4 Background { get; set; } = Theme.Well;
@@ -74,7 +83,7 @@ sealed class ScrollingWaveform : Element
         if (_deck.Detail is { } detail)
         {
             var position = SmoothedPosition();
-            var pps = PixelsPerSecond;
+            var pps = SongPixelsPerSecond;
 
             // Columns stay on a fixed grid in song time and the whole lot moves by whole pixels, so the waveform
             // scrolls without the shimmer of re-dividing it every frame.
@@ -122,13 +131,14 @@ sealed class ScrollingWaveform : Element
 
         // Across the whole view, before the song and after it too: the grid carries on at its first tempo and
         // phase before the first beat, and at its last after the end, so the beats can still be lined up there.
-        var halfSeconds = Size.X / 2 / PixelsPerSecond;
+        var pps = SongPixelsPerSecond;
+        var halfSeconds = Size.X / 2 / pps;
         var first = Math.Ceiling(grid.BeatNumberAt(position - halfSeconds));
         var last = Math.Floor(grid.BeatNumberAt(position + halfSeconds));
         var tick = MathF.Round(Size.Y * 0.18f);
         for (var beat = first; beat <= last; beat++)
         {
-            var x = MathF.Round(centre + (float)((grid.TimeOfBeat(beat) - position) * PixelsPerSecond));
+            var x = MathF.Round(centre + (float)((grid.TimeOfBeat(beat) - position) * pps));
             if (x < ScreenPosition.X || x >= ScreenPosition.X + Size.X)
                 continue;
 
@@ -149,7 +159,8 @@ sealed class ScrollingWaveform : Element
     {
         if (_deck.Loop is not { } loop)
             return;
-        float X(TimeSpan at) => MathF.Round(centre + (float)((at.TotalSeconds - position) * PixelsPerSecond));
+        var pps = SongPixelsPerSecond;
+        float X(TimeSpan at) => MathF.Round(centre + (float)((at.TotalSeconds - position) * pps));
         var start = MathF.Max(ScreenPosition.X, X(loop.Start));
         var end = MathF.Min(ScreenPosition.X + Size.X, X(loop.End));
         if (end <= start)
@@ -167,7 +178,7 @@ sealed class ScrollingWaveform : Element
         {
             if (_deck.Hotcues[i] is not { } at)
                 continue;
-            var x = MathF.Round(centre + (float)((at.TotalSeconds - position) * PixelsPerSecond));
+            var x = MathF.Round(centre + (float)((at.TotalSeconds - position) * SongPixelsPerSecond));
             if (x < ScreenPosition.X - 20 || x >= ScreenPosition.X + Size.X)
                 continue;
 
@@ -189,6 +200,6 @@ sealed class ScrollingWaveform : Element
     {
         if (_drag is not { } drag)
             return;
-        _deck.Seek(TimeSpan.FromSeconds(Math.Max(0, drag.Position - (point.X - drag.X) / PixelsPerSecond)));
+        _deck.Seek(TimeSpan.FromSeconds(Math.Max(0, drag.Position - (point.X - drag.X) / SongPixelsPerSecond)));
     }
 }
