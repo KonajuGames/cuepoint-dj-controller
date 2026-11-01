@@ -4,17 +4,32 @@ using Brutality.Audio;
 namespace Brutality.UI;
 
 /// <summary>
-/// The mixer between the decks: for each, its level as it plays and its volume fader, in its colour; the crossfader
-/// across the bottom; and a switch for automatic gain in the middle. Call <see cref="Refresh"/> once a frame.
+/// The mixer between the decks, laid out as a DJ mixer is. Down the middle, the names of each channel's EQ and
+/// filter, with each deck's controls on its own side: bass, mids and treble from killed on the left, through
+/// unchanged in the middle, to boosted on the right, and the filter, a low-pass to the left and a high-pass to the
+/// right. Double-click any of them to put it back in the middle. At the outer edges, each deck's level as it plays
+/// and its volume fader; the crossfader across the bottom; and a switch for automatic gain. All in each deck's colour.
+/// Call <see cref="Refresh"/> once a frame.
 /// </summary>
 sealed class MixerPanel : Panel
 {
-    public const float WIDTH = 300;
+    public const float WIDTH = 340;
     const float PAD = 10;
+    const float ROW = 24;
+    const float EQ_LENGTH = 72;
+    const float LABEL_COLUMN = 48;
+
+    /// <summary>
+    /// A channel's controls: its EQ and filter, top to bottom as they're labelled, then its meter and fader.
+    /// </summary>
+    sealed record Channel(Deck Deck, Label Name, Slider[] Eq, LevelMeter Meter, Slider Fader);
+
+    static readonly string[] EqNames = ["HIGH", "MID", "LOW", "FILTER"];
 
     readonly AudioEngine _engine;
     readonly Label _heading;
-    readonly List<(Deck Deck, Label Name, LevelMeter Meter, Slider Fader)> _channels = [];
+    readonly Label[] _eqLabels;
+    readonly List<Channel> _channels = [];
     readonly Slider _crossfader;
     readonly Label _crossLeft;
     readonly Label _crossRight;
@@ -28,18 +43,45 @@ sealed class MixerPanel : Panel
         BorderWidth = 1;
 
         _heading = Add(new Label(small, "MIXER") { Color = Theme.Muted });
+        _eqLabels = EqNames.Select(name => Add(new Label(small, name) { Color = Theme.Muted })).ToArray();
+
         foreach (var deck in decks)
         {
             var color = Theme.DeckColor(deck.Name);
             var name = Add(new Label(bold, deck.Name) { Color = color });
-            var meter = Add(new LevelMeter(2) { Length = 124, BarThickness = 4, BarGap = 2, Segments = 26 });
+
+            var eq = new Slider[EqNames.Length];
+            for (var row = 0; row < eq.Length; row++)
+            {
+                eq[row] = Add(
+                    new Slider
+                    {
+                        Min = -1,
+                        Max = 1,
+                        DefaultValue = 0,
+                        Length = EQ_LENGTH,
+                        Thickness = 16,
+                        TrackThickness = 4,
+                        HandleLength = 8,
+                        ShowFill = true,
+                        FillFrom = 0,
+                        FillColor = color,
+                        FocusColor = Theme.Focus,
+                    }
+                );
+                eq[row].Marks.Add(0);
+                var band = row;
+                eq[row].Changed += slider => SetEq(deck.Equalizer, band, slider.Value);
+            }
+
+            var meter = Add(new LevelMeter(2) { Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 });
 
             // A channel fader: up is louder, and double-clicking puts it back to full.
             var fader = Add(
                 new Slider
                 {
                     Orientation = Orientation.Vertical,
-                    Length = 124,
+                    Length = 160,
                     Thickness = 22,
                     HandleLength = 12,
                     DefaultValue = 1,
@@ -50,7 +92,7 @@ sealed class MixerPanel : Panel
                 }
             );
             fader.Changed += slider => deck.Volume = slider.Value;
-            _channels.Add((deck, name, meter, fader));
+            _channels.Add(new Channel(deck, name, eq, meter, fader));
         }
 
         _crossLeft = Add(new Label(bold, decks.Count > 0 ? decks[0].Name : "") { Color = decks.Count > 0 ? Theme.DeckColor(decks[0].Name) : Theme.Muted });
@@ -69,20 +111,53 @@ sealed class MixerPanel : Panel
         _crossfader.Marks.Add(0.5f);
         _crossfader.Changed += slider => engine.Crossfader = slider.Value;
 
-        _autoGain = Add(new Button(small, "AUTO GAIN") { FocusColor = Theme.Focus, MinSize = new float2(90, 26) });
+        _autoGain = Add(new Button(small, "AUTO GAIN") { FocusColor = Theme.Focus, MinSize = new float2(90, 24) });
         _autoGain.Clicked += _ => engine.AutoGain = !engine.AutoGain;
 
         Refresh();
     }
 
+    static void SetEq(Equalizer equalizer, int row, float value)
+    {
+        switch (row)
+        {
+            case 0:
+                equalizer.High = value;
+                break;
+            case 1:
+                equalizer.Mid = value;
+                break;
+            case 2:
+                equalizer.Low = value;
+                break;
+            default:
+                equalizer.Filter = value;
+                break;
+        }
+    }
+
+    static float GetEq(Equalizer equalizer, int row) =>
+        row switch
+        {
+            0 => equalizer.High,
+            1 => equalizer.Mid,
+            2 => equalizer.Low,
+            _ => equalizer.Filter,
+        };
+
     public void Refresh()
     {
-        foreach (var (deck, _, meter, fader) in _channels)
+        foreach (var channel in _channels)
         {
-            var (left, right) = deck.Meter.TakePeaks();
-            meter.Push(left, right);
-            if (!fader.IsDragging)
-                fader.Value = deck.Volume;
+            var (left, right) = channel.Deck.Meter.TakePeaks();
+            channel.Meter.Push(left, right);
+            if (!channel.Fader.IsDragging)
+                channel.Fader.Value = channel.Deck.Volume;
+            for (var row = 0; row < channel.Eq.Length; row++)
+            {
+                if (!channel.Eq[row].IsDragging)
+                    channel.Eq[row].Value = GetEq(channel.Deck.Equalizer, row);
+            }
         }
         if (!_crossfader.IsDragging)
             _crossfader.Value = _engine.Crossfader;
@@ -106,25 +181,33 @@ sealed class MixerPanel : Panel
         var centre = position.X + WIDTH / 2;
         var top = position.Y + PAD;
 
-        Place(_heading, centre - _heading.Size.X / 2, top - 2);
+        Place(_heading, centre - _heading.Size.X / 2, top - 4);
 
-        // Each channel's meter on the outside, its fader inside, its letter over them; the left deck's on the
-        // left.
-        var stripsY = top + 20;
+        // The EQ's names down the middle, each deck's controls either side of them, its meter and fader out at the
+        // edge with its letter over them; the left deck's on the left.
+        var eqTop = top + 18;
+        for (var row = 0; row < _eqLabels.Length; row++)
+            Place(_eqLabels[row], centre - _eqLabels[row].Size.X / 2, eqTop + row * ROW + (16 - _eqLabels[row].Size.Y) / 2);
+
+        var stripsY = top + 18;
         for (var i = 0; i < _channels.Count; i++)
         {
-            var (_, name, meter, fader) = _channels[i];
+            var channel = _channels[i];
             var onLeft = i < (_channels.Count + 1) / 2;
-            var meterX = onLeft ? position.X + PAD + 6 : position.X + WIDTH - PAD - 6 - meter.Size.X;
-            var faderX = onLeft ? meterX + meter.Size.X + 10 : meterX - 10 - fader.Size.X;
-            Place(meter, meterX, stripsY);
-            Place(fader, faderX, stripsY);
+            var eqX = onLeft ? centre - LABEL_COLUMN / 2 - 6 - EQ_LENGTH : centre + LABEL_COLUMN / 2 + 6;
+            for (var row = 0; row < channel.Eq.Length; row++)
+                Place(channel.Eq[row], eqX, eqTop + row * ROW);
+
+            var faderX = onLeft ? position.X + PAD : position.X + WIDTH - PAD - channel.Fader.Size.X;
+            var meterX = onLeft ? faderX + channel.Fader.Size.X + 6 : faderX - 6 - channel.Meter.Size.X;
+            Place(channel.Fader, faderX, stripsY);
+            Place(channel.Meter, meterX, stripsY);
             var columnLeft = MathF.Min(meterX, faderX);
-            var columnRight = MathF.Max(meterX + meter.Size.X, faderX + fader.Size.X);
-            Place(name, (columnLeft + columnRight - name.Size.X) / 2, top - 4);
+            var columnRight = MathF.Max(meterX + channel.Meter.Size.X, faderX + channel.Fader.Size.X);
+            Place(channel.Name, (columnLeft + columnRight - channel.Name.Size.X) / 2, top - 6);
         }
 
-        Place(_autoGain, centre - _autoGain.Size.X / 2, stripsY + 24);
+        Place(_autoGain, centre - _autoGain.Size.X / 2, eqTop + _eqLabels.Length * ROW + 4);
 
         var crossY = position.Y + DeckPanel.HEIGHT - PAD - _crossfader.Size.Y;
         Place(_crossfader, centre - _crossfader.Size.X / 2, crossY);

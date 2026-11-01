@@ -17,6 +17,18 @@ struct Biquad(double b0, double b1, double b2, double a1, double a2)
     }
 
     /// <summary>
+    /// This filter with <paramref name="tuning"/>'s coefficients but its own state, so it can be retuned while it
+    /// runs, as a sweeping filter is, without a click.
+    /// </summary>
+    public Biquad Retuned(Biquad tuning)
+    {
+        var retuned = tuning;
+        retuned._z1 = _z1;
+        retuned._z2 = _z2;
+        return retuned;
+    }
+
+    /// <summary>
     /// A Butterworth-style low-pass at <paramref name="cutoff"/> Hz with quality <paramref name="q"/> (0.7071 for a
     /// single section), from the Audio EQ Cookbook.
     /// </summary>

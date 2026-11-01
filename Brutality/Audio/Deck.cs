@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.SdlApi.Mixer;
 using Brutality.Audio.Analysis;
@@ -109,15 +110,21 @@ sealed class Deck : IDisposable
     long _cueFrames;
     bool _previewing;
 
+    /// <summary>
+    /// This deck, for SDL_mixer's audio thread to find from its callback.
+    /// </summary>
+    GCHandle _self;
+
     internal Deck(AudioEngine engine, string name, CrossfaderSide side)
     {
         Name = name;
         _engine = engine;
         _side = side;
         _track = engine.Mixer.CreateTrack();
+        _self = GCHandle.Alloc(this);
         unsafe
         {
-            SdlMixer.PInvoke.SetTrackCookedCallback(_track, &AudioMeter.MeasureTrack, Meter.UserData);
+            SdlMixer.PInvoke.SetTrackCookedCallback(_track, &ProcessTrack, (void*)GCHandle.ToIntPtr(_self));
         }
         ApplyGain();
     }
@@ -172,9 +179,33 @@ sealed class Deck : IDisposable
         (_engine.AutoGain ? _analysis?.AutoGain ?? 1 : 1) * VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
 
     /// <summary>
-    /// The deck's level as it plays, after its gain and the crossfader.
+    /// The deck's level as it plays, after its gain, the crossfader and its EQ.
     /// </summary>
     public AudioMeter Meter { get; } = new();
+
+    /// <summary>
+    /// The deck's mixer channel EQ and filter.
+    /// </summary>
+    public Equalizer Equalizer { get; } = new();
+
+    /// <summary>
+    /// SDL_mixer's callback for the deck's audio, after its gain and just before it's mixed, on the audio thread:
+    /// the EQ changes it there, then the meter measures it.
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    static unsafe void ProcessTrack(void* userData, MixTrack track, SdlAudioSpec* spec, float* samples, int count)
+    {
+        try
+        {
+            var deck = (Deck)GCHandle.FromIntPtr((nint)userData).Target!;
+            deck.Equalizer.Process(samples, count, spec->channels, spec->freq);
+            deck.Meter.Measure(samples, count, spec->channels);
+        }
+        catch
+        {
+            // Nothing can be done about it on the audio thread, and an exception mustn't escape into SDL.
+        }
+    }
 
     /// <summary>
     /// Fader position to gain. Squared, so the fader's travel feels even to the ear: halfway is about -12 dB rather
@@ -790,5 +821,7 @@ sealed class Deck : IDisposable
         _loopAudio.Dispose();
         _audio.Dispose();
         Meter.Dispose();
+        if (_self.IsAllocated)
+            _self.Free();
     }
 }

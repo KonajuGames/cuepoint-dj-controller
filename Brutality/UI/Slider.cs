@@ -47,6 +47,12 @@ class Slider : Element
     public bool ShowFill { get; set; }
 
     /// <summary>
+    /// Where the fill starts, if not from <see cref="Min"/>: the middle of a control that cuts one way and boosts
+    /// the other, say, so it fills out from there towards the value.
+    /// </summary>
+    public float? FillFrom { get; set; }
+
+    /// <summary>
     /// Whether to draw a handle. A progress bar may not want one.
     /// </summary>
     public bool ShowHandle { get; set; } = true;
@@ -166,11 +172,13 @@ class Slider : Element
 
         if (ShowFill)
         {
-            var fill = OffsetOf(Fraction);
+            var origin = FillFrom is { } from && Max != Min ? OffsetOf(Math.Clamp((from - Min) / (Max - Min), 0, 1)) : 0;
+            var value = OffsetOf(Fraction);
+            var (start, length) = (MathF.Min(origin, value), MathF.Abs(value - origin));
             if (IsVertical)
-                batch.AddRect(trackStart + new float2(0, Travel - fill), new float2(TrackThickness, fill), Faded(FillColor));
+                batch.AddRect(trackStart + new float2(0, Travel - start - length), new float2(TrackThickness, length), Faded(FillColor));
             else
-                batch.AddRect(trackStart, new float2(fill, TrackThickness), Faded(FillColor));
+                batch.AddRect(trackStart + new float2(start, 0), new float2(length, TrackThickness), Faded(FillColor));
         }
     }
 

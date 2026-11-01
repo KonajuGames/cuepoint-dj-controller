@@ -76,22 +76,6 @@ sealed unsafe class AudioMeter : IDisposable
     }
 
     /// <summary>
-    /// SDL_mixer's callback for one track's audio, after its gain, on its audio thread.
-    /// </summary>
-    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    internal static void MeasureTrack(void* userData, MixTrack track, SdlAudioSpec* spec, float* samples, int count)
-    {
-        try
-        {
-            FromUserData(userData).Measure(samples, count, spec->channels);
-        }
-        catch
-        {
-            // As above.
-        }
-    }
-
-    /// <summary>
     /// Call only once nothing can call back with this meter any more.
     /// </summary>
     public void Dispose()
