@@ -69,6 +69,11 @@ sealed class ListView<T> : Element
     public float4 ProgressColor { get; set; } = Colors.Hex(0xEB7828, 0.35f);
 
     /// <summary>
+    /// What to call an item on the label that follows it when it's dragged; rows can't be dragged if null.
+    /// </summary>
+    public Func<T, string>? DragLabel { get; set; }
+
+    /// <summary>
     /// The rows drawn last frame, by index into <see cref="Items"/>: those in view. Empty before the first draw, and
     /// again from when <see cref="Items"/> changes until the next, since the old rows may no longer exist.
     /// </summary>
@@ -201,6 +206,9 @@ sealed class ListView<T> : Element
         var row = (int)MathF.Floor((point.Y - ScreenPosition.Y) / RowHeight);
         return row >= 0 && row < _items.Count ? row : -1;
     }
+
+    public override DragData? StartDrag(float2 point) =>
+        DragLabel is { } label && RowAt(point) is var row and >= 0 ? new DragData(_items[row], label(_items[row]), Font) : null;
 
     // Only meaningful while IsHovered: once the pointer leaves, this stops being called, so Draw checks both.
     public override void PointerMove(float2 point) => _hovered = RowAt(point);

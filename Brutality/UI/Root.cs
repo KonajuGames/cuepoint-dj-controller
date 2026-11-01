@@ -14,6 +14,11 @@ enum Cursor
 }
 
 /// <summary>
+/// Something being dragged: what it is, and what to call it on the label that follows the pointer, in which font.
+/// </summary>
+sealed record DragData(object Payload, string Label, Font Font);
+
+/// <summary>
 /// The system clipboard, for text boxes to paste from. The window layer fills these in; without it, paste does
 /// nothing.
 /// </summary>
@@ -83,6 +88,26 @@ sealed class Root
     /// cursor leaves it, and only clicks if released back over it.
     /// </summary>
     public Element? Pressed { get; private set; }
+
+    /// <summary>
+    /// What's being dragged, while a drag is under way: from when a press moves <see cref="DRAG_DISTANCE"/> on an
+    /// element with something to drag, until the button comes up (dropping it on <see cref="DropTarget"/>, if
+    /// anything) or Escape cancels it.
+    /// </summary>
+    public DragData? Dragging { get; private set; }
+
+    /// <summary>
+    /// The element the drag is over that would take it, if any.
+    /// </summary>
+    public Element? DropTarget { get; private set; }
+
+    /// <summary>
+    /// How far a press has to move, in pixels, to become a drag rather than a click.
+    /// </summary>
+    public const float DRAG_DISTANCE = 6;
+
+    float2 _pressPoint;
+    bool _dragTried;
 
     /// <summary>
     /// The mouse is over some visible top-level element, interactive or not.
@@ -158,6 +183,16 @@ sealed class Root
             if (element.Visible)
                 element.Draw(batch);
         }
+
+        // What's being dragged, on a label beside the pointer, over everything.
+        if (Dragging is { } drag && _mouse is { } mouse)
+        {
+            var size = drag.Font.Measure(drag.Label) + new float2(12, 8);
+            var at = mouse + new float2(16, 14);
+            batch.AddRect(at, size, Colors.Hex(0x23242C, 0.95f));
+            batch.AddBorder(at, size, 1, Colors.Hex(0xFFFFFF, 0.25f));
+            batch.AddText(drag.Font, drag.Label, at + new float2(6, 4), Colors.White);
+        }
     }
 
     /// <summary>
@@ -168,9 +203,89 @@ sealed class Root
         _mouse = position;
         UpdateHover();
 
+        if (Dragging is not null)
+        {
+            UpdateDropTarget();
+            return;
+        }
+
+        // A press that's moved far enough becomes a drag, if what was pressed has something to drag from there. It
+        // won't click when it comes up.
+        if (Pressed is { } pressed && !_dragTried && Distance(position, _pressPoint) >= DRAG_DISTANCE)
+        {
+            _dragTried = true;
+            if (pressed.StartDrag(_pressPoint) is { } drag)
+            {
+                Pressed = null;
+                pressed.IsPressed = false;
+                pressed.RaisePressEnded();
+                Dragging = drag;
+                UpdateDropTarget();
+                return;
+            }
+        }
+
         // The pressed element follows the mouse until release, even outside itself (to drag a text selection, say).
         Pressed?.PointerDrag(position);
         Hovered?.PointerMove(position);
+    }
+
+    static float Distance(float2 a, float2 b)
+    {
+        var d = a - b;
+        return MathF.Sqrt(d.X * d.X + d.Y * d.Y);
+    }
+
+    /// <summary>
+    /// Ends a drag, dropping it on the target if <paramref name="drop"/> and there is one.
+    /// </summary>
+    void EndDrag(bool drop)
+    {
+        var (payload, target) = (Dragging?.Payload, DropTarget);
+        Dragging = null;
+        SetDropTarget(null);
+        if (drop && payload is not null && target is not null)
+            target.Drop(payload);
+    }
+
+    void UpdateDropTarget() =>
+        SetDropTarget(Dragging is { } drag && _mouse is { } mouse ? DropTargetAt(mouse, drag.Payload) : null);
+
+    void SetDropTarget(Element? target)
+    {
+        if (target == DropTarget)
+            return;
+        if (DropTarget is not null)
+            DropTarget.IsDropTarget = false;
+        DropTarget = target;
+        if (target is not null)
+            target.IsDropTarget = true;
+    }
+
+    /// <summary>
+    /// The innermost visible element under <paramref name="point"/> that would take <paramref name="payload"/>,
+    /// whether or not it's otherwise interactive; the one drawn on top if they overlap.
+    /// </summary>
+    Element? DropTargetAt(float2 point, object payload)
+    {
+        Element? Search(Element element)
+        {
+            if (!element.Visible || !element.Contains(point))
+                return null;
+            foreach (var child in element.VisibleChildren.Reverse())
+            {
+                if (Search(child) is { } inner)
+                    return inner;
+            }
+            return element.CanDrop(payload) ? element : null;
+        }
+
+        for (var i = Elements.Count - 1; i >= 0; i--)
+        {
+            if (Search(Elements[i]) is { } found)
+                return found;
+        }
+        return null;
     }
 
     /// <summary>
@@ -180,6 +295,8 @@ sealed class Root
     {
         _mouse = null;
         UpdateHover();
+        if (Dragging is not null)
+            UpdateDropTarget();
     }
 
     /// <summary>
@@ -246,11 +363,19 @@ sealed class Root
 
             if (Hovered is null)
                 return;
+            _pressPoint = _mouse ?? default;
+            _dragTried = false;
             Pressed = Hovered;
             Pressed.IsPressed = true;
             if (_mouse is { } mouse)
                 Pressed.PointerDown(mouse, modifiers);
             Pressed.RaisePressStarted();
+            return;
+        }
+
+        if (Dragging is not null)
+        {
+            EndDrag(drop: true);
             return;
         }
 
@@ -293,6 +418,12 @@ sealed class Root
     /// </summary>
     public bool KeyDown(Key key, Modifiers modifiers)
     {
+        if (Dragging is not null && key == Key.Escape)
+        {
+            EndDrag(drop: false);
+            return true;
+        }
+
         if (key == Key.Tab)
             return MoveFocus(backwards: (modifiers & Modifiers.Shift) != 0);
 

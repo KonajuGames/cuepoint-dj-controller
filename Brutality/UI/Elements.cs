@@ -126,6 +126,27 @@ abstract class Element
     public virtual void PointerDown(float2 point, Modifiers modifiers) { }
 
     /// <summary>
+    /// A drag starting from <paramref name="point"/>, where the press began, if this element has something there to
+    /// drag; null if not. Asked once the press has moved far enough to count as a drag.
+    /// </summary>
+    public virtual DragData? StartDrag(float2 point) => null;
+
+    /// <summary>
+    /// Whether this element would take <paramref name="payload"/> dropped on it.
+    /// </summary>
+    public virtual bool CanDrop(object payload) => false;
+
+    /// <summary>
+    /// <paramref name="payload"/> was dropped on this element, which said it would take it.
+    /// </summary>
+    public virtual void Drop(object payload) { }
+
+    /// <summary>
+    /// Something it would take is being dragged over it, for it to show it's a place to drop.
+    /// </summary>
+    public bool IsDropTarget { get; internal set; }
+
+    /// <summary>
     /// The right button went down over this element, at <paramref name="point"/>, for a secondary action such as
     /// clearing it. Doesn't press or focus it.
     /// </summary>

@@ -1,5 +1,6 @@
 using Brutal.Numerics;
 using Brutality.Audio;
+using Brutality.Music;
 
 namespace Brutality.UI;
 
@@ -26,6 +27,7 @@ sealed class DeckPanel : Panel
 
     readonly Deck _deck;
     readonly float4 _color;
+    readonly Font _bold;
     readonly Badge _badge;
     readonly Label _title;
     readonly Label _artist;
@@ -67,11 +69,19 @@ sealed class DeckPanel : Panel
     /// </summary>
     public bool Mirrored { get; set; }
 
+    public Deck Deck => _deck;
+
+    /// <summary>
+    /// A song was dragged from the list and dropped on the deck, to load.
+    /// </summary>
+    public event Action<DeckPanel, Song>? SongDropped;
+
     /// <param name="padKeys">The keys that press the hotcue pads, in order, to label them with.</param>
     public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big, IReadOnlyList<string>? padKeys = null)
     {
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
+        _bold = bold;
         Background = Theme.Panel;
         BorderColor = Theme.PanelBorder;
         BorderWidth = 1;
@@ -398,6 +408,30 @@ sealed class DeckPanel : Panel
         // A strip of the deck's colour along the top, so which deck is which reads at a glance.
         batch.AddRect(ScreenPosition, new float2(Size.X, 2), _color);
         DrawChildren(batch);
+
+        // A song dragged over the deck: tint it and say what letting go will do.
+        if (IsDropTarget)
+        {
+            batch.AddRect(ScreenPosition, Size, Theme.Fade(Theme.Background, 0.75f));
+            batch.AddRect(ScreenPosition, Size, Theme.Fade(_color, 0.15f));
+            batch.AddBorder(ScreenPosition, Size, 2, _color);
+            // Near the top, on a chip of the deck's colour, where the dragged song's label (below and right of the
+            // pointer) is least likely to cover it.
+            var text = $"Drop to load on deck {_deck.Name}";
+            var size = _bold.Measure(text);
+            var chip = size + new float2(24, 12);
+            var at = ScreenPosition + new float2((Size.X - chip.X) / 2, 14);
+            batch.AddRect(at, chip, _color);
+            batch.AddText(_bold, text, at + new float2(12, 6), Colors.White);
+        }
+    }
+
+    public override bool CanDrop(object payload) => payload is Song;
+
+    public override void Drop(object payload)
+    {
+        if (payload is Song song)
+            SongDropped?.Invoke(this, song);
     }
 
     static string Format(TimeSpan time) =>

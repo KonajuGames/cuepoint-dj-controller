@@ -62,6 +62,7 @@ sealed class SongBrowser : Panel
         List = new ListView<Song>(body)
         {
             EmptyText = "No songs here",
+            DragLabel = song => $"{song.Artist} - {song.Title}",
             RowProgress = analyser.ProgressOf,
             ProgressColor = Theme.Fade(Theme.Accent, 0.1f),
             AlternateRow = Colors.Hex(0xFFFFFF, 0.03f),

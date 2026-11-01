@@ -34,6 +34,11 @@ sealed class MainScreen : Panel
     public SongBrowser Browser { get; }
     public OptionsDialog Options { get; }
 
+    /// <summary>
+    /// A song was dragged from the list onto a deck, to load there.
+    /// </summary>
+    public event Action<Deck, Song>? SongDropped;
+
     public MainScreen(
         AudioEngine engine,
         IReadOnlyList<Deck> decks,
@@ -66,6 +71,7 @@ sealed class MainScreen : Panel
             if (i == (deckPanels.Count + 1) / 2)
                 Add(_mixer);
             _decks.Add(Add(deckPanels[i]));
+            deckPanels[i].SongDropped += (panel, song) => SongDropped?.Invoke(panel.Deck, song);
         }
         if (deckPanels.Count < 2)
             Add(_mixer);
@@ -99,6 +105,8 @@ sealed class MainScreen : Panel
     /// <summary>
     /// Puts <paramref name="message"/> on the status line, with the time.
     /// </summary>
+    public Deck? DeckAt(float2 point) => _decks.FirstOrDefault(panel => panel.Visible && panel.Contains(point))?.Deck;
+
     public void Log(string message) => Browser.Status = $"{DateTime.Now:HH:mm:ss}  {message}";
 
     public void Update()

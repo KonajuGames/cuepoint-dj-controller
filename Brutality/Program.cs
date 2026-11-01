@@ -193,6 +193,36 @@ static void Run()
     }
 
     browser.LoadRequested += (song, deckName) => Load(song, decks.First(deck => deck.Name == deckName));
+    screen.SongDropped += (deck, song) => Load(song, deck);
+
+    // Files dragged in from Explorer load on the deck they're dropped on: the first audio file among them, or the
+    // first in the first folder dropped.
+    input.FilesDropped += (point, paths) =>
+    {
+        if (screen.DeckAt(point) is not { } deck)
+        {
+            screen.Log("Drop songs on a deck to load them");
+            return;
+        }
+
+        // A file outside the library becomes a song by browsing its folder, as the folder tree would.
+        Song? SongFor(string path)
+        {
+            if (Directory.Exists(path))
+                return library.SongsIn(path).FirstOrDefault();
+            if (!File.Exists(path) || !MusicLibrary.Extensions.Contains(Path.GetExtension(path)))
+                return null;
+            if (library.Find(path) is null && Path.GetDirectoryName(Path.GetFullPath(path)) is { } folder)
+                library.SongsIn(folder);
+            return library.Find(path);
+        }
+
+        var song = paths.Select(SongFor).FirstOrDefault(found => found is not null);
+        if (song is null)
+            screen.Log(paths.Length == 1 ? $"{Path.GetFileName(paths[0])} isn't a song Cuepoint can play" : "None of those are songs Cuepoint can play");
+        else
+            Load(song, deck);
+    };
 
     // Double-click or Enter picks a deck for you: an empty one if there is one, otherwise one that's paused. Never a
     // playing one, so a load can't cut off the song you're playing out.

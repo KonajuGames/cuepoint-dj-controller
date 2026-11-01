@@ -24,6 +24,11 @@ sealed class GlfwUiInput : IDisposable
     /// </summary>
     public event Action<GlfwKey, GlfwKeyAction, GlfwModifier>? UnhandledKey;
 
+    /// <summary>
+    /// Files were dragged from outside the app and dropped on the window, at the given point in framebuffer pixels.
+    /// </summary>
+    public event Action<float2, string[]>? FilesDropped;
+
     public GlfwUiInput(GlfwWindow window, Root ui)
     {
         _window = window;
@@ -40,7 +45,10 @@ sealed class GlfwUiInput : IDisposable
         window.OnScroll += OnScroll;
         window.OnKey += OnKey;
         window.OnChar += OnChar;
+        window.OnDrop += OnDrop;
     }
+
+    void OnDrop(GlfwWindow window, int count, string[] paths) => FilesDropped?.Invoke(ToFramebuffer(window.CursorPos), paths);
 
     /// <summary>
     /// GLFW reports the cursor in window coordinates, which differ from framebuffer pixels on high-DPI displays.
