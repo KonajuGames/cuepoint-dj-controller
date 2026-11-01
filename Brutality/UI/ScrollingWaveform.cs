@@ -131,7 +131,7 @@ sealed class ScrollingWaveform : Element
             if (x < ScreenPosition.X || x >= ScreenPosition.X + Size.X)
                 continue;
 
-            var isBar = ((long)beat % 4 + 4) % 4 == 0;
+            var isBar = grid.IsBarStart(beat);
             batch.AddRect(new float2(x, ScreenPosition.Y), new float2(1, Size.Y), Colors.Hex(0xFFFFFF, isBar ? 0.35f : 0.12f));
             if (isBar)
             {

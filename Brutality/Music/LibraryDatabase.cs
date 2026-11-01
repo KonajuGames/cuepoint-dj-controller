@@ -17,7 +17,7 @@ sealed class LibraryDatabase
     /// <summary>
     /// Bump this when analysis changes enough that earlier results should be redone.
     /// </summary>
-    public const int ANALYSIS_VERSION = 2;
+    public const int ANALYSIS_VERSION = 3;
 
     const int FILE_VERSION = 1;
 
@@ -103,7 +103,10 @@ sealed class LibraryDatabase
             return false;
         try
         {
-            var grid = new BeatGrid(markers.Select(marker => new GridMarker(marker.Time, marker.Bpm)).ToList(), record.Duration);
+            var grid = new BeatGrid(markers.Select(marker => new GridMarker(marker.Time, marker.Bpm)).ToList(), record.Duration)
+            {
+                DownbeatOffset = record.Downbeat,
+            };
             analysis = new TrackAnalysis(grid, record.Loudness, record.Peak, key);
             return true;
         }
@@ -122,6 +125,7 @@ sealed class LibraryDatabase
             AnalysisVersion = ANALYSIS_VERSION,
             Bpm = analysis.Bpm,
             Duration = Math.Round(analysis.Grid.Duration, 3),
+            Downbeat = analysis.Grid.DownbeatOffset,
             Grid = analysis.Grid.Markers.Select(marker => new MarkerRecord { Time = Math.Round(marker.Time, 4), Bpm = marker.Bpm }).ToList(),
             Loudness = Math.Round(analysis.Loudness, 2),
             Peak = analysis.Peak,
@@ -194,6 +198,11 @@ sealed class LibraryDatabase
 
         public double Duration { get; set; }
         public List<MarkerRecord>? Grid { get; set; }
+
+        /// <summary>
+        /// Which beat of the grid's counting starts a bar, from 0 to 3.
+        /// </summary>
+        public int Downbeat { get; set; }
         public double Loudness { get; set; }
         public float Peak { get; set; }
         public string? Key { get; set; }

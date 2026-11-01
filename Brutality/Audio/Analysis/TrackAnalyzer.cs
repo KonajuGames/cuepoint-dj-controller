@@ -134,11 +134,12 @@ static class TrackAnalyzer
 
             var mono = _mono.AsSpan(0, _monoFilled);
             var beats = BeatDetector.Detect(mono, _rate, cancel);
+            var grid = beats.Grid.WithDownbeat(DownbeatDetector.Detect(mono, _rate, beats.Grid, cancel).Offset);
             progress?.Invoke(BEATS_FOUND);
             var key = KeyDetector.Detect(mono, _rate, cancel);
             progress?.Invoke(1);
 
-            return new TrackAnalysis(beats.Grid, _loudness.IntegratedLoudness, _loudness.Peak, key.Key);
+            return new TrackAnalysis(grid, _loudness.IntegratedLoudness, _loudness.Peak, key.Key);
         }
     }
 }

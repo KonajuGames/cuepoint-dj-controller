@@ -148,9 +148,11 @@ sealed class WaveformBar : Slider
             yield break;
         var interval = GridInterval(Travel / (last - first));
 
-        // Counted from the grid's first beat, so the same lines show whatever the zoom, and bars stay on bars.
-        for (var beat = Math.Ceiling(first / interval) * interval; beat <= last; beat += interval)
-            yield return (beat, (long)Math.Round(beat / interval) % 4 == 0);
+        // Counted from the song's first downbeat, so the same lines show whatever the zoom, bars stay on bars, and the
+        // brighter lines mark phrases.
+        var offset = grid.DownbeatOffset;
+        for (var beat = Math.Ceiling((first - offset) / interval) * interval + offset; beat <= last; beat += interval)
+            yield return (beat, ((long)Math.Round((beat - offset) / interval) % 4 + 4) % 4 == 0);
     }
 
     void DrawGrid(Batch batch, float left)

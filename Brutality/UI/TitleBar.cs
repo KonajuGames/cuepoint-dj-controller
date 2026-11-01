@@ -98,7 +98,7 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
 
             var lit = -1;
             if (deck.Analysis?.Grid is { } grid && deck.IsLoaded)
-                lit = (int)(((long)Math.Floor(grid.BeatNumberAt(deck.Position.TotalSeconds)) % 4 + 4) % 4);
+                lit = grid.BarPosition(grid.BeatNumberAt(deck.Position.TotalSeconds));
 
             for (var i = 0; i < 4; i++)
             {

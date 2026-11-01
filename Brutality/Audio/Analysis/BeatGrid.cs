@@ -44,6 +44,34 @@ sealed class BeatGrid : IEquatable<BeatGrid>
     public bool IsVariable => Markers.Count > 1;
 
     /// <summary>
+    /// Bars are four beats.
+    /// </summary>
+    public const int BEATS_PER_BAR = 4;
+
+    /// <summary>
+    /// Which beat starts a bar, counting as <see cref="BeatNumberAt"/> does, from 0 to 3: beat numbers this far past
+    /// a multiple of four are the "one" of a bar. Found by <see cref="DownbeatDetector"/>.
+    /// </summary>
+    public int DownbeatOffset { get; init; }
+
+    /// <summary>
+    /// Where beat <paramref name="beat"/> falls in its bar, from 0 (the downbeat) to 3.
+    /// </summary>
+    public int BarPosition(double beat) =>
+        (int)(((long)Math.Floor(beat) - DownbeatOffset) % BEATS_PER_BAR + BEATS_PER_BAR) % BEATS_PER_BAR;
+
+    /// <summary>
+    /// Whether beat <paramref name="beat"/> (a whole number) is the first of a bar.
+    /// </summary>
+    public bool IsBarStart(double beat) => BarPosition(beat) == 0;
+
+    /// <summary>
+    /// The same grid with its bars starting on <paramref name="offset"/>.
+    /// </summary>
+    public BeatGrid WithDownbeat(int offset) =>
+        new(Markers, Duration) { DownbeatOffset = ((offset % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR };
+
+    /// <summary>
     /// The tempo at <paramref name="seconds"/> into the song.
     /// </summary>
     public double BpmAt(double seconds) => MarkerAt(seconds).Bpm;
@@ -162,7 +190,10 @@ sealed class BeatGrid : IEquatable<BeatGrid>
     }
 
     public bool Equals(BeatGrid? other) =>
-        other is not null && Duration == other.Duration && Markers.SequenceEqual(other.Markers);
+        other is not null
+        && Duration == other.Duration
+        && DownbeatOffset == other.DownbeatOffset
+        && Markers.SequenceEqual(other.Markers);
 
     public override bool Equals(object? obj) => Equals(obj as BeatGrid);
 
