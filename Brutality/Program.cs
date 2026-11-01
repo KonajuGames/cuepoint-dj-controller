@@ -116,11 +116,12 @@ static void Run()
     // What's been loaded onto a deck this run, oldest first, for the History folder.
     var history = new List<Song>();
 
-    // Songs put together by hand, a playlist file each. Deleting one sends its file to the Recycle Bin, unless
-    // Windows is set to delete straight away on that drive.
+    // Songs put together by hand, a playlist file each, in the app's folder or on the drive of the user's choosing.
+    // Deleting one sends its file to the Recycle Bin, unless Windows is set to delete straight away on that drive.
     var virtualFolders = new VirtualFolders(
         library,
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "Virtual folders")
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "Virtual folders"),
+        () => VirtualFolders.ReadyDrives(WindowsShell.IsReadOnlyVolume)
     );
     if (OperatingSystem.IsWindows())
         virtualFolders.RemoveFile = WindowsShell.MoveToRecycleBin;
@@ -478,6 +479,38 @@ static void Run()
         }
     }
 
+    void MoveVirtualFolder(VirtualFolder folder, StorageDrive drive)
+    {
+        try
+        {
+            virtualFolders.MoveToDrive(folder, drive.Root);
+            FoldersChanged();
+            screen.Log(folder.Drive is null ? $"Moved {folder.Name} to the app's folder" : $"Moved {folder.Name} to {Path.GetDirectoryName(folder.FilePath)}");
+        }
+        catch (InvalidOperationException e)
+        {
+            screen.Log($"Couldn't move {folder.Name} to {drive.Label}: {e.Message}");
+        }
+    }
+
+    // Drives come and go: a virtual folder kept on one shows up when it's plugged in, and goes when it's taken out.
+    var nextDriveScan = 0.0;
+    void ScanDrives(double now)
+    {
+        if (now < nextDriveScan)
+            return;
+        nextDriveScan = now + 3;
+        if (!virtualFolders.Rescan())
+            return;
+        var showing = browser.Source?.Folder;
+        FoldersChanged();
+        if (showing is not null && !virtualFolders.All.Contains(showing))
+        {
+            screen.FolderTree.Select(virtualFoldersNode);
+            browser.Source = folders[0];
+        }
+    }
+
     screen.FolderTree.ItemSecondaryClicked += (node, point) =>
     {
         if (node.Kind == LibraryNodeKind.VirtualFolders)
@@ -487,6 +520,17 @@ static void Run()
                 point,
                 [
                     new MenuItem("Rename...", () => RenameVirtualFolder(folder)),
+                    new MenuItem(
+                        "Store on drive",
+                        virtualFolders
+                            .WritableDrives()
+                            .Select(drive => new MenuItem(
+                                drive.Label,
+                                () => MoveVirtualFolder(folder, drive),
+                                Checked: virtualFolders.IsOn(folder, drive.Root)
+                            ))
+                            .ToList()
+                    ),
                     new MenuItem(
                         "Delete...",
                         () =>
@@ -591,6 +635,7 @@ static void Run()
         plays.Update(decks, now - lastFrame);
         lighting.Update(now);
         controllers?.Update(now, now - lastFrame);
+        ScanDrives(now);
         lastFrame = now;
         if (minimised)
             continue;

@@ -5,7 +5,8 @@ namespace Brutality;
 /// <summary>
 /// What a windowed (WinExe) app loses on Windows, put back: console output when started from a terminal, and a
 /// visible error when it crashes. Elsewhere there is no WinExe distinction, so both fall back to the console. Also
-/// the Recycle Bin, for deleting files the user can get back, and keeping the computer awake mid-set.
+/// the Recycle Bin, for deleting files the user can get back, keeping the computer awake mid-set, and telling a
+/// read-only drive.
 /// </summary>
 static unsafe partial class WindowsShell
 {
@@ -13,6 +14,7 @@ static unsafe partial class WindowsShell
     const uint MB_OK = 0x0, MB_ICONERROR = 0x10;
     const uint FO_DELETE = 3;
     const ushort FOF_SILENT = 0x4, FOF_NOCONFIRMATION = 0x10, FOF_ALLOWUNDO = 0x40, FOF_NOERRORUI = 0x400;
+    const uint FILE_READ_ONLY_VOLUME = 0x80000;
     const uint ES_SYSTEM_REQUIRED = 0x1, ES_DISPLAY_REQUIRED = 0x2, ES_CONTINUOUS = 0x80000000;
 
     /// <summary>
@@ -31,6 +33,18 @@ static unsafe partial class WindowsShell
             return;
         if (SetThreadExecutionState(awake ? ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED : ES_CONTINUOUS) != 0)
             IsKeepingAwake = awake;
+    }
+
+    /// <summary>
+    /// Whether the drive at <paramref name="root"/> (as "F:\\") can only be read: a CD, or a card with its lock on.
+    /// Asks without writing anything there.
+    /// </summary>
+    public static bool IsReadOnlyVolume(string root)
+    {
+        if (!OperatingSystem.IsWindows())
+            return false;
+        uint flags;
+        return GetVolumeInformationW(root, null, 0, null, null, &flags, null, 0) && (flags & FILE_READ_ONLY_VOLUME) != 0;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -107,4 +121,17 @@ static unsafe partial class WindowsShell
 
     [LibraryImport("kernel32.dll")]
     private static partial uint SetThreadExecutionState(uint flags);
+
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetVolumeInformationW(
+        string rootPath,
+        char* volumeName,
+        uint volumeNameSize,
+        uint* serialNumber,
+        uint* maximumComponentLength,
+        uint* fileSystemFlags,
+        char* fileSystemName,
+        uint fileSystemNameSize
+    );
 }

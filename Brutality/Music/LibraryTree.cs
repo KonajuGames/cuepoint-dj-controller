@@ -55,7 +55,7 @@ sealed class LibraryNode
     /// <summary>
     /// What it's called: for a virtual folder, whatever the folder is called now.
     /// </summary>
-    public string Name => Folder?.Name ?? _name;
+    public string Name => Folder?.DisplayName ?? _name;
 
     public LibraryNodeKind Kind { get; }
 

@@ -10,14 +10,27 @@ sealed class VirtualFolder
 {
     readonly List<string> _paths;
 
-    internal VirtualFolder(string name, string filePath, List<string> paths)
+    internal VirtualFolder(string name, string filePath, List<string> paths, string? drive)
     {
         Name = name;
         FilePath = filePath;
         _paths = paths;
+        Drive = drive;
     }
 
     public string Name { get; internal set; }
+
+    /// <summary>
+    /// The root of the drive it's stored on (as "F:\"), in a Cuepoint folder there; null when it's in the app's own
+    /// folder on the system drive.
+    /// </summary>
+    public string? Drive { get; internal set; }
+
+    /// <summary>
+    /// Its name, with the drive it's on if that isn't the system drive, as "Warm up (F:)": two drives can each have
+    /// one of a name.
+    /// </summary>
+    public string DisplayName => Drive is { } drive ? $"{Name} ({drive.TrimEnd('\\', '/')})" : Name;
 
     /// <summary>
     /// The playlist file it's saved in.
@@ -35,30 +48,97 @@ sealed class VirtualFolder
 }
 
 /// <summary>
-/// The virtual folders: every playlist (.m3u8) in one folder on disk, one file each, named for the virtual folder. A
-/// playlist written elsewhere and copied in shows up as one too. Every change is saved straight away. UI thread only.
+/// A drive a virtual folder can be stored on: its root (as "F:\"), what to call it, and whether it can be written to.
+/// </summary>
+sealed record StorageDrive(string Root, string Label, bool Writable);
+
+/// <summary>
+/// The virtual folders: every playlist (.m3u8) in the app's own folder, and in a Cuepoint\VirtualFolders folder on
+/// any drive, one file each, named for the virtual folder. A folder can be moved to any drive that can be written
+/// to, so one of songs on a removable drive goes with it: songs on the drive it's stored on are written relative to
+/// it, so they're found under whatever letter the drive gets. A playlist written elsewhere and copied in shows up as
+/// one too. Every change is saved straight away. UI thread only.
 /// </summary>
 sealed class VirtualFolders
 {
     public const string EXTENSION = ".m3u8";
 
+    /// <summary>
+    /// Where a drive's virtual folders are kept, from its root.
+    /// </summary>
+    public static readonly string DriveFolder = Path.Combine("Cuepoint", "VirtualFolders");
+
     readonly MusicLibrary _library;
     readonly List<VirtualFolder> _folders = [];
+    readonly Func<IReadOnlyList<StorageDrive>> _drives;
+    readonly string _systemRoot;
 
     // Songs found for paths outside the library, so a folder of them doesn't look on disk each time it's listed.
     readonly Dictionary<string, Song> _found = new(StringComparer.OrdinalIgnoreCase);
 
-    public VirtualFolders(MusicLibrary library, string directory)
+    /// <param name="directory">The app's own folder for them, on the system drive.</param>
+    /// <param name="drives">The drives there are now, the system drive among them; by default, every one Windows
+    /// has ready.</param>
+    /// <param name="systemRoot">The system drive, whose virtual folders are kept in <paramref name="directory"/>;
+    /// by default, the one Windows is on.</param>
+    public VirtualFolders(MusicLibrary library, string directory, Func<IReadOnlyList<StorageDrive>>? drives = null, string? systemRoot = null)
     {
         _library = library;
         Directory = directory;
+        _drives = drives ?? (() => ReadyDrives());
+        _systemRoot = LibraryFile.WithSeparator(systemRoot ?? Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\");
         Load();
     }
 
     /// <summary>
-    /// Where the playlist files are kept.
+    /// The app's own folder for virtual folders, on the system drive.
     /// </summary>
     public string Directory { get; }
+
+    /// <summary>
+    /// Every drive Windows has ready that could hold music: fixed, removable and network ones. Each is writable
+    /// unless <paramref name="readOnly"/> says it isn't.
+    /// </summary>
+    public static IReadOnlyList<StorageDrive> ReadyDrives(Func<string, bool>? readOnly = null)
+    {
+        var drives = new List<StorageDrive>();
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (!drive.IsReady || drive.DriveType is not (DriveType.Fixed or DriveType.Removable or DriveType.Network))
+                    continue;
+                var root = drive.RootDirectory.FullName;
+                var letter = root.TrimEnd('\\', '/');
+                var label = drive.VolumeLabel.Length > 0 ? $"{letter} {drive.VolumeLabel}" : letter;
+                drives.Add(new StorageDrive(root, label, readOnly?.Invoke(root) != true));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A drive going away as it's asked about.
+            }
+        }
+        return drives;
+    }
+
+    /// <summary>
+    /// The drives a virtual folder can be moved to: those that can be written to, the system drive first.
+    /// </summary>
+    public IReadOnlyList<StorageDrive> WritableDrives() =>
+        _drives().Where(drive => drive.Writable).OrderBy(drive => IsSystem(drive.Root) ? 0 : 1).ThenBy(drive => drive.Root, StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>
+    /// Whether <paramref name="folder"/> is kept on the drive at <paramref name="root"/>.
+    /// </summary>
+    public bool IsOn(VirtualFolder folder, string root) =>
+        folder.Drive is { } drive ? string.Equals(drive, LibraryFile.WithSeparator(root), StringComparison.OrdinalIgnoreCase) : IsSystem(root);
+
+    bool IsSystem(string root) => string.Equals(LibraryFile.WithSeparator(root), _systemRoot, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Where the virtual folders on <paramref name="drive"/> (null for the app's own) are kept.
+    /// </summary>
+    string FolderFor(string? drive) => drive is null ? Directory : Path.Combine(drive, DriveFolder);
 
     /// <summary>
     /// The virtual folders, by name.
@@ -72,21 +152,58 @@ sealed class VirtualFolders
 
     void Load()
     {
+        LoadFrom(null);
+        foreach (var drive in _drives().Where(drive => !IsSystem(drive.Root)))
+            LoadFrom(LibraryFile.WithSeparator(drive.Root));
+        Sort();
+    }
+
+    /// <summary>
+    /// Adds the virtual folders kept on <paramref name="drive"/> (null for the app's own folder) that aren't known
+    /// yet. Returns how many.
+    /// </summary>
+    int LoadFrom(string? drive)
+    {
+        var folder = FolderFor(drive);
         IEnumerable<string> files;
         try
         {
-            files = System.IO.Directory.Exists(Directory) ? System.IO.Directory.EnumerateFiles(Directory, "*" + EXTENSION).ToList() : [];
+            files = System.IO.Directory.Exists(folder) ? System.IO.Directory.EnumerateFiles(folder, "*" + EXTENSION).ToList() : [];
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             files = [];
         }
+        var added = 0;
         foreach (var file in files)
-            _folders.Add(new VirtualFolder(Path.GetFileNameWithoutExtension(file), file, ReadPlaylist(file)));
-        Sort();
+        {
+            if (_folders.Any(known => string.Equals(known.FilePath, file, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            _folders.Add(new VirtualFolder(Path.GetFileNameWithoutExtension(file), file, ReadPlaylist(file), drive));
+            added++;
+        }
+        return added;
     }
 
-    void Sort() => _folders.Sort((a, b) => StringComparer.CurrentCultureIgnoreCase.Compare(a.Name, b.Name));
+    /// <summary>
+    /// Looks again for drives come and gone: the virtual folders on a drive just plugged in are added, and those on
+    /// one taken out go. Returns whether anything changed, having raised <see cref="Changed"/> if so.
+    /// </summary>
+    public bool Rescan()
+    {
+        var present = _drives().Where(drive => !IsSystem(drive.Root)).Select(drive => LibraryFile.WithSeparator(drive.Root)).ToList();
+        var gone = _folders.RemoveAll(folder =>
+            folder.Drive is { } drive && (!present.Contains(drive, StringComparer.OrdinalIgnoreCase) || !File.Exists(folder.FilePath))
+        );
+        var added = present.Sum(LoadFrom);
+        if (gone == 0 && added == 0)
+            return false;
+        Sort();
+        Changed?.Invoke(null);
+        return true;
+    }
+
+    void Sort() => _folders.Sort((a, b) => StringComparer.CurrentCultureIgnoreCase.Compare(a.DisplayName, b.DisplayName));
 
     /// <summary>
     /// The paths in a playlist, in order: each line that isn't blank or a comment, relative ones taken from the
@@ -115,16 +232,21 @@ sealed class VirtualFolders
     }
 
     /// <summary>
-    /// Writes a folder's playlist to a temporary file then swaps it in. Returns why it couldn't, if it couldn't.
+    /// Writes a folder's playlist to a temporary file then swaps it in. Returns why it couldn't, if it couldn't. Kept
+    /// on a drive, its songs on that drive are written relative to the playlist, so they're found under any letter.
     /// </summary>
     static string? Save(VirtualFolder folder)
     {
         try
         {
-            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(folder.FilePath)!);
+            var directory = Path.GetDirectoryName(folder.FilePath)!;
+            System.IO.Directory.CreateDirectory(directory);
             var text = new StringBuilder("#EXTM3U\n");
             foreach (var path in folder.Paths)
-                text.Append(path).Append('\n');
+            {
+                var onDrive = folder.Drive is { } drive && path.StartsWith(drive, StringComparison.OrdinalIgnoreCase);
+                text.Append(onDrive ? Path.GetRelativePath(directory, path) : path).Append('\n');
+            }
             var temporary = folder.FilePath + ".tmp";
             File.WriteAllText(temporary, text.ToString(), new UTF8Encoding(false));
             File.Move(temporary, folder.FilePath, overwrite: true);
@@ -170,8 +292,9 @@ sealed class VirtualFolders
     }
 
     /// <summary>
-    /// Why <paramref name="name"/> can't name a virtual folder (other than <paramref name="except"/>), or null if it
-    /// can: it has to be a file name, and not one already taken.
+    /// Why <paramref name="name"/> can't name a virtual folder (other than <paramref name="except"/>, and where
+    /// <paramref name="except"/> is kept), or null if it can: it has to be a file name, and not one already taken
+    /// there.
     /// </summary>
     public string? CheckName(string name, VirtualFolder? except = null)
     {
@@ -180,9 +303,18 @@ sealed class VirtualFolders
             return "Give it a name";
         if (trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || trimmed.EndsWith('.'))
             return "A name can't have \\ / : * ? \" < > | in it, or end with a full stop";
-        if (_folders.Any(folder => folder != except && string.Equals(folder.Name, trimmed, StringComparison.OrdinalIgnoreCase)))
-            return $"There's already a virtual folder called {trimmed}";
-        return null;
+        return NameTaken(trimmed, except, except?.Drive);
+    }
+
+    /// <summary>
+    /// Why <paramref name="name"/> is taken on <paramref name="drive"/> (null for the app's own folder) by a virtual
+    /// folder other than <paramref name="except"/>, or null if it isn't.
+    /// </summary>
+    string? NameTaken(string name, VirtualFolder? except, string? drive)
+    {
+        if (!_folders.Any(folder => folder != except && string.Equals(folder.Drive, drive, StringComparison.OrdinalIgnoreCase) && string.Equals(folder.Name, name, StringComparison.OrdinalIgnoreCase)))
+            return null;
+        return drive is null ? $"There's already a virtual folder called {name}" : $"There's already a virtual folder called {name} on {drive.TrimEnd('\\', '/')}";
     }
 
     /// <summary>
@@ -205,7 +337,7 @@ sealed class VirtualFolders
         if (CheckName(name) is { } problem)
             throw new InvalidOperationException(problem);
         name = name.Trim();
-        var folder = new VirtualFolder(name, Path.Combine(Directory, name + EXTENSION), []);
+        var folder = new VirtualFolder(name, Path.Combine(Directory, name + EXTENSION), [], null);
         if (Save(folder) is { } error)
             throw new InvalidOperationException(error);
         _folders.Add(folder);
@@ -225,7 +357,7 @@ sealed class VirtualFolders
         name = name.Trim();
         if (name == folder.Name)
             return;
-        var path = Path.Combine(Directory, name + EXTENSION);
+        var path = Path.Combine(FolderFor(folder.Drive), name + EXTENSION);
         try
         {
             // A change of case only is still a move on Windows, which File.Move does in place.
@@ -244,6 +376,42 @@ sealed class VirtualFolders
         }
         folder.Name = name;
         folder.FilePath = path;
+        Sort();
+        Changed?.Invoke(null);
+    }
+
+    /// <summary>
+    /// Moves a virtual folder's playlist to a Cuepoint\VirtualFolders folder on another drive (by its root), or back
+    /// to the app's own folder for the system drive. It's written there first, its songs on that drive relative to
+    /// it, and only then taken from where it was. Throws <see cref="InvalidOperationException"/> with the reason if
+    /// the drive has one of the name already, or it can't be written.
+    /// </summary>
+    public void MoveToDrive(VirtualFolder folder, string root)
+    {
+        string? drive = IsSystem(root) ? null : LibraryFile.WithSeparator(root);
+        if (string.Equals(drive, folder.Drive, StringComparison.OrdinalIgnoreCase))
+            return;
+        if (NameTaken(folder.Name, folder, drive) is { } problem)
+            throw new InvalidOperationException(problem);
+        var path = Path.Combine(FolderFor(drive), folder.Name + EXTENSION);
+        if (File.Exists(path))
+            throw new InvalidOperationException($"There's already a playlist called {folder.Name} there");
+
+        var (oldPath, oldDrive) = (folder.FilePath, folder.Drive);
+        (folder.FilePath, folder.Drive) = (path, drive);
+        if (Save(folder) is { } error)
+        {
+            (folder.FilePath, folder.Drive) = (oldPath, oldDrive);
+            throw new InvalidOperationException(error);
+        }
+        try
+        {
+            File.Delete(oldPath);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Written to its new place, but the old copy's still there; it'll show up again until it's removed.
+        }
         Sort();
         Changed?.Invoke(null);
     }
