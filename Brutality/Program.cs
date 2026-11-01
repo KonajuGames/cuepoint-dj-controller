@@ -133,7 +133,7 @@ static void Run()
     GridEditor? GridEditorFor(Deck deck) => gridEditors.FirstOrDefault(editor => editor.Deck == deck);
 
     var ui = new Root();
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor));
     foreach (var editor in gridEditors)
         editor.Log += screen.Log;
     using var input = new GlfwUiInput(window, ui);
@@ -147,7 +147,7 @@ static void Run()
 
     screen.Log(
         library.Error is { } error ? $"Couldn't read {MUSIC_FOLDER}: {error}"
-        : database.LoadError is { } loadError ? $"Couldn't read {database.FilePath}, so starting afresh: {loadError}"
+        : database.LoadError is { } loadError ? $"Couldn't read {loadError}; it starts afresh"
         : $"{library.Songs.Count} songs in {MUSIC_FOLDER}, {library.Songs.Count(song => song.Analysis is not null)} analysed"
     );
 
@@ -603,6 +603,20 @@ static void Run()
         ui.Layout(screen.ScreenSize);
         input.UpdateCursor();
         renderer.DrawFrame(ui);
+    }
+
+    // Anything about the library not yet saved (a drive's file to write again with relative paths, say) is saved as
+    // the app closes.
+    if (database.Dirty)
+    {
+        try
+        {
+            database.Save();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Couldn't save the library: {e.Message}");
+        }
     }
 
     // The headphone blend and volume are set on the mixer as it plays, so they're kept as the app closes.

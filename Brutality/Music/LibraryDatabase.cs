@@ -1,17 +1,17 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Brutality.Audio.Analysis;
 
 namespace Brutality.Music;
 
 /// <summary>
-/// What's been learnt about the library's songs, kept between runs in a JSON file: each song's analysis, or why it
-/// couldn't be analysed, with the file size and time it was made from so a changed file gets analysed again. A beat
-/// grid is stored as its markers, each a beat time and the tempo from there on. Hotcues, and beat grids fixed by
-/// hand, are kept apart from the analysis, since they're the DJ's own work: analysing again, or a newer analysis,
-/// leaves them be, and a song's fixed grid is given in place of the analysed one wherever its analysis is. Only used
-/// from the UI thread.
+/// What's been learnt about the library's songs (see <see cref="LibraryFile"/>), kept with the songs: songs on the
+/// system drive in the app's own library.json, as ever, and songs on any other drive in a library.json in a Cuepoint
+/// folder at that drive's root, with their paths relative to it. A removable drive takes its songs' analyses, hotcues
+/// and fixed grids with it, under whatever letter it gets next. A drive's file, and its folder, are only made once
+/// there's something to keep about a song on it; a drive that can't be written to has its songs kept in the app's
+/// own file instead.
+///
+/// Opening it moves anything the app's own file has about songs on drives that are plugged in onto those drives.
+/// Only used from the UI thread.
 /// </summary>
 sealed class LibraryDatabase
 {
@@ -20,283 +20,175 @@ sealed class LibraryDatabase
     /// </summary>
     public const int ANALYSIS_VERSION = 4;
 
-    const int FILE_VERSION = 1;
-
-    static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        WriteIndented = true,
-        // Paths stay readable, with their ampersands and accents, rather than escaped for embedding in HTML.
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
-    public string FilePath { get; }
-
     /// <summary>
-    /// Why the file couldn't be read, if it was there but couldn't be; the database starts empty instead.
+    /// Where a drive's file goes, from its root.
     /// </summary>
-    public string? LoadError { get; }
+    public const string DRIVE_FOLDER = "Cuepoint";
 
-    public int Count => _tracks.Count;
+    public const string FILE_NAME = "library.json";
 
-    readonly Dictionary<string, TrackRecord> _tracks;
-    readonly Dictionary<string, double?[]> _hotcues;
-    readonly Dictionary<string, GridRecord> _grids;
+    readonly LibraryFile _system;
+    readonly string _systemRoot;
+    readonly Func<string, string?> _rootOf;
+    readonly Dictionary<string, LibraryFile> _drives = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _unwritable = new(StringComparer.OrdinalIgnoreCase);
 
-    LibraryDatabase(
-        string filePath,
-        Dictionary<string, TrackRecord> tracks,
-        Dictionary<string, double?[]> hotcues,
-        Dictionary<string, GridRecord> grids,
-        string? loadError
-    )
+    LibraryDatabase(LibraryFile system, string systemRoot, Func<string, string?> rootOf)
     {
-        FilePath = filePath;
-        _tracks = new Dictionary<string, TrackRecord>(tracks, StringComparer.OrdinalIgnoreCase);
-        _hotcues = new Dictionary<string, double?[]>(hotcues, StringComparer.OrdinalIgnoreCase);
-        _grids = new Dictionary<string, GridRecord>(grids, StringComparer.OrdinalIgnoreCase);
-        LoadError = loadError;
+        _system = system;
+        _systemRoot = Normal(systemRoot);
+        _rootOf = rootOf;
+        LoadError = system.LoadError is { } error ? $"{system.FilePath}: {error}" : null;
     }
 
     /// <summary>
-    /// Reads the database at <paramref name="filePath"/>, or starts an empty one if there isn't one yet or it can't
-    /// be read (see <see cref="LoadError"/>). Nothing is written until <see cref="Save"/>.
+    /// The app's own file, for songs on the system drive.
     /// </summary>
-    public static LibraryDatabase Load(string filePath)
-    {
-        filePath = Path.GetFullPath(filePath);
-        if (!File.Exists(filePath))
-            return new LibraryDatabase(filePath, [], [], [], null);
+    public string FilePath => _system.FilePath;
 
-        try
-        {
-            using var stream = File.OpenRead(filePath);
-            var file = JsonSerializer.Deserialize<DatabaseFile>(stream, JsonOptions);
-            if (file is null || file.Version != FILE_VERSION)
-                return new LibraryDatabase(filePath, [], [], [], $"Unrecognised database version {file?.Version}");
-            return new LibraryDatabase(filePath, file.Tracks ?? [], file.Hotcues ?? [], file.Grids ?? [], null);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
-        {
-            return new LibraryDatabase(filePath, [], [], [], e.Message);
-        }
+    /// <summary>
+    /// Why a file couldn't be read, if one was there but couldn't be, with its path; it starts empty instead.
+    /// </summary>
+    public string? LoadError { get; private set; }
+
+    public int Count => _system.Count + _drives.Values.Sum(file => file.Count);
+
+    /// <summary>
+    /// Whether any of its files has changes not yet saved.
+    /// </summary>
+    public bool Dirty => _system.Dirty || _drives.Values.Any(file => file.Dirty);
+
+    /// <summary>
+    /// The drives' own files in use, by path.
+    /// </summary>
+    public IEnumerable<string> DriveFiles => _drives.Values.Select(file => file.FilePath);
+
+    /// <summary>
+    /// Opens the app's own file at <paramref name="filePath"/>, then any other drive's as its songs come up, moving
+    /// what the app's own file has about songs on other drives (that are plugged in) onto them. The system drive is
+    /// <paramref name="systemRoot"/>, by default the one Windows is on; <paramref name="rootOf"/> gives the drive a
+    /// path is on (its root, as "F:\"), by default from the path itself.
+    /// </summary>
+    public static LibraryDatabase Load(string filePath, string? systemRoot = null, Func<string, string?>? rootOf = null)
+    {
+        var database = new LibraryDatabase(
+            LibraryFile.Load(filePath),
+            systemRoot ?? Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\",
+            rootOf ?? (path => Path.GetPathRoot(Path.GetFullPath(path)))
+        );
+        database.MoveToDrives();
+        return database;
     }
 
+    static string Normal(string root) => LibraryFile.WithSeparator(root);
+
     /// <summary>
-    /// What's known about <paramref name="song"/>, if it was found from the file as it is now with the current
-    /// analysis: its analysis (with its beat grid as fixed by hand, if it was), or the error analysing it gave.
+    /// The root of the drive <paramref name="path"/> is on, if it's not the system drive; null if it is.
     /// </summary>
-    public bool TryGet(Song song, out TrackAnalysis? analysis, out string? error)
+    string? OtherDrive(string path)
     {
-        var found = TryGetAnalysed(song, out analysis, out error);
-        if (analysis is not null)
-            analysis = WithEdits(song.Path, analysis);
-        return found;
-    }
-
-    /// <summary>
-    /// <see cref="TryGet"/>, but with the beat grid as analysed, whether or not it was fixed by hand since.
-    /// </summary>
-    public bool TryGetAnalysed(Song song, out TrackAnalysis? analysis, out string? error)
-    {
-        (analysis, error) = (null, null);
-        if (
-            !_tracks.TryGetValue(song.Path, out var record)
-            || record.Size != song.Size
-            || record.Modified != song.Modified
-            || record.AnalysisVersion != ANALYSIS_VERSION
-        )
-            return false;
-
-        if (record.Error is { } recorded)
-        {
-            error = recorded;
-            return true;
-        }
-        if (MusicalKey.Parse(record.Key) is not { } key || record.Grid is not { Count: > 0 } markers)
-            return false;
-        try
-        {
-            var grid = new BeatGrid(markers.Select(marker => new GridMarker(marker.Time, marker.Bpm)).ToList(), record.Duration)
-            {
-                DownbeatOffset = record.Downbeat,
-            };
-            analysis = new TrackAnalysis(grid, record.Loudness, record.Peak, key);
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            // Markers out of order: edited by hand, perhaps. Analysing again puts it right.
-            return false;
-        }
-    }
-
-    public void Set(Song song, TrackAnalysis analysis) =>
-        _tracks[song.Path] = new TrackRecord
-        {
-            Size = song.Size,
-            Modified = song.Modified,
-            AnalysisVersion = ANALYSIS_VERSION,
-            Bpm = analysis.Bpm,
-            Duration = Math.Round(analysis.Grid.Duration, 3),
-            Downbeat = analysis.Grid.DownbeatOffset,
-            Grid = analysis.Grid.Markers.Select(marker => new MarkerRecord { Time = Math.Round(marker.Time, 4), Bpm = marker.Bpm }).ToList(),
-            Loudness = Math.Round(analysis.Loudness, 2),
-            Peak = analysis.Peak,
-            Key = analysis.Key.Name,
-        };
-
-    /// <summary>
-    /// The hotcues saved for the song at <paramref name="path"/>, in seconds; empty if there are none.
-    /// </summary>
-    public IReadOnlyList<TimeSpan?> GetHotcues(string path) =>
-        _hotcues.TryGetValue(Path.GetFullPath(path), out var seconds)
-            ? seconds.Select(at => at is { } s ? TimeSpan.FromSeconds(s) : (TimeSpan?)null).ToList()
-            : [];
-
-    /// <summary>
-    /// Keeps <paramref name="hotcues"/> for the song at <paramref name="path"/>, or forgets them if none is set.
-    /// </summary>
-    public void SetHotcues(string path, IReadOnlyList<TimeSpan?> hotcues)
-    {
-        path = Path.GetFullPath(path);
-        if (hotcues.All(at => at is null))
-            _hotcues.Remove(path);
-        else
-            _hotcues[path] = hotcues.Select(at => at is { } t ? Math.Round(t.TotalSeconds, 3) : (double?)null).ToArray();
-    }
-
-    /// <summary>
-    /// <paramref name="analysis"/> of the song at <paramref name="path"/>, with its beat grid as fixed by hand if it
-    /// was.
-    /// </summary>
-    public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) =>
-        GetGridEdit(path, analysis.Grid.Duration) is { } edit ? analysis with { Grid = edit.Grid } : analysis;
-
-    /// <summary>
-    /// The beat grid fixed by hand for the song at <paramref name="path"/>, with its pins, if it was;
-    /// <paramref name="duration"/> is the song's length, for the grid. Null if it wasn't, or what's saved won't make a
-    /// grid.
-    /// </summary>
-    public GridEdit? GetGridEdit(string path, double duration)
-    {
-        if (!_grids.TryGetValue(Path.GetFullPath(path), out var record) || record.Markers is not { Count: > 0 } markers)
+        if (_rootOf(path) is not { Length: > 0 } root)
             return null;
+        root = Normal(root);
+        return string.Equals(root, _systemRoot, StringComparison.OrdinalIgnoreCase) ? null : root;
+    }
+
+    /// <summary>
+    /// The file a song's kept in: its drive's, or the app's own for the system drive, a drive that isn't plugged in,
+    /// or one that can't be written to.
+    /// </summary>
+    LibraryFile FileFor(string path)
+    {
+        if (OtherDrive(path) is not { } root || _unwritable.Contains(root))
+            return _system;
+        if (_drives.TryGetValue(root, out var file))
+            return file;
+        if (!Directory.Exists(root))
+            return _system;
+
+        file = LibraryFile.Load(Path.Combine(root, DRIVE_FOLDER, FILE_NAME), root);
+        if (file.LoadError is { } error)
+            LoadError ??= $"{file.FilePath}: {error}";
+        _drives[root] = file;
+        return file;
+    }
+
+    /// <summary>
+    /// Moves what the app's own file has about songs on other drives that are plugged in onto those drives' files,
+    /// and saves, so it's only in one place. What a drive's file already has wins: it went with the drive.
+    /// </summary>
+    void MoveToDrives()
+    {
+        var moved = 0;
+        foreach (var group in _system.Paths.GroupBy(path => OtherDrive(path) ?? "", StringComparer.OrdinalIgnoreCase).ToList())
+        {
+            if (group.Key == "" || FileFor(group.First()) is not { } file || file == _system)
+                continue;
+            var root = group.Key;
+            moved += _system.MoveTo(file, path => string.Equals(OtherDrive(path), root, StringComparison.OrdinalIgnoreCase), overwrite: false);
+        }
+        // Saved if anything moved, or a drive's file wants writing again (kept from before paths were relative).
+        if (moved == 0 && !_drives.Values.Any(file => file.Dirty))
+            return;
         try
         {
-            var grid = new BeatGrid(markers.Select(marker => new GridMarker(marker.Time, marker.Bpm)).ToList(), duration)
-            {
-                DownbeatOffset = record.Downbeat,
-            };
-            return new GridEdit(grid, record.Pins ?? []);
+            Save();
         }
-        catch (ArgumentException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return null;
+            // Still moved in memory; saved with the next change.
+            LoadError ??= $"{_system.FilePath}: {e.Message}";
         }
     }
 
-    /// <summary>
-    /// Keeps the beat grid fixed by hand for the song at <paramref name="path"/>, or forgets it (going back to the
-    /// analysed one) with null.
-    /// </summary>
-    public void SetGridEdit(string path, GridEdit? edit)
-    {
-        path = Path.GetFullPath(path);
-        if (edit is null)
-            _grids.Remove(path);
-        else
-            _grids[path] = new GridRecord
-            {
-                Markers = edit.Grid.Markers.Select(marker => new MarkerRecord { Time = Math.Round(marker.Time, 5), Bpm = Math.Round(marker.Bpm, 4) }).ToList(),
-                Downbeat = edit.Grid.DownbeatOffset,
-                Pins = edit.Pins.Select(pin => Math.Round(pin, 5)).ToArray(),
-            };
-    }
+    public bool TryGet(Song song, out TrackAnalysis? analysis, out string? error) => FileFor(song.Path).TryGet(song, out analysis, out error);
 
-    public bool HasGridEdit(string path) => _grids.ContainsKey(Path.GetFullPath(path));
+    public bool TryGetAnalysed(Song song, out TrackAnalysis? analysis, out string? error) =>
+        FileFor(song.Path).TryGetAnalysed(song, out analysis, out error);
 
-    public void SetFailed(Song song, string error) =>
-        _tracks[song.Path] = new TrackRecord
-        {
-            Size = song.Size,
-            Modified = song.Modified,
-            AnalysisVersion = ANALYSIS_VERSION,
-            Error = error,
-        };
+    public void Set(Song song, TrackAnalysis analysis) => FileFor(song.Path).Set(song, analysis);
+
+    public void SetFailed(Song song, string error) => FileFor(song.Path).SetFailed(song, error);
+
+    public IReadOnlyList<TimeSpan?> GetHotcues(string path) => FileFor(path).GetHotcues(path);
+
+    public void SetHotcues(string path, IReadOnlyList<TimeSpan?> hotcues) => FileFor(path).SetHotcues(path, hotcues);
+
+    public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) => FileFor(path).WithEdits(path, analysis);
+
+    public GridEdit? GetGridEdit(string path, double duration) => FileFor(path).GetGridEdit(path, duration);
+
+    public void SetGridEdit(string path, GridEdit? edit) => FileFor(path).SetGridEdit(path, edit);
+
+    public bool HasGridEdit(string path) => FileFor(path).HasGridEdit(path);
 
     /// <summary>
-    /// Writes the database out. Written to a temporary file then swapped in, so a crash or full disk mid-write
-    /// leaves the last good copy rather than half a file. Throws <see cref="IOException"/> or
-    /// <see cref="UnauthorizedAccessException"/> if it can't.
+    /// Writes out whatever's changed: each drive's file (made, with its folder, only once there's something in it),
+    /// then the app's own. A drive that can't be written to has its songs moved into the app's own file, and kept
+    /// there from then on. Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> if the app's
+    /// own file can't be written.
     /// </summary>
     public void Save()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        var temporary = FilePath + ".tmp";
-        using (var stream = File.Create(temporary))
-            JsonSerializer.Serialize(
-                stream,
-                new DatabaseFile { Version = FILE_VERSION, Tracks = _tracks, Hotcues = _hotcues, Grids = _grids.Count > 0 ? _grids : null },
-                JsonOptions
-            );
-        File.Move(temporary, FilePath, overwrite: true);
-    }
-
-    sealed class DatabaseFile
-    {
-        public int Version { get; set; }
-        public Dictionary<string, TrackRecord>? Tracks { get; set; }
-
-        /// <summary>
-        /// Each song's hotcues in seconds, null where one isn't set; songs without any are left out.
-        /// </summary>
-        public Dictionary<string, double?[]>? Hotcues { get; set; }
-
-        /// <summary>
-        /// Each song's beat grid as fixed by hand; songs left as analysed are left out.
-        /// </summary>
-        public Dictionary<string, GridRecord>? Grids { get; set; }
-    }
-
-    sealed class GridRecord
-    {
-        public List<MarkerRecord>? Markers { get; set; }
-        public int Downbeat { get; set; }
-
-        /// <summary>
-        /// Where beats were pinned by hand, in seconds.
-        /// </summary>
-        public double[]? Pins { get; set; }
-    }
-
-    sealed class TrackRecord
-    {
-        public long Size { get; set; }
-        public DateTime Modified { get; set; }
-        public int AnalysisVersion { get; set; }
-        /// <summary>
-        /// The main tempo, for anyone reading the file; the grid is what's used.
-        /// </summary>
-        public double Bpm { get; set; }
-
-        public double Duration { get; set; }
-        public List<MarkerRecord>? Grid { get; set; }
-
-        /// <summary>
-        /// Which beat of the grid's counting starts a bar, from 0 to 3.
-        /// </summary>
-        public int Downbeat { get; set; }
-        public double Loudness { get; set; }
-        public float Peak { get; set; }
-        public string? Key { get; set; }
-        public string? Error { get; set; }
-    }
-
-    sealed class MarkerRecord
-    {
-        public double Time { get; set; }
-        public double Bpm { get; set; }
+        foreach (var (root, file) in _drives.ToList())
+        {
+            if (!file.Dirty)
+                continue;
+            if (file.IsEmpty && !File.Exists(file.FilePath))
+                continue;
+            try
+            {
+                file.Save();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // A read-only drive, or one taken out mid-set: its songs are kept with the app's instead.
+                _unwritable.Add(root);
+                file.MoveTo(_system, _ => true, overwrite: true);
+                _drives.Remove(root);
+            }
+        }
+        if (_system.Dirty || !File.Exists(_system.FilePath))
+            _system.Save();
     }
 }
