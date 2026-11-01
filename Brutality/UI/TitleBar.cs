@@ -66,32 +66,51 @@ sealed class IconButton(TitleIcon icon) : Element
 }
 
 /// <summary>
-/// Where a deck is in the bar: four boxes, one per beat, with the current one lit in the deck's colour. Dim while
-/// paused, and empty until the deck's song has a beat grid.
+/// Where each deck is in the bar, one deck to a row, stacked: its letter, then four boxes, one per beat, with the
+/// current one lit in the deck's colour. Dim while paused, and empty until the deck's song has a beat grid.
 /// </summary>
-sealed class BeatTracker(Deck deck, float4 color) : Element
+sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
 {
     const float BOX = 14;
     const float GAP = 3;
+    const float ROW = 9;
+    const float ROW_GAP = 5;
+    const float LETTER = 14;
 
-    public override float2 Measure() => Size = new float2(4 * BOX + 3 * GAP, 8);
+    public override float2 Measure() =>
+        Size = new float2(LETTER + 4 * BOX + 3 * GAP, decks.Count * ROW + Math.Max(0, decks.Count - 1) * ROW_GAP);
+
+    /// <summary>
+    /// How tall <paramref name="font"/>'s capitals stand above the baseline, from its M.
+    /// </summary>
+    public static float CapHeight(Font font) => font.GetGlyph('M').Bearing.Y;
 
     public override void Draw(Batch batch)
     {
-        var lit = -1;
-        if (deck.Analysis?.Grid is { } grid && deck.IsLoaded)
-            lit = (int)(((long)Math.Floor(grid.BeatNumberAt(deck.Position.TotalSeconds)) % 4 + 4) % 4);
-
-        for (var i = 0; i < 4; i++)
+        for (var row = 0; row < decks.Count; row++)
         {
-            var on = i == lit ? (deck.IsPlaying ? color : Theme.Fade(color, 0.45f)) : Theme.Fade(color, 0.14f);
-            batch.AddRect(ScreenPosition + new float2(i * (BOX + GAP), 0), new float2(BOX, Size.Y), on);
+            var deck = decks[row];
+            var color = Theme.DeckColor(deck.Name);
+            var top = ScreenPosition.Y + row * (ROW + ROW_GAP);
+
+            // The letter's capitals centred on the row, rather than its line box.
+            batch.AddText(font, deck.Name, new float2(ScreenPosition.X, MathF.Round(top + ROW / 2 + CapHeight(font) / 2 - font.Ascender)), color);
+
+            var lit = -1;
+            if (deck.Analysis?.Grid is { } grid && deck.IsLoaded)
+                lit = (int)(((long)Math.Floor(grid.BeatNumberAt(deck.Position.TotalSeconds)) % 4 + 4) % 4);
+
+            for (var i = 0; i < 4; i++)
+            {
+                var on = i == lit ? (deck.IsPlaying ? color : Theme.Fade(color, 0.45f)) : Theme.Fade(color, 0.14f);
+                batch.AddRect(new float2(ScreenPosition.X + LETTER + i * (BOX + GAP), top), new float2(BOX, ROW), on);
+            }
         }
     }
 }
 
 /// <summary>
-/// The window's own title bar: the app's name, each deck's place in the bar either side of the master level, the
+/// The window's own title bar: the app's name, each deck's place in the bar stacked beside the master level, the
 /// CPU and the time, the options button and the window's buttons. Its empty space is where the window can be
 /// dragged from (see <see cref="IsCaption"/>). Call <see cref="Update"/> once a frame.
 /// </summary>
@@ -104,6 +123,7 @@ sealed class TitleBar : Panel
     readonly Panel _centre;
     readonly Panel _right;
     readonly LevelMeter _master;
+    readonly Label _masterLabel;
     readonly Label _cpu;
     readonly Label _clock;
     readonly IconButton _maximize;
@@ -123,7 +143,7 @@ sealed class TitleBar : Panel
     public event Action? MaximizeClicked;
     public event Action? CloseClicked;
 
-    public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font body, Font bold)
+    public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold)
     {
         _engine = engine;
         Background = Theme.TitleBar;
@@ -132,16 +152,12 @@ sealed class TitleBar : Panel
         _left.Add(new Badge(bold, "C", Theme.Accent, Theme.TitleBar, 22));
         _left.Add(new Label(bold, "Cuepoint") { Color = Theme.Text });
 
-        _centre = Add(new Panel { Direction = Direction.Horizontal, Spacing = 14 });
-        _master = new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 };
-        for (var i = 0; i < decks.Count; i++)
-        {
-            if (i == decks.Count / 2)
-                _centre.Add(_master);
-            var color = Theme.DeckColor(decks[i].Name);
-            _centre.Add(new Label(bold, decks[i].Name) { Color = color });
-            _centre.Add(new BeatTracker(decks[i], color));
-        }
+        // The decks' beat trackers, A over B, then a gap, then the master level and its name.
+        _centre = Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
+        _centre.Add(new BeatTrackers(decks, small));
+        _centre.Add(new Spacer(20));
+        _masterLabel = _centre.Add(new Label(small, "MASTER") { Color = Theme.Muted });
+        _master = _centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 });
 
         _right = Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
         _cpu = _right.Add(new Label(body) { Color = Theme.Muted });
@@ -203,6 +219,12 @@ sealed class TitleBar : Panel
         AlignMiddle(_left);
         AlignMiddle(_centre);
         AlignMiddle(_right);
+
+        // "MASTER" centred by its capitals rather than its line box, which has room for descenders below, so it
+        // lines up with the meter beside it.
+        var meterMiddle = _master.ScreenPosition.Y + _master.Size.Y / 2;
+        var font = _masterLabel.Font;
+        _masterLabel.Arrange(new float2(_masterLabel.ScreenPosition.X, MathF.Round(meterMiddle + BeatTrackers.CapHeight(font) / 2 - font.Ascender)));
     }
 
     /// <summary>

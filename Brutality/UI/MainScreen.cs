@@ -46,7 +46,7 @@ sealed class MainScreen : Panel
     {
         Background = Theme.Background;
 
-        TitleBar = Add(new TitleBar(engine, decks, fonts.Body, fonts.Bold));
+        TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold));
 
         foreach (var deck in decks)
             _waveforms.Add(Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name))));
