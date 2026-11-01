@@ -53,10 +53,27 @@ sealed class TreeView<T> : Element
     public float4 SelectedRow { get; set; } = Colors.Hex(0x3D6FB8, 0.7f);
     public float4 SelectedRowUnfocused { get; set; } = Colors.Hex(0x3D6FB8, 0.35f);
 
+    public float4 DropColor { get; set; } = Colors.Hex(0xEB7828);
+
     /// <summary>
     /// The selection changed, by mouse or keyboard.
     /// </summary>
     public event Action<T>? SelectionChanged;
+
+    /// <summary>
+    /// A row was right-clicked, at a point, after being selected: for a menu of what can be done with it.
+    /// </summary>
+    public event Action<T, float2>? ItemSecondaryClicked;
+
+    /// <summary>
+    /// Whether an item would take something dragged onto its row; nothing can be dropped if null.
+    /// </summary>
+    public Func<T, object, bool>? AcceptsDrop { get; set; }
+
+    /// <summary>
+    /// Something was dropped on an item's row, which said it would take it.
+    /// </summary>
+    public event Action<T, object>? ItemDropped;
 
     readonly HashSet<T> _expanded = [];
     IReadOnlyList<T> _roots = [];
@@ -64,6 +81,7 @@ sealed class TreeView<T> : Element
     bool _rowsStale = true;
     T? _selected;
     int _hovered = -1;
+    int _dropRow = -1;
     long _lastClickTime;
     T? _lastClicked;
 
@@ -112,6 +130,22 @@ sealed class TreeView<T> : Element
             return;
         _selected = item;
         SelectionChanged?.Invoke(item);
+    }
+
+    /// <summary>
+    /// Asks for the rows afresh, after items' children have changed. A selected item that's gone stays the selection
+    /// in name only, so select another if it matters.
+    /// </summary>
+    public void Refresh() => _rowsStale = true;
+
+    /// <summary>
+    /// Scrolls <paramref name="item"/> into view, if it's showing, without selecting it.
+    /// </summary>
+    public void ScrollIntoView(T item)
+    {
+        var row = IndexOf(item);
+        if (row >= 0)
+            ScrollOwner?.ScrollToShow(row * RowHeight, (row + 1) * RowHeight);
     }
 
     /// <summary>
@@ -198,6 +232,11 @@ sealed class TreeView<T> : Element
                 : row == _hovered && IsHovered ? HoverRow
                 : Colors.Transparent;
             batch.AddRect(position, new float2(Size.X, RowHeight), background);
+            if (IsDropTarget && row == _dropRow)
+            {
+                batch.AddRect(position, new float2(Size.X, RowHeight), Theme.Fade(DropColor, 0.25f));
+                batch.AddBorder(position, new float2(Size.X, RowHeight), 1, DropColor);
+            }
 
             var x = position.X + 4 + depth * Indent;
             var textY = position.Y + 3;
@@ -224,6 +263,30 @@ sealed class TreeView<T> : Element
     }
 
     public override void PointerMove(float2 point) => _hovered = RowAt(point);
+
+    public override void SecondaryClick(float2 point)
+    {
+        var row = RowAt(point);
+        if (row < 0)
+            return;
+        var item = Rows[row].Item;
+        Select(item);
+        ItemSecondaryClicked?.Invoke(item, point);
+    }
+
+    public override bool CanDrop(object payload, float2 point)
+    {
+        var row = RowAt(point);
+        _dropRow = row >= 0 && AcceptsDrop is { } accepts && accepts(Rows[row].Item, payload) ? row : -1;
+        return _dropRow >= 0;
+    }
+
+    public override void Drop(object payload, float2 point)
+    {
+        if (CanDrop(payload, point))
+            ItemDropped?.Invoke(Rows[_dropRow].Item, payload);
+        _dropRow = -1;
+    }
 
     public override void PointerDown(float2 point, Modifiers modifiers)
     {

@@ -46,6 +46,17 @@ sealed class SongBrowser : Panel
     /// </summary>
     public event Action<Song>? SongActivated;
 
+    /// <summary>
+    /// Delete was pressed on songs listed from a virtual folder, to take them out of it.
+    /// </summary>
+    public event Action<VirtualFolder, IReadOnlyList<Song>>? RemoveRequested;
+
+    /// <summary>
+    /// Songs listed from a virtual folder were dragged to a new place in it: before the song at that index in the
+    /// folder's list, or at the end for its count.
+    /// </summary>
+    public event Action<VirtualFolder, IReadOnlyList<Song>, int>? MoveRequested;
+
     public SongBrowser(MusicLibrary library, LibraryAnalyser analyser, IEnumerable<string> deckNames, Font body, Font bold)
     {
         _library = library;
@@ -91,6 +102,16 @@ sealed class SongBrowser : Panel
         _scroll.Add(List);
         List.ScrollOwner = _scroll;
         List.ItemActivated += song => SongActivated?.Invoke(song);
+        List.DeleteRequested += songs =>
+        {
+            if (_source?.Folder is { } folder)
+                RemoveRequested?.Invoke(folder, songs);
+        };
+        List.Reordered += (songs, before) =>
+        {
+            if (_source?.Folder is { } folder)
+                MoveRequested?.Invoke(folder, songs, before);
+        };
         List.SelectionChanged += _ => UpdateButtons();
 
         _status = Add(new Label(body) { Color = Theme.Muted });
@@ -114,6 +135,20 @@ sealed class SongBrowser : Panel
             Filter();
             _scroll.ScrollTo(float2.Zero);
         }
+    }
+
+    /// <summary>
+    /// Lists the source's songs again, keeping the place in the list, after they've changed (a virtual folder edited,
+    /// say) or it's been renamed.
+    /// </summary>
+    public void Reload()
+    {
+        if (_source is null)
+            return;
+        _sourceSongs = _source.Songs;
+        _refreshedAt = DateTime.UtcNow;
+        _heading.Text = _source.Name;
+        Filter();
     }
 
     /// <summary>
@@ -161,6 +196,10 @@ sealed class SongBrowser : Panel
     {
         var query = _search.Text.Trim();
         List.Items = query.Length == 0 ? _sourceSongs : _sourceSongs.Where(song => song.Matches(query)).ToList();
+
+        // A virtual folder's songs can be put in a new order, but only seeing them all: dropping between two songs a
+        // search has brought together would be ambiguous.
+        List.CanReorder = _source?.Folder is not null && query.Length == 0;
     }
 
     void UpdateButtons()

@@ -68,6 +68,12 @@ sealed class TextBox(Font font) : Element
     public event Action<TextBox>? Submitted;
 
     /// <summary>
+    /// Escape was pressed, for a box that's part of something to give up on, such as a prompt. Without anyone
+    /// listening, Escape just leaves the box.
+    /// </summary>
+    public event Action<TextBox>? Cancelled;
+
+    /// <summary>
     /// The text changed by typing, deleting, cutting or pasting (not by setting <see cref="Text"/>).
     /// </summary>
     public event Action<TextBox>? TextChanged;
@@ -377,6 +383,12 @@ sealed class TextBox(Font font) : Element
 
     public override bool KeyDown(Key key, Modifiers modifiers)
     {
+        if (key == Key.Escape && Cancelled is { } cancelled)
+        {
+            cancelled(this);
+            return true;
+        }
+
         var byWord = modifiers.HasWordModifier();
         var shortcut = modifiers.HasShortcutModifier();
         var extend = (modifiers & Modifiers.Shift) != 0;

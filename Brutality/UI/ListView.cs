@@ -24,9 +24,22 @@ sealed class ListColumn<T>(string title, float width, Func<T, string> text)
 }
 
 /// <summary>
-/// Rows of items in columns, with one selected. Click to select and double-click (or Enter) to activate; with focus,
-/// the arrows, Page Up/Down, Home and End move the selection. Only rows that can be seen are drawn, so it copes
-/// with thousands of items. Put it in a <see cref="ScrollPanel"/>, as its first child, and set
+/// Items dragged from a <see cref="ListView{T}"/>, in list order, and the list they came from.
+/// </summary>
+sealed class DraggedItems<T>(object source, IReadOnlyList<T> items) : IReadOnlyList<T>
+{
+    public object Source { get; } = source;
+    public T this[int index] => items[index];
+    public int Count => items.Count;
+    public IEnumerator<T> GetEnumerator() => items.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
+/// <summary>
+/// Rows of items in columns. Click to select and double-click (or Enter) to activate; Ctrl+click adds or takes away
+/// a row, Shift+click selects the rows from the last one clicked, and Ctrl+A selects them all. With focus, the
+/// arrows, Page Up/Down, Home and End move the selection, with Shift to stretch it. Only rows that can be seen are
+/// drawn, so it copes with thousands of items. Put it in a <see cref="ScrollPanel"/>, as its first child, and set
 /// <see cref="ScrollOwner"/> so keyboard moves keep the selection in view.
 /// </summary>
 sealed class ListView<T> : Element
@@ -56,7 +69,7 @@ sealed class ListView<T> : Element
     public float4 SelectedRow { get; set; } = Colors.Hex(0x3D6FB8, 0.7f);
 
     /// <summary>
-    /// The selected row's colour while the list doesn't have focus: still visible, but not shouting.
+    /// The selected rows' colour while the list doesn't have focus: still visible, but not shouting.
     /// </summary>
     public float4 SelectedRowUnfocused { get; set; } = Colors.Hex(0x3D6FB8, 0.35f);
 
@@ -74,6 +87,13 @@ sealed class ListView<T> : Element
     public Func<T, string>? DragLabel { get; set; }
 
     /// <summary>
+    /// Whether the rows can be dragged to new places in the list, raising <see cref="Reordered"/>.
+    /// </summary>
+    public bool CanReorder { get; set; }
+
+    public float4 DropLineColor { get; set; } = Colors.Hex(0xEB7828);
+
+    /// <summary>
     /// The rows drawn last frame, by index into <see cref="Items"/>: those in view. Empty before the first draw, and
     /// again from when <see cref="Items"/> changes until the next, since the old rows may no longer exist.
     /// </summary>
@@ -89,51 +109,117 @@ sealed class ListView<T> : Element
     /// </summary>
     public event Action<T>? ItemActivated;
 
+    /// <summary>
+    /// Delete was pressed with these selected, in list order. Delete does nothing if no one's listening.
+    /// </summary>
+    public event Action<IReadOnlyList<T>>? DeleteRequested;
+
+    /// <summary>
+    /// Rows were dragged to a new place: the items, and the index (in <see cref="Items"/> as they were) of the row
+    /// they were dropped before, or the count for the end. The list doesn't move them itself.
+    /// </summary>
+    public event Action<IReadOnlyList<T>, int>? Reordered;
+
     IReadOnlyList<T> _items = [];
+
+    // The current row (where the keyboard moves from and Shift stretches to), the row a Shift selection stretches
+    // from, and every selected item.
     int _selected = -1;
+    int _anchor = -1;
+    readonly HashSet<T> _selection = new(ReferenceEqualityComparer.Instance);
+
     int _hovered = -1;
     long _lastClickTime;
     int _lastClickRow = -1;
 
-    public ListView(Font font) => Font = font;
+    // A plain press on a row already among several selected waits for the release to select it alone, so the
+    // selection can be dragged.
+    int _pendingSingle = -1;
+
+    // Where a reordering drag would drop, as the row it would go before.
+    int _dropBefore = -1;
+
+    public ListView(Font font)
+    {
+        Font = font;
+        Clicked += _ =>
+        {
+            if (_pendingSingle >= 0 && _pendingSingle < _items.Count)
+                SelectedIndex = _pendingSingle;
+            _pendingSingle = -1;
+        };
+    }
 
     public float RowHeight => Font.LineHeight + 6;
 
     /// <summary>
-    /// What the list shows, in order. Setting it keeps the selected item selected if it's still there.
+    /// What the list shows, in order. Setting it keeps selected items selected where they're still there.
     /// </summary>
     public IReadOnlyList<T> Items
     {
         get => _items;
         set
         {
-            var selected = SelectedItem;
+            var current = _selected >= 0 && _selected < _items.Count ? _items[_selected] : null;
+            var anchor = _anchor >= 0 && _anchor < _items.Count ? _items[_anchor] : null;
             _items = value;
             _hovered = -1;
+            _pendingSingle = -1;
             VisibleRows = 0..0;
-            var index = selected is null ? -1 : IndexOf(selected);
-            if (index != _selected || selected is not null && index < 0)
+
+            var still = new HashSet<T>(ReferenceEqualityComparer.Instance);
+            foreach (var item in value)
             {
-                _selected = index;
-                SelectionChanged?.Invoke(this);
+                if (_selection.Contains(item))
+                    still.Add(item);
             }
+            var changed = still.Count != _selection.Count;
+            _selection.Clear();
+            _selection.UnionWith(still);
+
+            var index = current is null ? -1 : IndexOf(current);
+            changed |= index != _selected;
+            _selected = index;
+            _anchor = anchor is null ? index : IndexOf(anchor);
+            if (changed)
+                SelectionChanged?.Invoke(this);
         }
     }
 
+    /// <summary>
+    /// The current row, or -1 for none. Setting it selects that row alone.
+    /// </summary>
     public int SelectedIndex
     {
         get => _selected;
         set
         {
             var index = _items.Count == 0 ? -1 : Math.Clamp(value, -1, _items.Count - 1);
-            if (index == _selected)
+            var alone = index < 0 ? _selection.Count == 0 : _selection.Count == 1 && _selection.Contains(_items[index]);
+            if (index == _selected && alone)
                 return;
-            _selected = index;
+            _selected = _anchor = index;
+            _selection.Clear();
+            if (index >= 0)
+                _selection.Add(_items[index]);
             SelectionChanged?.Invoke(this);
         }
     }
 
-    public T? SelectedItem => _selected >= 0 && _selected < _items.Count ? _items[_selected] : null;
+    /// <summary>
+    /// The current row's item if it's selected, otherwise the first selected; null if none is.
+    /// </summary>
+    public T? SelectedItem =>
+        _selected >= 0 && _selected < _items.Count && _selection.Contains(_items[_selected]) ? _items[_selected]
+        : _selection.Count > 0 ? SelectedItems[0]
+        : null;
+
+    /// <summary>
+    /// Every selected item, in list order.
+    /// </summary>
+    public IReadOnlyList<T> SelectedItems => _items.Where(_selection.Contains).ToList();
+
+    public bool IsSelected(T item) => _selection.Contains(item);
 
     public override bool IsInteractive => true;
     public override bool IsFocusable => true;
@@ -147,6 +233,40 @@ sealed class ListView<T> : Element
                 return i;
         }
         return -1;
+    }
+
+    /// <summary>
+    /// Selects the rows from the anchor (the last row clicked alone) to <paramref name="row"/>, as well as what's
+    /// selected already if <paramref name="add"/>.
+    /// </summary>
+    void SelectRange(int row, bool add)
+    {
+        if (_anchor < 0 || _anchor >= _items.Count)
+            _anchor = row;
+        if (!add)
+            _selection.Clear();
+        for (var i = Math.Min(_anchor, row); i <= Math.Max(_anchor, row); i++)
+            _selection.Add(_items[i]);
+        _selected = row;
+        SelectionChanged?.Invoke(this);
+    }
+
+    void Toggle(int row)
+    {
+        if (!_selection.Remove(_items[row]))
+            _selection.Add(_items[row]);
+        _selected = _anchor = row;
+        SelectionChanged?.Invoke(this);
+    }
+
+    public void SelectAll()
+    {
+        if (_items.Count == 0)
+            return;
+        _selection.UnionWith(_items);
+        if (_selected < 0)
+            _selected = _anchor = 0;
+        SelectionChanged?.Invoke(this);
     }
 
     public float ContentWidth => Columns.Sum(column => column.Width);
@@ -177,7 +297,7 @@ sealed class ListView<T> : Element
             var rowSize = new float2(Size.X, RowHeight);
 
             var background =
-                row == _selected ? (IsFocused ? SelectedRow : SelectedRowUnfocused)
+                _selection.Contains(_items[row]) ? (IsFocused ? SelectedRow : SelectedRowUnfocused)
                 : row == _hovered && IsHovered ? HoverRow
                 : row % 2 == 1 ? AlternateRow
                 : Colors.Transparent;
@@ -199,6 +319,10 @@ sealed class ListView<T> : Element
                 x += column.Width;
             }
         }
+
+        // Where a reordering drag would land, as a line between rows.
+        if (IsDropTarget && _dropBefore >= 0)
+            batch.AddRect(new float2(ScreenPosition.X, MathF.Round(ScreenPosition.Y + _dropBefore * RowHeight - 1)), new float2(Size.X, 2), DropLineColor);
     }
 
     int RowAt(float2 point)
@@ -207,17 +331,53 @@ sealed class ListView<T> : Element
         return row >= 0 && row < _items.Count ? row : -1;
     }
 
-    public override DragData? StartDrag(float2 point) =>
-        DragLabel is { } label && RowAt(point) is var row and >= 0 ? new DragData(_items[row], label(_items[row]), Font) : null;
+    // A selected row drags the whole selection; any other, just itself.
+    public override DragData? StartDrag(float2 point)
+    {
+        var row = RowAt(point);
+        if (DragLabel is not { } label || row < 0)
+            return null;
+        _pendingSingle = -1;
+        IReadOnlyList<T> items = _selection.Contains(_items[row]) ? SelectedItems : [_items[row]];
+        var text = items.Count == 1 ? label(items[0]) : $"{label(items[0])} and {items.Count - 1} more";
+        return new DragData(new DraggedItems<T>(this, items), text, Font);
+    }
+
+    public override bool CanDrop(object payload, float2 point)
+    {
+        if (!CanReorder || payload is not DraggedItems<T> dragged || dragged.Source != this)
+            return false;
+        _dropBefore = Math.Clamp((int)MathF.Round((point.Y - ScreenPosition.Y) / RowHeight), 0, _items.Count);
+        return true;
+    }
+
+    public override void Drop(object payload, float2 point)
+    {
+        if (payload is DraggedItems<T> dragged && CanDrop(payload, point))
+            Reordered?.Invoke(dragged, _dropBefore);
+        _dropBefore = -1;
+    }
 
     // Only meaningful while IsHovered: once the pointer leaves, this stops being called, so Draw checks both.
     public override void PointerMove(float2 point) => _hovered = RowAt(point);
 
     public override void PointerDown(float2 point, Modifiers modifiers)
     {
+        _pendingSingle = -1;
         var row = RowAt(point);
         if (row < 0)
             return;
+
+        if ((modifiers & Modifiers.Shift) != 0)
+        {
+            SelectRange(row, add: (modifiers & Modifiers.Control) != 0);
+            return;
+        }
+        if ((modifiers & Modifiers.Control) != 0)
+        {
+            Toggle(row);
+            return;
+        }
 
         var now = Environment.TickCount64;
         var isDoubleClick = row == _lastClickRow && now - _lastClickTime <= DOUBLE_CLICK_MS;
@@ -225,7 +385,13 @@ sealed class ListView<T> : Element
         _lastClickTime = isDoubleClick ? 0 : now;
         _lastClickRow = row;
 
-        SelectedIndex = row;
+        if (_selection.Count > 1 && _selection.Contains(_items[row]))
+        {
+            _selected = _anchor = row;
+            _pendingSingle = row;
+        }
+        else
+            SelectedIndex = row;
         if (isDoubleClick)
             ItemActivated?.Invoke(_items[row]);
     }
@@ -250,8 +416,23 @@ sealed class ListView<T> : Element
 
         if (to is { } index)
         {
-            SelectedIndex = index;
+            if ((modifiers & Modifiers.Shift) != 0)
+                SelectRange(index, add: false);
+            else
+                SelectedIndex = index;
             ScrollOwner?.ScrollToShow(index * RowHeight, (index + 1) * RowHeight);
+            return true;
+        }
+
+        if (key == Key.A && (modifiers & Modifiers.Control) != 0)
+        {
+            SelectAll();
+            return true;
+        }
+
+        if (key == Key.Delete && DeleteRequested is { } delete && _selection.Count > 0)
+        {
+            delete(SelectedItems);
             return true;
         }
 

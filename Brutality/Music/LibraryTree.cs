@@ -21,6 +21,16 @@ enum LibraryNodeKind
     /// <summary>
     /// Songs gathered from anywhere by what's happened, such as what's been played.
     /// </summary>
+    List,
+
+    /// <summary>
+    /// The heading over the virtual folders, where new ones are made.
+    /// </summary>
+    VirtualFolders,
+
+    /// <summary>
+    /// Songs put together by hand, in an order, saved as a playlist: see <see cref="Music.VirtualFolder"/>.
+    /// </summary>
     VirtualFolder,
 
     /// <summary>
@@ -40,8 +50,19 @@ sealed class LibraryNode
     List<LibraryNode>? _loadedChildren;
     IReadOnlyList<Song>? _folderSongs;
 
-    public string Name { get; }
+    readonly string _name;
+
+    /// <summary>
+    /// What it's called: for a virtual folder, whatever the folder is called now.
+    /// </summary>
+    public string Name => Folder?.Name ?? _name;
+
     public LibraryNodeKind Kind { get; }
+
+    /// <summary>
+    /// The virtual folder, for one.
+    /// </summary>
+    public VirtualFolder? Folder { get; init; }
 
     /// <summary>
     /// The folder on disk, for a drive or folder.
@@ -57,7 +78,7 @@ sealed class LibraryNode
         Func<IEnumerable<LibraryNode>>? children = null
     )
     {
-        Name = name;
+        _name = name;
         Kind = kind;
         _songs = songs;
         _children = children;
@@ -83,6 +104,11 @@ sealed class LibraryNode
     }
 
     /// <summary>
+    /// Forgets its children, to be asked for again next time, after some have been added or taken away.
+    /// </summary>
+    public void Refresh() => _loadedChildren = null;
+
+    /// <summary>
     /// Whether choosing it shows songs; a heading doesn't.
     /// </summary>
     public bool HasSongs => _songs is not null;
@@ -91,20 +117,21 @@ sealed class LibraryNode
     /// Whether its songs change by themselves (as songs are analysed, or played), so a list showing them should
     /// ask again now and then. A folder's are read once.
     /// </summary>
-    public bool IsLive => Kind is LibraryNodeKind.Filter or LibraryNodeKind.VirtualFolder;
+    public bool IsLive => Kind is LibraryNodeKind.Filter or LibraryNodeKind.List;
 
     /// <summary>
-    /// The songs to list when it's chosen.
+    /// The songs to list when it's chosen. A folder's or drive's are read once; the rest are asked for each time,
+    /// since they change (a virtual folder edited, say).
     /// </summary>
     public IReadOnlyList<Song> Songs =>
         _songs is null ? []
-        : IsLive ? _songs()
-        : _folderSongs ??= _songs();
+        : Kind is LibraryNodeKind.Folder or LibraryNodeKind.Drive ? _folderSongs ??= _songs()
+        : _songs();
 }
 
 /// <summary>
-/// Builds the browser's folder list: the library, the computer's drives and their folders, a few virtual folders,
-/// and filters over the library.
+/// Builds the browser's folder list: the library, the computer's drives and their folders, the virtual folders, a
+/// few lists, and filters over the library.
 /// </summary>
 static class LibraryTree
 {
@@ -116,24 +143,42 @@ static class LibraryTree
 
     const int RECENTLY_ADDED = 100;
 
-    public static List<LibraryNode> Build(MusicLibrary library, IReadOnlyList<Deck> decks, IReadOnlyList<Song> history)
+    public static List<LibraryNode> Build(MusicLibrary library, IReadOnlyList<Deck> decks, IReadOnlyList<Song> history, VirtualFolders virtualFolders)
     {
         var songs = library.Songs;
         IReadOnlyList<Song> Where(Func<Song, bool> test) => songs.Where(test).ToList();
+
+        // One node for each virtual folder for as long as it lasts, so a renamed one stays selected and open.
+        var folderNodes = new Dictionary<VirtualFolder, LibraryNode>();
+        IEnumerable<LibraryNode> VirtualFolderNodes()
+        {
+            foreach (var gone in folderNodes.Keys.Except(virtualFolders.All).ToList())
+                folderNodes.Remove(gone);
+            foreach (var folder in virtualFolders.All)
+            {
+                if (!folderNodes.TryGetValue(folder, out var node))
+                {
+                    node = new LibraryNode(folder.Name, LibraryNodeKind.VirtualFolder, () => virtualFolders.SongsIn(folder)) { Folder = folder };
+                    folderNodes[folder] = node;
+                }
+                yield return node;
+            }
+        }
 
         var nodes = new List<LibraryNode>
         {
             new("Music library", LibraryNodeKind.Library, () => songs) { Path = library.Root },
             new("Local drives", LibraryNodeKind.Group, children: () => Drives(library)),
+            new("Virtual folders", LibraryNodeKind.VirtualFolders, children: VirtualFolderNodes) { Path = virtualFolders.Directory },
             new(
                 "Lists",
                 LibraryNodeKind.Group,
                 children: () =>
                 [
-                    new("History", LibraryNodeKind.VirtualFolder, () => history.Reverse().Distinct().ToList()),
+                    new("History", LibraryNodeKind.List, () => history.Reverse().Distinct().ToList()),
                     new(
                         "Recently added",
-                        LibraryNodeKind.VirtualFolder,
+                        LibraryNodeKind.List,
                         () => songs.OrderByDescending(song => song.Modified).Take(RECENTLY_ADDED).ToList()
                     ),
                 ]

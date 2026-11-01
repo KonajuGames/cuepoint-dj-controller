@@ -125,7 +125,8 @@ sealed class MainScreen : Panel
             LibraryNodeKind.Library => Theme.Accent,
             LibraryNodeKind.Drive => Colors.Hex(0x8FA3BF),
             LibraryNodeKind.Folder => Colors.Hex(0xD9B45A),
-            LibraryNodeKind.VirtualFolder => Colors.Hex(0x5AC8D9),
+            LibraryNodeKind.List => Colors.Hex(0x5AC8D9),
+            LibraryNodeKind.VirtualFolder => Colors.Hex(0x6CCB7A),
             LibraryNodeKind.Filter => Colors.Hex(0xB57BE0),
             _ => null,
         };

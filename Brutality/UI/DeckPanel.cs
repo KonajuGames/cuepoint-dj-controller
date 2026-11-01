@@ -433,12 +433,13 @@ sealed class DeckPanel : Panel
         }
     }
 
-    public override bool CanDrop(object payload) => payload is Song;
+    // Several songs dragged at once load the first.
+    public override bool CanDrop(object payload, float2 point) => payload is IReadOnlyList<Song> { Count: > 0 };
 
-    public override void Drop(object payload)
+    public override void Drop(object payload, float2 point)
     {
-        if (payload is Song song)
-            SongDropped?.Invoke(this, song);
+        if (payload is IReadOnlyList<Song> { Count: > 0 } songs)
+            SongDropped?.Invoke(this, songs[0]);
     }
 
     static string Format(TimeSpan time) =>

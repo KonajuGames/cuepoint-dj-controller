@@ -244,8 +244,8 @@ sealed class Root
         var (payload, target) = (Dragging?.Payload, DropTarget);
         Dragging = null;
         SetDropTarget(null);
-        if (drop && payload is not null && target is not null)
-            target.Drop(payload);
+        if (drop && payload is not null && target is not null && _mouse is { } at)
+            target.Drop(payload, at);
     }
 
     void UpdateDropTarget() =>
@@ -277,7 +277,7 @@ sealed class Root
                 if (Search(child) is { } inner)
                     return inner;
             }
-            return element.CanDrop(payload) ? element : null;
+            return element.CanDrop(payload, point) ? element : null;
         }
 
         for (var i = Elements.Count - 1; i >= 0; i--)

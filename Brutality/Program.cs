@@ -102,16 +102,28 @@ static void Run()
 
     // What's been loaded onto a deck this run, oldest first, for the History folder.
     var history = new List<Song>();
-    var folders = LibraryTree.Build(library, decks, history);
+
+    // Songs put together by hand, a playlist file each. Deleting one sends its file to the Recycle Bin, unless
+    // Windows is set to delete straight away on that drive.
+    var virtualFolders = new VirtualFolders(
+        library,
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "Virtual folders")
+    );
+    if (OperatingSystem.IsWindows())
+        virtualFolders.RemoveFile = WindowsShell.MoveToRecycleBin;
+
+    var folders = LibraryTree.Build(library, decks, history, virtualFolders);
+    var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
 
     var ui = new Root();
     var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, HotcueKeys.Labels, KeyboardControls.HintsFor));
     using var input = new GlfwUiInput(window, ui);
     var browser = screen.Browser;
 
-    // The library's own folder is what shows to begin with, with the lists and filters open below the drives.
-    screen.FolderTree.SetExpanded(folders[2], true);
-    screen.FolderTree.SetExpanded(folders[3], true);
+    // The library's own folder is what shows to begin with, with the virtual folders, lists and filters open below
+    // the drives.
+    foreach (var heading in folders.Where(node => node.Kind is LibraryNodeKind.VirtualFolders || node.Name is "Lists" or "Filters"))
+        screen.FolderTree.SetExpanded(heading, true);
     screen.FolderTree.Select(folders[0]);
 
     screen.Log(
@@ -241,6 +253,10 @@ static void Run()
     // App shortcuts go through the UI first, so Escape in the search box only leaves the box, and typing there
     // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored. Escape no longer
     // quits, now there's a close button, since a stray press mid-set would be a disaster.
+    var menu = new ContextMenu(fonts.Body);
+    var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
+    var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
+
     var controls = new KeyboardControls(decks, audio);
 
     // DJ controllers, found as they're plugged in. The load buttons take the selected song; the browse knob works
@@ -269,7 +285,7 @@ static void Run()
         controllers.BrowseFolders += steps => Step(screen.FolderTree, steps);
         controllers.BrowsePressed += () => screen.FolderTree.KeyDown(Key.Enter, Modifiers.None);
 
-        // Mapping, opened from the options, over everything else.
+        // Mapping, opened from the options, over everything but menus.
         controllerDialog = ui.Add(new ControllerDialog(controllers, midiDevices!, fonts.Body, fonts.Bold, fonts.Heading));
         screen.Options.ControllerStatus = () => midiDevices!.Devices.Count == 0 ? null : string.Join(", ", midiDevices.Devices.Select(device => device.Name));
         screen.Options.MapControllerClicked += () =>
@@ -302,7 +318,13 @@ static void Run()
         switch (key)
         {
             case GlfwKey.Escape when pressed:
-                if (controllerDialog?.Escape() != true)
+                if (menu.Visible)
+                    menu.Close();
+                else if (prompt.Visible)
+                    prompt.Close();
+                else if (confirmation.Visible)
+                    confirmation.Close();
+                else if (controllerDialog?.Escape() != true)
                     screen.Options.Close();
                 break;
             case GlfwKey.Number1 when pressed && browser.SelectedSong is { } song:
@@ -312,6 +334,127 @@ static void Run()
                 Load(song, deckB);
                 break;
         }
+    };
+
+    // Right-click menus and the name prompt go over everything, so they're added last.
+    ui.Add(menu);
+    ui.Add(prompt);
+    ui.Add(confirmation);
+
+    // Virtual folders: made from the heading's menu, renamed and deleted from their own, filled by dragging songs
+    // onto them, and edited in the list. The list follows whatever changes.
+    LibraryNode NodeFor(VirtualFolder folder) => virtualFoldersNode.Children.First(node => node.Folder == folder);
+    void FoldersChanged()
+    {
+        virtualFoldersNode.Refresh();
+        screen.FolderTree.Refresh();
+    }
+    virtualFolders.Changed += _ =>
+    {
+        if (browser.Source?.Kind == LibraryNodeKind.VirtualFolder)
+            browser.Reload();
+    };
+
+    void NewVirtualFolder() =>
+        prompt.Show(
+            "New virtual folder",
+            virtualFolders.UnusedName(),
+            name => virtualFolders.CheckName(name),
+            name =>
+            {
+                var folder = virtualFolders.Create(name);
+                FoldersChanged();
+                screen.FolderTree.SetExpanded(virtualFoldersNode, true);
+                // It's shown, not opened, so the songs to put in it are still listed to drag across.
+                screen.FolderTree.ScrollIntoView(NodeFor(folder));
+                screen.Log($"Made {folder.Name}; drag songs onto it to add them");
+            }
+        );
+
+    void RenameVirtualFolder(VirtualFolder folder) =>
+        prompt.Show(
+            $"Rename {folder.Name}",
+            folder.Name,
+            name => virtualFolders.CheckName(name, folder),
+            name =>
+            {
+                var old = folder.Name;
+                virtualFolders.Rename(folder, name);
+                FoldersChanged();
+                screen.Log($"Renamed {old} to {folder.Name}");
+            }
+        );
+
+    void DeleteVirtualFolder(VirtualFolder folder)
+    {
+        try
+        {
+            var showing = browser.Source?.Folder == folder;
+            virtualFolders.Delete(folder);
+            FoldersChanged();
+            if (showing || screen.FolderTree.SelectedItem?.Folder == folder)
+                screen.FolderTree.Select(virtualFoldersNode);
+            if (showing)
+                browser.Source = folders[0];
+            screen.Log($"Deleted {folder.Name}; its songs are untouched");
+        }
+        catch (InvalidOperationException e)
+        {
+            screen.Log($"Couldn't delete {folder.Name}: {e.Message}");
+        }
+    }
+
+    screen.FolderTree.ItemSecondaryClicked += (node, point) =>
+    {
+        if (node.Kind == LibraryNodeKind.VirtualFolders)
+            menu.Show(point, [new MenuItem("New virtual folder...", NewVirtualFolder)]);
+        else if (node.Folder is { } folder)
+            menu.Show(
+                point,
+                [
+                    new MenuItem("Rename...", () => RenameVirtualFolder(folder)),
+                    new MenuItem(
+                        "Delete...",
+                        () =>
+                            confirmation.Show(
+                                $"Delete {folder.Name}?",
+                                folder.Paths.Count switch
+                                {
+                                    0 => "It's empty, so nothing else is lost.",
+                                    1 => "Its list of 1 song is deleted. The song itself isn't touched.",
+                                    var count => $"Its list of {count} songs is deleted. The songs themselves aren't touched.",
+                                },
+                                "Delete",
+                                () => DeleteVirtualFolder(folder)
+                            )
+                    ),
+                ]
+            );
+    };
+
+    screen.FolderTree.AcceptsDrop = (node, payload) => node.Folder is not null && payload is IReadOnlyList<Song> { Count: > 0 };
+    screen.FolderTree.ItemDropped += (node, payload) =>
+    {
+        if (node.Folder is not { } folder || payload is not IReadOnlyList<Song> songs)
+            return;
+        var (added, error) = virtualFolders.Add(folder, songs);
+        screen.Log(
+            error is not null ? $"Couldn't save {folder.Name}: {error}"
+            : added == 0 ? (songs.Count == 1 ? $"{songs[0].Title} is already in {folder.Name}" : $"Those are already in {folder.Name}")
+            : added == 1 ? $"Added {songs.First(song => folder.Contains(song.Path)).Title} to {folder.Name}"
+            : $"Added {added} songs to {folder.Name}{(added < songs.Count ? $" ({songs.Count - added} were there already)" : "")}"
+        );
+    };
+
+    browser.RemoveRequested += (folder, songs) =>
+    {
+        var error = virtualFolders.Remove(folder, songs);
+        screen.Log(error is not null ? $"Couldn't save {folder.Name}: {error}" : $"Took {(songs.Count == 1 ? songs[0].Title : $"{songs.Count} songs")} out of {folder.Name}");
+    };
+    browser.MoveRequested += (folder, songs, before) =>
+    {
+        if (virtualFolders.Move(folder, songs, before) is { } error)
+            screen.Log($"Couldn't save {folder.Name}: {error}");
     };
 
     var lastFrame = Glfw.Time;
@@ -350,6 +493,7 @@ static void Run()
         screen.ScreenSize = new float2(size.X, size.Y);
         if (controllerDialog is not null)
             controllerDialog.ScreenSize = screen.ScreenSize;
+        menu.ScreenSize = prompt.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
         screen.Update();
         ui.Layout(screen.ScreenSize);
         input.UpdateCursor();

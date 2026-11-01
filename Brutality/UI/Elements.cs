@@ -132,14 +132,16 @@ abstract class Element
     public virtual DragData? StartDrag(float2 point) => null;
 
     /// <summary>
-    /// Whether this element would take <paramref name="payload"/> dropped on it.
+    /// Whether this element would take <paramref name="payload"/> dropped on it at <paramref name="point"/>. Asked
+    /// as the drag moves, so an element can say where in it the drop would land.
     /// </summary>
-    public virtual bool CanDrop(object payload) => false;
+    public virtual bool CanDrop(object payload, float2 point) => false;
 
     /// <summary>
-    /// <paramref name="payload"/> was dropped on this element, which said it would take it.
+    /// <paramref name="payload"/> was dropped on this element at <paramref name="point"/>, where it said it would
+    /// take it.
     /// </summary>
-    public virtual void Drop(object payload) { }
+    public virtual void Drop(object payload, float2 point) { }
 
     /// <summary>
     /// Something it would take is being dragged over it, for it to show it's a place to drop.
