@@ -85,6 +85,16 @@ sealed unsafe class AudioEngine : IDisposable
     internal void Remove(Deck deck) => _decks.Remove(deck);
 
     /// <summary>
+    /// The deck <paramref name="deck"/> should sync to: another deck with an analysed song, a playing one if there
+    /// is one, or null if there's none.
+    /// </summary>
+    internal Deck? SyncMasterFor(Deck deck)
+    {
+        var candidates = _decks.Where(other => other != deck && other.IsLoaded && other.Bpm is not null).ToList();
+        return candidates.FirstOrDefault(other => other.IsPlaying) ?? candidates.FirstOrDefault();
+    }
+
+    /// <summary>
     /// The crossfader: 0 is all the way to the left-hand decks, 1 all the way right, 0.5 the middle.
     /// </summary>
     public float Crossfader

@@ -79,6 +79,7 @@ sealed class OptionsDialog : Panel
             ("1 / 2", "Load the selected song to deck A / B"),
             ("Z / X", "Cue / Play deck A"),
             ("N / M", "Cue / Play deck B"),
+            ("C / ,", "Sync deck A / B to the other"),
             ("Tab", "Next control"),
             ("Enter", "Press, submit or load"),
             ("Esc", "Leave a box, or close this"),

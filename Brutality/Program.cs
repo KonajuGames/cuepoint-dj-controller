@@ -46,7 +46,7 @@ static void Run()
     // Declared first so it's disposed last, after the GPU objects that draw to it. It opens maximised, as the screen
     // is laid out to fill it, and can't be made too small for the decks and mixer to fit side by side.
     using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Cuepoint", Size = new int2(1440, 860) });
-    window.SetSizeLimits(new int2(1120, 700), new int2(-1, -1));
+    window.SetSizeLimits(new int2(1280, 720), new int2(-1, -1));
     window.Maximize();
 
 #if DEBUG
@@ -236,6 +236,12 @@ static void Run()
                 break;
             case GlfwKey.M when pressed:
                 deckB.TogglePlay();
+                break;
+            case GlfwKey.C when pressed:
+                deckA.Sync();
+                break;
+            case GlfwKey.Comma when pressed:
+                deckB.Sync();
                 break;
         }
     };

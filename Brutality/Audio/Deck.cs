@@ -5,8 +5,8 @@ using Brutality.Audio.Analysis;
 namespace Brutality.Audio;
 
 /// <summary>
-/// One player: a song loaded onto an SDL_mixer track, with play/pause, cue, hotcues, loops, a tempo fader and a
-/// position. Get one from <see cref="AudioEngine.CreateDeck"/>. Everything except decoding happens on the thread that calls it, which
+/// One player: a song loaded onto an SDL_mixer track, with play/pause, cue, hotcues, loops, a tempo fader, sync and
+/// a position. Get one from <see cref="AudioEngine.CreateDeck"/>. Everything except decoding happens on the thread that calls it, which
 /// should be the UI thread; call <see cref="Update"/> once a frame to finish background loads.
 /// </summary>
 /// <remarks>
@@ -246,6 +246,88 @@ sealed class Deck : IDisposable
     /// The key coming out of the deck: the song's, moved by the tempo fader. Null until the song is analysed.
     /// </summary>
     public MusicalKey? Key => _analysis?.Key.Transposed(KeyShift);
+
+    /// <summary>
+    /// How close two decks' tempos have to be to count as in sync, in BPM.
+    /// </summary>
+    public const double SYNC_TOLERANCE_BPM = 0.05;
+
+    /// <summary>
+    /// The deck <see cref="Sync"/> would follow: another with an analysed song, a playing one first.
+    /// </summary>
+    public Deck? SyncMaster => _engine.SyncMasterFor(this);
+
+    /// <summary>
+    /// Whether <see cref="Sync"/> has something to do: this deck's song and another's are both analysed.
+    /// </summary>
+    public bool CanSync => IsLoaded && Bpm is not null && SyncMaster is not null;
+
+    /// <summary>
+    /// Whether this deck's tempo as heard matches its sync master's, allowing for half and double time.
+    /// </summary>
+    public bool IsInSync =>
+        Bpm is { } bpm && SyncMaster?.Bpm is { } master && Math.Abs(bpm * MasterBeatsPerBeat(bpm, master) - master) <= SYNC_TOLERANCE_BPM;
+
+    /// <summary>
+    /// How many of the master's beats go in one of this deck's, for the two to line up: 1, or 2 for a song in half
+    /// time against the master (85 against 170), or ½ for one in double time.
+    /// </summary>
+    static double MasterBeatsPerBeat(double bpm, double masterBpm) =>
+        new[] { 1.0, 2.0, 0.5 }.MinBy(k => Math.Abs(Math.Log(bpm * k / masterBpm)));
+
+    /// <summary>
+    /// Matches this deck to its <see cref="SyncMaster"/>: sets the tempo fader so the two play at the same tempo,
+    /// in half or double time if that's closer, widening the fader's range if it has to; and if both are playing,
+    /// moves this deck by less than a beat so its beats land on the master's. Returns false, changing nothing, if
+    /// there's no master or the tempo is out of the fader's reach.
+    /// </summary>
+    public bool Sync()
+    {
+        if (!CanSync || SyncMaster is not { } master || master.Bpm is not { } masterBpm || _analysis?.Grid is not { } grid)
+            return false;
+
+        var position = Position.TotalSeconds;
+        var songBpm = grid.BpmAt(position);
+        var masterBeats = MasterBeatsPerBeat(songBpm, masterBpm);
+        var tempo = masterBpm / (songBpm * masterBeats) - 1;
+        if (Math.Abs(tempo) > TempoRanges[^1])
+            return false;
+
+        if (Math.Abs(tempo) > _tempoRange)
+            _tempoRange = TempoRanges.First(range => range >= Math.Abs(tempo));
+        Tempo = tempo;
+
+        if (IsPlaying && master.IsPlaying && master._analysis?.Grid is { } masterGrid)
+        {
+            // Phases are compared in the shorter of the two decks' beats, counted as so many to each of this deck's,
+            // so in half or double time every beat of the slower deck lands on one of the faster's.
+            // Both positions from the same moment of the mix, so the comparison is fair.
+            double masterPosition;
+            _engine.Mixer.Lock();
+            try
+            {
+                position = Position.TotalSeconds;
+                masterPosition = master.Position.TotalSeconds;
+            }
+            finally
+            {
+                _engine.Mixer.Unlock();
+            }
+
+            var units = Math.Max(masterBeats, 1);
+            var phase = Fraction(grid.BeatNumberAt(position) * units);
+            var masterPhase = Fraction(masterGrid.BeatNumberAt(masterPosition) * units / masterBeats);
+            var shift = masterPhase - phase;
+            if (shift > 0.5)
+                shift -= 1;
+            else if (shift < -0.5)
+                shift += 1;
+            Seek(TimeSpan.FromSeconds(position + shift / units * 60 / songBpm));
+        }
+        return true;
+    }
+
+    static double Fraction(double value) => value - Math.Floor(value);
 
     /// <summary>
     /// The gain SDL_mixer has for the track, read back, for checking that <see cref="Gain"/> reached it.

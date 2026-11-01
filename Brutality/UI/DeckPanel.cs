@@ -38,6 +38,7 @@ sealed class DeckPanel : Panel
     readonly WaveformBar _overview;
     readonly Button _cue;
     readonly Button _playPause;
+    readonly Button _sync;
     readonly List<HotcuePad> _pads = [];
     readonly Button _halveLoop;
     readonly Button _loop;
@@ -104,19 +105,23 @@ sealed class DeckPanel : Panel
         _overview.Changed += slider => _deck.Seek(TimeSpan.FromSeconds(slider.Value));
 
         // Cue acts on press and release rather than click, since holding it previews from the cue point.
-        _cue = Add(new Button(bold, "CUE") { MinSize = new float2(72, 30), FocusColor = Theme.Focus });
+        _cue = Add(new Button(bold, "CUE") { MinSize = new float2(64, 30), FocusColor = Theme.Focus });
         _cue.PressStarted += _ => _deck.CueDown();
         _cue.PressEnded += _ => _deck.CueUp();
 
-        _playPause = Add(new Button(bold, "PLAY") { MinSize = new float2(96, 30), FocusColor = Theme.Focus });
+        _playPause = Add(new Button(bold, "PLAY") { MinSize = new float2(84, 30), FocusColor = Theme.Focus });
         _playPause.Clicked += _ => _deck.TogglePlay();
 
+        // Sync matches the other deck's tempo, and its beats if both are playing; it stays lit while they match.
+        _sync = Add(new Button(bold, "SYNC") { MinSize = new float2(64, 30), FocusColor = Theme.Focus });
+        _sync.Clicked += _ => _deck.Sync();
+
         // The loop: halve it, start or stop it (its size on the button), double it.
-        _halveLoop = Add(new Button(bold, "\u25C4") { MinSize = new float2(30, 30), FocusColor = Theme.Focus });
+        _halveLoop = Add(new Button(bold, "\u25C4") { MinSize = new float2(26, 30), FocusColor = Theme.Focus });
         _halveLoop.Clicked += _ => _deck.HalveLoop();
-        _loop = Add(new Button(bold, "LOOP 4") { MinSize = new float2(96, 30), FocusColor = Theme.Focus });
+        _loop = Add(new Button(bold, "LOOP 4") { MinSize = new float2(84, 30), FocusColor = Theme.Focus });
         _loop.Clicked += _ => _deck.ToggleLoop();
-        _doubleLoop = Add(new Button(bold, "\u25BA") { MinSize = new float2(30, 30), FocusColor = Theme.Focus });
+        _doubleLoop = Add(new Button(bold, "\u25BA") { MinSize = new float2(26, 30), FocusColor = Theme.Focus });
         _doubleLoop.Clicked += _ => _deck.DoubleLoop();
 
         // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
@@ -182,6 +187,7 @@ sealed class DeckPanel : Panel
             _cue.Enabled = false;
             _playPause.Enabled = false;
             _playPause.Text = "PLAY";
+            _sync.Enabled = false;
             _overview.Enabled = false;
             _overview.Max = 1;
             _overview.Value = 0;
@@ -250,6 +256,11 @@ sealed class DeckPanel : Panel
         _playPause.Text = playing ? "PAUSE" : "PLAY";
         _playPause.Background = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Colors.Hex(0x2A2A35);
         _playPause.HoverBackground = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Colors.Hex(0x3A3A48);
+
+        _sync.Enabled = _deck.CanSync;
+        var inSync = _sync.Enabled && _deck.IsInSync;
+        _sync.Background = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Colors.Hex(0x2A2A35);
+        _sync.HoverBackground = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Colors.Hex(0x3A3A48);
     }
 
     /// <summary>
@@ -296,7 +307,7 @@ sealed class DeckPanel : Panel
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
         foreach (var pad in _pads)
             pad.FixedSize = new float2(padWidth, PAD_HEIGHT);
-        _loading.MaxWidth = MathF.Max(0, content - 72 - 8 - 96 - 24 - (30 + 4 + 96 + 4 + 30) - 12);
+        _loading.MaxWidth = MathF.Max(0, content - 64 - 6 - 84 - 6 - 64 - 24 - (26 + 4 + 84 + 4 + 26) - 12);
 
         // The fader fills its column between the readout above and the range button below, down to the transport.
         _tempoReadout.Measure();
@@ -351,8 +362,10 @@ sealed class DeckPanel : Panel
 
         var buttonsY = padsY - ROW_GAP - _cue.Size.Y;
         Place(_cue, Outer(0, _cue), buttonsY);
-        Place(_playPause, Outer(_cue.Size.X + 8, _playPause), buttonsY);
-        Place(_loading, Outer(_cue.Size.X + 8 + _playPause.Size.X + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
+        Place(_playPause, Outer(_cue.Size.X + 6, _playPause), buttonsY);
+        Place(_sync, Outer(_cue.Size.X + 6 + _playPause.Size.X + 6, _sync), buttonsY);
+        var transport = _cue.Size.X + 6 + _playPause.Size.X + 6 + _sync.Size.X;
+        Place(_loading, Outer(transport + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
 
         // The loop's buttons keep their order, halve on the left, whichever side the group is on.
         var loopWidth = _halveLoop.Size.X + 4 + _loop.Size.X + 4 + _doubleLoop.Size.X;
