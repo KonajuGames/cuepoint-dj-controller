@@ -82,7 +82,10 @@ sealed class OptionsDialog : Panel
             ("Tab", "Next control"),
             ("Enter", "Press, submit or load"),
             ("Esc", "Leave a box, or close this"),
-            ("Shift+click", "Clear a hotcue pad (or right-click it)"),
+            ("Q W E R", "Hotcues 1 to 4 on deck A; A S D F for 5 to 8"),
+            ("U I O P", "Hotcues 1 to 4 on deck B; J K L ; for 5 to 8"),
+            ("Shift", "With a hotcue key, or clicking a pad, clears it"),
+            ("Right-click", "Clears a hotcue pad too"),
         })
         {
             var row = keys.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });

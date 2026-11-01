@@ -36,7 +36,8 @@ sealed class DeckPanel : Panel
 
     public float Width { get; set; } = 480;
 
-    public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big)
+    /// <param name="padKeys">The keys that press the hotcue pads, in order, to label them with.</param>
+    public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big, IReadOnlyList<string>? padKeys = null)
     {
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
@@ -85,7 +86,15 @@ sealed class DeckPanel : Panel
         for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
         {
             var index = i;
-            var pad = Add(new HotcuePad(bold, i + 1) { Color = Theme.HotcueColor(i), FocusColor = Theme.Focus });
+            var pad = Add(
+                new HotcuePad(bold, i + 1)
+                {
+                    Color = Theme.HotcueColor(i),
+                    FocusColor = Theme.Focus,
+                    KeyHint = padKeys is not null && i < padKeys.Count ? padKeys[i] : null,
+                    HintFont = small,
+                }
+            );
             pad.Triggered += _ => _deck.HotcueDown(index);
             pad.Deleted += _ => _deck.DeleteHotcue(index);
             _pads.Add(pad);

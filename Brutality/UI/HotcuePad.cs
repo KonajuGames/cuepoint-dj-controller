@@ -6,7 +6,8 @@ namespace Brutality.UI;
 /// <summary>
 /// One hotcue's pad: its number, lit in its colour when set. It acts as it goes down, not when let go, so a jump
 /// lands on the beat it's pressed on: <see cref="Triggered"/> to set or jump, and with Shift held, or a right-click,
-/// <see cref="Deleted"/> to clear it. Enter or Space trigger it from the keyboard.
+/// <see cref="Deleted"/> to clear it. Enter or Space trigger it from the keyboard. A <see cref="KeyHint"/>, the app's
+/// own key for it, shows small in its corner.
 /// </summary>
 sealed class HotcuePad(Font font, int number) : Element
 {
@@ -16,6 +17,13 @@ sealed class HotcuePad(Font font, int number) : Element
     public float4 Color { get; set; } = Colors.White;
     public bool Enabled { get; set; } = true;
     public float2 FixedSize { get; set; } = new(34, 30);
+
+    /// <summary>
+    /// The key that presses this pad, shown in its top-right corner in <see cref="HintFont"/>; none if null.
+    /// </summary>
+    public string? KeyHint { get; set; }
+
+    public Font? HintFont { get; set; }
 
     public float4 EmptyBackground { get; set; } = Colors.Hex(0x2A2A35);
     public float4 HoverBackground { get; set; } = Colors.Hex(0x3A3A48);
@@ -75,6 +83,13 @@ sealed class HotcuePad(Font font, int number) : Element
         var extent = font.Measure(text);
         var at = new float2(MathF.Round(ScreenPosition.X + (Size.X - extent.X) / 2), MathF.Round(ScreenPosition.Y + (Size.Y - extent.Y) / 2));
         batch.AddText(font, text, at, Faded(IsSet ? Theme.TitleBar : Theme.Muted));
+
+        if (KeyHint is { } hint && HintFont is { } hintFont)
+        {
+            var hintSize = hintFont.Measure(hint);
+            var hintAt = new float2(MathF.Round(ScreenPosition.X + Size.X - hintSize.X - 2), ScreenPosition.Y);
+            batch.AddText(hintFont, hint, hintAt, Faded(IsSet ? Theme.Fade(Theme.TitleBar, 0.6f) : Theme.Faint));
+        }
 
         if (ShowFocus)
             batch.AddBorder(ScreenPosition, Size, 2, FocusColor);

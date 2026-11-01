@@ -90,7 +90,7 @@ static void Run()
     var folders = LibraryTree.Build(library, decks, history);
 
     var ui = new Root();
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, database.FilePath, fonts, HotcueKeys.Labels));
     using var input = new GlfwUiInput(window, ui);
     var browser = screen.Browser;
 
@@ -189,11 +189,24 @@ static void Run()
     // App shortcuts go through the UI first, so Escape in the search box only leaves the box, and typing there
     // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored. Escape no longer
     // quits, now there's a close button, since a stray press mid-set would be a disaster.
-    input.UnhandledKey += (key, action, _) =>
+    input.UnhandledKey += (key, action, mods) =>
     {
         if (action == GlfwKeyAction.Repeat)
             return;
         var pressed = action == GlfwKeyAction.Press;
+
+        // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear.
+        if (HotcueKeys.For(key) is { } hotcue)
+        {
+            if (pressed && hotcue.Deck < decks.Length)
+            {
+                if ((mods & GlfwModifier.Shift) != 0)
+                    decks[hotcue.Deck].DeleteHotcue(hotcue.Hotcue);
+                else
+                    decks[hotcue.Deck].HotcueDown(hotcue.Hotcue);
+            }
+            return;
+        }
 
         switch (key)
         {

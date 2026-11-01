@@ -41,7 +41,8 @@ sealed class MainScreen : Panel
         LibraryAnalyser analyser,
         IReadOnlyList<LibraryNode> folders,
         string databasePath,
-        Fonts fonts
+        Fonts fonts,
+        Func<int, IReadOnlyList<string>>? hotcueKeys = null
     )
     {
         Background = Theme.Background;
@@ -52,7 +53,9 @@ sealed class MainScreen : Panel
             _waveforms.Add(Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name), fonts.Small)));
 
         // Left to right: the first half of the decks, the mixer, the rest.
-        var deckPanels = decks.Select(deck => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big)).ToList();
+        var deckPanels = decks
+            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i)))
+            .ToList();
         _mixer = new MixerPanel(engine, decks, fonts.Small, fonts.Bold);
         for (var i = 0; i < deckPanels.Count; i++)
         {
