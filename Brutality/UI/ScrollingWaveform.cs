@@ -7,20 +7,22 @@ namespace Brutality.UI;
 /// <summary>
 /// A deck's song as a waveform scrolling past a fixed line in the middle, which is where the deck is playing: what's
 /// coming is to the right. Drawn in the deck's colour, darker where bass dominates and brighter where treble does,
-/// so kicks, vocals and hi-hats look different, with a lighter core showing the average level inside the peaks, and
-/// the beat grid over it with a brighter line on each bar. Drag it to move through the song. Sized by whoever lays
-/// it out, with <see cref="FixedSize"/>.
+/// so kicks, vocals and hi-hats look different, with a lighter core showing the average level inside the peaks, the
+/// beat grid over it with a brighter line on each bar, and the deck's hotcues as numbered lines in their colours. Drag
+/// it to move through the song. Sized by whoever lays it out, with <see cref="FixedSize"/>.
 /// </summary>
 sealed class ScrollingWaveform : Element
 {
     readonly Deck _deck;
+    readonly Font _font;
     double _shown;
     double _lastStep = double.NaN;
     (float X, double Position)? _drag;
 
-    public ScrollingWaveform(Deck deck, float4 color)
+    public ScrollingWaveform(Deck deck, float4 color, Font font)
     {
         _deck = deck;
+        _font = font;
         Color = color;
         PressEnded += _ => _drag = null;
     }
@@ -104,6 +106,7 @@ sealed class ScrollingWaveform : Element
             }
 
             DrawBeats(batch, position, centre);
+            DrawHotcues(batch, position, centre);
         }
 
         // Where the deck is.
@@ -133,6 +136,24 @@ sealed class ScrollingWaveform : Element
                 batch.AddRect(new float2(x - 1, ScreenPosition.Y), new float2(3, tick), Colors.Hex(0xFFFFFF, 0.8f));
                 batch.AddRect(new float2(x - 1, ScreenPosition.Y + Size.Y - tick), new float2(3, tick), Colors.Hex(0xFFFFFF, 0.8f));
             }
+        }
+    }
+
+    void DrawHotcues(Batch batch, double position, float centre)
+    {
+        for (var i = 0; i < _deck.Hotcues.Count; i++)
+        {
+            if (_deck.Hotcues[i] is not { } at)
+                continue;
+            var x = MathF.Round(centre + (float)((at.TotalSeconds - position) * PixelsPerSecond));
+            if (x < ScreenPosition.X - 20 || x >= ScreenPosition.X + Size.X)
+                continue;
+
+            var color = Theme.HotcueColor(i);
+            batch.PushClip(ScreenPosition, Size);
+            batch.AddRect(new float2(x, ScreenPosition.Y), new float2(2, Size.Y), color);
+            WaveformBar.DrawFlag(batch, _font, new float2(x, ScreenPosition.Y), (i + 1).ToString(), color, Theme.TitleBar);
+            batch.PopClip();
         }
     }
 

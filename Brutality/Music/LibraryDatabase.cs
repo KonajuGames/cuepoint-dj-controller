@@ -8,7 +8,9 @@ namespace Brutality.Music;
 /// <summary>
 /// What's been learnt about the library's songs, kept between runs in a JSON file: each song's analysis, or why it
 /// couldn't be analysed, with the file size and time it was made from so a changed file gets analysed again. A beat
-/// grid is stored as its markers, each a beat time and the tempo from there on. Only used from the UI thread.
+/// grid is stored as its markers, each a beat time and the tempo from there on. Hotcues are kept apart from the
+/// analysis, since they're the DJ's own work: analysing again, or a newer analysis, leaves them be. Only used from
+/// the UI thread.
 /// </summary>
 sealed class LibraryDatabase
 {
@@ -38,11 +40,18 @@ sealed class LibraryDatabase
     public int Count => _tracks.Count;
 
     readonly Dictionary<string, TrackRecord> _tracks;
+    readonly Dictionary<string, double?[]> _hotcues;
 
-    LibraryDatabase(string filePath, Dictionary<string, TrackRecord> tracks, string? loadError)
+    LibraryDatabase(
+        string filePath,
+        Dictionary<string, TrackRecord> tracks,
+        Dictionary<string, double?[]> hotcues,
+        string? loadError
+    )
     {
         FilePath = filePath;
         _tracks = new Dictionary<string, TrackRecord>(tracks, StringComparer.OrdinalIgnoreCase);
+        _hotcues = new Dictionary<string, double?[]>(hotcues, StringComparer.OrdinalIgnoreCase);
         LoadError = loadError;
     }
 
@@ -54,19 +63,19 @@ sealed class LibraryDatabase
     {
         filePath = Path.GetFullPath(filePath);
         if (!File.Exists(filePath))
-            return new LibraryDatabase(filePath, [], null);
+            return new LibraryDatabase(filePath, [], [], null);
 
         try
         {
             using var stream = File.OpenRead(filePath);
             var file = JsonSerializer.Deserialize<DatabaseFile>(stream, JsonOptions);
             if (file is null || file.Version != FILE_VERSION)
-                return new LibraryDatabase(filePath, [], $"Unrecognised database version {file?.Version}");
-            return new LibraryDatabase(filePath, file.Tracks ?? [], null);
+                return new LibraryDatabase(filePath, [], [], $"Unrecognised database version {file?.Version}");
+            return new LibraryDatabase(filePath, file.Tracks ?? [], file.Hotcues ?? [], null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new LibraryDatabase(filePath, [], e.Message);
+            return new LibraryDatabase(filePath, [], [], e.Message);
         }
     }
 
@@ -119,6 +128,26 @@ sealed class LibraryDatabase
             Key = analysis.Key.Name,
         };
 
+    /// <summary>
+    /// The hotcues saved for the song at <paramref name="path"/>, in seconds; empty if there are none.
+    /// </summary>
+    public IReadOnlyList<TimeSpan?> GetHotcues(string path) =>
+        _hotcues.TryGetValue(Path.GetFullPath(path), out var seconds)
+            ? seconds.Select(at => at is { } s ? TimeSpan.FromSeconds(s) : (TimeSpan?)null).ToList()
+            : [];
+
+    /// <summary>
+    /// Keeps <paramref name="hotcues"/> for the song at <paramref name="path"/>, or forgets them if none is set.
+    /// </summary>
+    public void SetHotcues(string path, IReadOnlyList<TimeSpan?> hotcues)
+    {
+        path = Path.GetFullPath(path);
+        if (hotcues.All(at => at is null))
+            _hotcues.Remove(path);
+        else
+            _hotcues[path] = hotcues.Select(at => at is { } t ? Math.Round(t.TotalSeconds, 3) : (double?)null).ToArray();
+    }
+
     public void SetFailed(Song song, string error) =>
         _tracks[song.Path] = new TrackRecord
         {
@@ -138,7 +167,7 @@ sealed class LibraryDatabase
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         var temporary = FilePath + ".tmp";
         using (var stream = File.Create(temporary))
-            JsonSerializer.Serialize(stream, new DatabaseFile { Version = FILE_VERSION, Tracks = _tracks }, JsonOptions);
+            JsonSerializer.Serialize(stream, new DatabaseFile { Version = FILE_VERSION, Tracks = _tracks, Hotcues = _hotcues }, JsonOptions);
         File.Move(temporary, FilePath, overwrite: true);
     }
 
@@ -146,6 +175,11 @@ sealed class LibraryDatabase
     {
         public int Version { get; set; }
         public Dictionary<string, TrackRecord>? Tracks { get; set; }
+
+        /// <summary>
+        /// Each song's hotcues in seconds, null where one isn't set; songs without any are left out.
+        /// </summary>
+        public Dictionary<string, double?[]>? Hotcues { get; set; }
     }
 
     sealed class TrackRecord

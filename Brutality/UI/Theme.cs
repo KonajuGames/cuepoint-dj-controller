@@ -30,6 +30,23 @@ static class Theme
     /// </summary>
     public static float4 DeckColor(string name) => name == "B" ? DeckB : DeckA;
 
+    static readonly float4[] Hotcues =
+    [
+        Colors.Hex(0xE8453C),
+        Colors.Hex(0xF08A24),
+        Colors.Hex(0xF2C230),
+        Colors.Hex(0x4CC35A),
+        Colors.Hex(0x2EC4C4),
+        Colors.Hex(0x3D8BF2),
+        Colors.Hex(0x8E5CF0),
+        Colors.Hex(0xE858B8),
+    ];
+
+    /// <summary>
+    /// Hotcue <paramref name="index"/>'s colour, from 0: round the rainbow, so neighbouring pads are told apart.
+    /// </summary>
+    public static float4 HotcueColor(int index) => Hotcues[((index % Hotcues.Length) + Hotcues.Length) % Hotcues.Length];
+
     /// <summary>
     /// <paramref name="color"/> with its alpha multiplied by <paramref name="alpha"/>.
     /// </summary>

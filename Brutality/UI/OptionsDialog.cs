@@ -82,10 +82,11 @@ sealed class OptionsDialog : Panel
             ("Tab", "Next control"),
             ("Enter", "Press, submit or load"),
             ("Esc", "Leave a box, or close this"),
+            ("Shift+click", "Clear a hotcue pad (or right-click it)"),
         })
         {
             var row = keys.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
-            row.Add(new Panel { MinSize = new float2(60, 0) }).Add(new Label(body, key) { Color = Theme.Text });
+            row.Add(new Panel { MinSize = new float2(84, 0) }).Add(new Label(body, key) { Color = Theme.Text });
             row.Add(new Label(body, action) { Color = Theme.Muted });
         }
 

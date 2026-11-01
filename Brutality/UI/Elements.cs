@@ -126,6 +126,12 @@ abstract class Element
     public virtual void PointerDown(float2 point, Modifiers modifiers) { }
 
     /// <summary>
+    /// The right button went down over this element, at <paramref name="point"/>, for a secondary action such as
+    /// clearing it. Doesn't press or focus it.
+    /// </summary>
+    public virtual void SecondaryClick(float2 point) { }
+
+    /// <summary>
     /// The mouse moved to <paramref name="point"/> while the left button, pressed on this element, is still held.
     /// The point can be outside the element.
     /// </summary>

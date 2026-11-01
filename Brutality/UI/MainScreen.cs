@@ -49,10 +49,10 @@ sealed class MainScreen : Panel
         TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold));
 
         foreach (var deck in decks)
-            _waveforms.Add(Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name))));
+            _waveforms.Add(Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name), fonts.Small)));
 
         // Left to right: the first half of the decks, the mixer, the rest.
-        var deckPanels = decks.Select(deck => new DeckPanel(deck, fonts.Body, fonts.Bold, fonts.Big)).ToList();
+        var deckPanels = decks.Select(deck => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big)).ToList();
         _mixer = new MixerPanel(engine, decks, fonts.Small, fonts.Bold);
         for (var i = 0; i < deckPanels.Count; i++)
         {

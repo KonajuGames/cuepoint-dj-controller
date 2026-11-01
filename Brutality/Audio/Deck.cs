@@ -280,6 +280,7 @@ sealed class Deck : IDisposable
         _track.Pause();
         _cueFrames = 0;
         _previewing = false;
+        Array.Clear(_hotcues);
     }
 
     public void Play()
@@ -356,6 +357,60 @@ sealed class Deck : IDisposable
             return;
         _previewing = false;
         PauseAt(_cueFrames);
+    }
+
+    /// <summary>
+    /// How many hotcues a deck has.
+    /// </summary>
+    public const int HOTCUE_COUNT = 8;
+
+    readonly TimeSpan?[] _hotcues = new TimeSpan?[HOTCUE_COUNT];
+
+    /// <summary>
+    /// The song's hotcues: places to jump straight to, each set or not. Cleared when another song loads.
+    /// </summary>
+    public IReadOnlyList<TimeSpan?> Hotcues => _hotcues;
+
+    /// <summary>
+    /// A hotcue was set or deleted by <see cref="HotcueDown"/> or <see cref="DeleteHotcue"/>, so whoever keeps them
+    /// for the song can save them. Not raised by <see cref="SetHotcues"/>.
+    /// </summary>
+    public event Action<Deck>? HotcuesChanged;
+
+    /// <summary>
+    /// Puts back the hotcues saved for the loaded song; any past its end, or beyond <see cref="HOTCUE_COUNT"/>, are
+    /// left out.
+    /// </summary>
+    public void SetHotcues(IReadOnlyList<TimeSpan?> hotcues)
+    {
+        for (var i = 0; i < HOTCUE_COUNT; i++)
+            _hotcues[i] = i < hotcues.Count && hotcues[i] is { } at && IsLoaded && at >= TimeSpan.Zero && at <= Duration ? at : null;
+    }
+
+    /// <summary>
+    /// Hotcue <paramref name="index"/>'s pad was pressed: an empty one is set where the deck is; a set one jumps
+    /// there, playing on if it was playing, or staying paused if it was paused.
+    /// </summary>
+    public void HotcueDown(int index)
+    {
+        if (!IsLoaded || index < 0 || index >= HOTCUE_COUNT)
+            return;
+
+        if (_hotcues[index] is { } at)
+        {
+            Seek(at);
+            return;
+        }
+        _hotcues[index] = Position;
+        HotcuesChanged?.Invoke(this);
+    }
+
+    public void DeleteHotcue(int index)
+    {
+        if (index < 0 || index >= HOTCUE_COUNT || _hotcues[index] is null)
+            return;
+        _hotcues[index] = null;
+        HotcuesChanged?.Invoke(this);
     }
 
     /// <summary>

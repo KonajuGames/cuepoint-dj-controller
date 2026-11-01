@@ -1,0 +1,82 @@
+using Brutal.Numerics;
+using Brutality.Input;
+
+namespace Brutality.UI;
+
+/// <summary>
+/// One hotcue's pad: its number, lit in its colour when set. It acts as it goes down, not when let go, so a jump
+/// lands on the beat it's pressed on: <see cref="Triggered"/> to set or jump, and with Shift held, or a right-click,
+/// <see cref="Deleted"/> to clear it. Enter or Space trigger it from the keyboard.
+/// </summary>
+sealed class HotcuePad(Font font, int number) : Element
+{
+    public int Number { get; } = number;
+
+    public bool IsSet { get; set; }
+    public float4 Color { get; set; } = Colors.White;
+    public bool Enabled { get; set; } = true;
+    public float2 FixedSize { get; set; } = new(34, 30);
+
+    public float4 EmptyBackground { get; set; } = Colors.Hex(0x2A2A35);
+    public float4 HoverBackground { get; set; } = Colors.Hex(0x3A3A48);
+    public float4 FocusColor { get; set; } = Colors.Hex(0x7AB8FF);
+
+    /// <summary>
+    /// Pressed: an empty pad should be set, a set one jumped to.
+    /// </summary>
+    public event Action<HotcuePad>? Triggered;
+
+    /// <summary>
+    /// Shift-clicked or right-clicked: the hotcue should be cleared.
+    /// </summary>
+    public event Action<HotcuePad>? Deleted;
+
+    public override bool IsInteractive => Enabled;
+    public override bool IsFocusable => Enabled;
+
+    public override float2 Measure() => Size = FixedSize;
+
+    public override void PointerDown(float2 point, Modifiers modifiers)
+    {
+        if ((modifiers & Modifiers.Shift) != 0)
+            Deleted?.Invoke(this);
+        else
+            Triggered?.Invoke(this);
+    }
+
+    public override void SecondaryClick(float2 point)
+    {
+        if (Enabled)
+            Deleted?.Invoke(this);
+    }
+
+    public override bool KeyDown(Key key, Modifiers modifiers)
+    {
+        if (key is not (Key.Enter or Key.Space))
+            return false;
+        Triggered?.Invoke(this);
+        return true;
+    }
+
+    public override void Draw(Batch batch)
+    {
+        var alpha = Enabled ? 1f : 0.4f;
+        float4 Faded(float4 c) => c * new float4(1, 1, 1, alpha);
+
+        var background =
+            IsSet ? (IsPressed ? Theme.Mix(Color, Colors.White, 0.3f) : IsHovered ? Theme.Mix(Color, Colors.White, 0.15f) : Color)
+            : IsHovered || IsPressed ? HoverBackground
+            : EmptyBackground;
+        batch.AddRect(ScreenPosition, Size, Faded(background));
+        if (!IsSet)
+            batch.AddRect(ScreenPosition + new float2(0, Size.Y - 2), new float2(Size.X, 2), Faded(Theme.Fade(Color, 0.6f)));
+
+        var text = Number.ToString();
+        var extent = font.Measure(text);
+        var at = new float2(MathF.Round(ScreenPosition.X + (Size.X - extent.X) / 2), MathF.Round(ScreenPosition.Y + (Size.Y - extent.Y) / 2));
+        batch.AddText(font, text, at, Faded(IsSet ? Theme.TitleBar : Theme.Muted));
+
+        if (ShowFocus)
+            batch.AddBorder(ScreenPosition, Size, 2, FocusColor);
+    }
+}

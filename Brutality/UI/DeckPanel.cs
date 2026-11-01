@@ -5,7 +5,9 @@ namespace Brutality.UI;
 
 /// <summary>
 /// A deck's controls and read-out, in the deck's colour: its letter, what's loaded, the tempo where it's playing and
-/// its key, how far in it is and how long's left, the whole song's waveform to see and seek in, and Cue and Play.
+/// its key, how far in it is and how long's left, the whole song's waveform to see and seek in with its hotcues
+/// marked, Cue and Play, and a pad for each hotcue: press an empty one to set it where the deck is, a set one to jump
+/// there, and Shift-click or right-click one to clear it.
 /// Sized by whoever lays it out, with <see cref="Width"/>. Call <see cref="Refresh"/> once a frame.
 /// </summary>
 sealed class DeckPanel : Panel
@@ -28,10 +30,13 @@ sealed class DeckPanel : Panel
     readonly WaveformBar _overview;
     readonly Button _cue;
     readonly Button _playPause;
+    readonly List<HotcuePad> _pads = [];
+
+    const float PAD_GAP = 4;
 
     public float Width { get; set; } = 480;
 
-    public DeckPanel(Deck deck, Font body, Font bold, Font big)
+    public DeckPanel(Deck deck, Font small, Font body, Font bold, Font big)
     {
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
@@ -64,6 +69,7 @@ sealed class DeckPanel : Panel
                 UnplayedColor = Colors.Hex(0xFFFFFF, 0.3f),
                 HandleColor = Colors.White,
                 FocusColor = Theme.Focus,
+                FlagFont = small,
             }
         );
         _overview.Changed += slider => _deck.Seek(TimeSpan.FromSeconds(slider.Value));
@@ -75,6 +81,15 @@ sealed class DeckPanel : Panel
 
         _playPause = Add(new Button(bold, "PLAY") { MinSize = new float2(96, 30), FocusColor = Theme.Focus });
         _playPause.Clicked += _ => _deck.TogglePlay();
+
+        for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
+        {
+            var index = i;
+            var pad = Add(new HotcuePad(bold, i + 1) { Color = Theme.HotcueColor(i), FocusColor = Theme.Focus });
+            pad.Triggered += _ => _deck.HotcueDown(index);
+            pad.Deleted += _ => _deck.DeleteHotcue(index);
+            _pads.Add(pad);
+        }
 
         Refresh();
     }
@@ -102,6 +117,9 @@ sealed class DeckPanel : Panel
             _overview.Marks.Clear();
             _overview.Waveform = null;
             _overview.Grid = null;
+            _overview.Flags = [];
+            foreach (var pad in _pads)
+                (pad.Enabled, pad.IsSet) = (false, false);
             return;
         }
 
@@ -138,6 +156,16 @@ sealed class DeckPanel : Panel
         _overview.Marks.Clear();
         _overview.Marks.Add((float)_deck.CuePoint.TotalSeconds);
 
+        var flags = new List<(float, float4, string)>();
+        for (var i = 0; i < _pads.Count; i++)
+        {
+            var hotcue = _deck.Hotcues[i];
+            (_pads[i].Enabled, _pads[i].IsSet) = (true, hotcue is not null);
+            if (hotcue is { } at)
+                flags.Add(((float)at.TotalSeconds, Theme.HotcueColor(i), (i + 1).ToString()));
+        }
+        _overview.Flags = flags;
+
         _cue.Enabled = true;
         _playPause.Enabled = true;
         // A cue preview is playing, but Play would latch it rather than pause, so it still offers Play.
@@ -155,7 +183,7 @@ sealed class DeckPanel : Panel
         var right = MathF.Max(MathF.Max(_bpm.Size.X, _key.Size.X), 90);
         _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, Width - 2 * PAD - 40 - right - 16);
         _overview.Length = Width - 2 * PAD;
-        _loading.MaxWidth = Width - 2 * PAD - 72 - 96 - 24 - 90;
+        _loading.MaxWidth = MathF.Max(0, Width - 2 * PAD - 72 - 96 - 24 - PadsWidth - 16 - 90);
 
         foreach (var child in Children)
             child.Measure();
@@ -186,9 +214,17 @@ sealed class DeckPanel : Panel
         var buttonsY = position.Y + HEIGHT - PAD - _cue.Size.Y;
         Place(_cue, left, buttonsY);
         Place(_playPause, left + _cue.Size.X + 8, buttonsY);
-        Place(_loading, left + _cue.Size.X + 8 + _playPause.Size.X + 12, buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
+        var x = left + _cue.Size.X + 8 + _playPause.Size.X + 16;
+        foreach (var pad in _pads)
+        {
+            Place(pad, x, buttonsY);
+            x += pad.Size.X + PAD_GAP;
+        }
+        Place(_loading, x + 12 - PAD_GAP, buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
         Place(_cuePoint, right - _cuePoint.Size.X, buttonsY + (_cue.Size.Y - _cuePoint.Size.Y) / 2);
     }
+
+    float PadsWidth => _pads.Sum(pad => pad.FixedSize.X) + (_pads.Count - 1) * PAD_GAP;
 
     public override void Draw(Batch batch)
     {

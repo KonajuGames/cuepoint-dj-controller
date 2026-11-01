@@ -223,7 +223,14 @@ sealed class Root
 
     public void MouseButton(MouseButton button, bool down, Modifiers modifiers = Modifiers.None)
     {
+        // A right-click goes to what's under the mouse as it goes down, and does nothing else: no focus, no press.
         // Qualified, since inside this class the bare name means this method.
+        if (button == Input.MouseButton.Right)
+        {
+            if (down && Hovered is { } target && _mouse is { } at)
+                target.SecondaryClick(at);
+            return;
+        }
         if (button != Input.MouseButton.Left)
             return;
 

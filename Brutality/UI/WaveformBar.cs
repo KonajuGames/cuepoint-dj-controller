@@ -9,7 +9,8 @@ namespace Brutality.UI;
 /// see what's coming. The part already played is coloured; seeking works as on any <see cref="Slider"/>. With no
 /// <see cref="Waveform"/> it draws a plain track. With a <see cref="Grid"/>, its beats are drawn over the waveform,
 /// as many as fit: every beat, or every bar, or every few bars, with every fourth line brighter. <see cref="Slider.Min"/>
-/// and <see cref="Slider.Max"/> are taken to be seconds into the song, for placing them.
+/// and <see cref="Slider.Max"/> are taken to be seconds into the song, for placing them. <see cref="Flags"/>, such as
+/// hotcues, are drawn over all that as coloured lines with a labelled flag at the top.
 /// </summary>
 sealed class WaveformBar : Slider
 {
@@ -23,6 +24,14 @@ sealed class WaveformBar : Slider
     public Waveform? Waveform { get; set; }
 
     public BeatGrid? Grid { get; set; }
+
+    /// <summary>
+    /// Places to mark, as values between <see cref="Slider.Min"/> and <see cref="Slider.Max"/>: each a line in its
+    /// colour with a flag at the top carrying its label, in <see cref="FlagFont"/>.
+    /// </summary>
+    public IReadOnlyList<(float Value, float4 Color, string Label)> Flags { get; set; } = [];
+
+    public Font? FlagFont { get; set; }
 
     public float4 GridColor { get; set; } = Colors.Hex(0xFFFFFF, 0.14f);
     public float4 StrongGridColor { get; set; } = Colors.Hex(0xFFFFFF, 0.55f);
@@ -62,6 +71,35 @@ sealed class WaveformBar : Slider
         }
 
         DrawGrid(batch, left);
+        DrawFlags(batch, left);
+    }
+
+    void DrawFlags(Batch batch, float left)
+    {
+        if (Max <= Min)
+            return;
+        foreach (var (value, color, label) in Flags)
+        {
+            var fraction = Math.Clamp((value - Min) / (Max - Min), 0, 1);
+            var x = MathF.Round(left + OffsetOf(fraction));
+            batch.AddRect(new float2(x, ScreenPosition.Y), new float2(1, Size.Y), Faded(color));
+            if (FlagFont is { } font)
+                DrawFlag(batch, font, new float2(x, ScreenPosition.Y), label, Faded(color), Faded(Theme.TitleBar));
+        }
+    }
+
+    /// <summary>
+    /// A small flag in <paramref name="color"/> hanging right from <paramref name="at"/>, with <paramref name="label"/>
+    /// in it: the head of a hotcue's line.
+    /// </summary>
+    public static void DrawFlag(Batch batch, Font font, float2 at, string label, float4 color, float4 textColor)
+    {
+        var extent = font.Measure(label);
+        var height = MathF.Round(font.GetGlyph('0').Bearing.Y + 4);
+        var size = new float2(MathF.Round(extent.X + 4), height);
+        batch.AddRect(at, size, color);
+        var baseline = at.Y + MathF.Round((height + font.GetGlyph('0').Bearing.Y) / 2);
+        batch.AddText(font, label, new float2(at.X + 2, baseline - font.Ascender), textColor);
     }
 
     /// <summary>

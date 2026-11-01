@@ -126,6 +126,24 @@ static void Run()
         {
             screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
             loaded.Analysis = loaded.FilePath is { } path ? library.Find(path)?.Analysis : null;
+            if (loaded.FilePath is { } file)
+                loaded.SetHotcues(database.GetHotcues(file));
+        };
+
+        // Hotcues are saved as soon as they're set or cleared, so none is lost if the app closes mid-set.
+        deck.HotcuesChanged += changed =>
+        {
+            if (changed.FilePath is not { } file)
+                return;
+            database.SetHotcues(file, changed.Hotcues);
+            try
+            {
+                database.Save();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                screen.Log($"Couldn't save hotcues to {database.FilePath}: {e.Message}");
+            }
         };
         // A missing or unsupported file leaves the deck as it was rather than stopping the app.
         deck.LoadFailed += (failed, path, e) =>
