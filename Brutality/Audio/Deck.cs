@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.SdlApi.Mixer;
@@ -621,6 +622,7 @@ sealed class Deck : IDisposable
     /// </summary>
     public void Update()
     {
+        UpdateRoll();
         if (_pending is not { Task.IsCompleted: true } done)
             return;
         _pending = null;
@@ -682,6 +684,7 @@ sealed class Deck : IDisposable
     /// </summary>
     void Apply(DecodedSong song)
     {
+        _rolls.Clear();
         _track.Stop(0);
         _track.SetAudio(song.Audio);
         _audio.Dispose();
@@ -850,6 +853,12 @@ sealed class Deck : IDisposable
 
         var clamped = TimeSpan.FromTicks(Math.Clamp(position.Ticks, 0, Duration.Ticks));
         var frames = ToFrames(clamped);
+        if (IsRolling)
+        {
+            EndRollHere();
+            if (IsLooping)
+                ExitLoop();
+        }
 
         // Inside the loop it stays looping; anywhere else, it leaves the loop to get there.
         if (IsLooping)
@@ -945,7 +954,7 @@ sealed class Deck : IDisposable
     /// same place in the music: the same moment if it's inside the loop, or as far into the loop as the music is past
     /// its start. Playing or paused stays as it was.
     /// </summary>
-    void PlaceLoop(double startBeat)
+    void PlaceLoop(double startBeat, long? from = null)
     {
         if (_pcm is not { } pcm || _analysis?.Grid is not { } grid)
             return;
@@ -957,7 +966,7 @@ sealed class Deck : IDisposable
         try
         {
             var length = end - start;
-            var into = ((SongFrame - start) % length + length) % length;
+            var into = (((from ?? SongFrame) - start) % length + length) % length;
             var playing = IsPlaying;
             var loop = pcm.Play(_engine.Mixer, start, length);
 
@@ -983,6 +992,8 @@ sealed class Deck : IDisposable
     /// </summary>
     public void ExitLoop()
     {
+        if (IsRolling)
+            EndRollHere();
         if (!IsLooping)
             return;
 
@@ -1004,6 +1015,131 @@ sealed class Deck : IDisposable
         {
             _engine.Mixer.Unlock();
         }
+    }
+
+    // The roll sizes held, latest last: the one rolling is the last, and letting go of it goes back to the one before.
+    readonly List<double> _rolls = [];
+
+    // Where the music would be, in seconds, had it not been rolling, and when that was last worked out.
+    double _rollShadow;
+    long _rollClock;
+
+    // The loop's size before the roll, for the loop button, which the roll borrows.
+    double _loopBeatsBeforeRoll;
+
+    /// <summary>
+    /// The size of the loop roll going on, in beats; null if none.
+    /// </summary>
+    public double? RollBeats => _rolls.Count > 0 ? _rolls[^1] : null;
+
+    public bool IsRolling => _rolls.Count > 0;
+
+    /// <summary>
+    /// A loop roll of <paramref name="beats"/> held down: the music loops over that much, from the beat (or fraction
+    /// of one) just played, while the song carries on underneath unheard. Letting go (<see cref="RollUp"/>) drops back
+    /// in where the song has got to, so the mix stays on the beat. Another size held meanwhile takes over, from the
+    /// same place, and letting go of it goes back to the one before. Only while playing; a roll over a loop ends the
+    /// loop.
+    /// </summary>
+    public void RollDown(double beats)
+    {
+        if (!CanLoop || !IsPlaying || _analysis?.Grid is null)
+            return;
+        beats = Math.Clamp(beats, MIN_LOOP_BEATS, MAX_LOOP_BEATS);
+        if (_rolls.Count == 0)
+        {
+            var song = ToTime(SongFrame).TotalSeconds;
+            if (IsLooping)
+                ExitLoop();
+            (_rollShadow, _rollClock, _loopBeatsBeforeRoll) = (song, Stopwatch.GetTimestamp(), _loopBeats);
+        }
+        _rolls.Remove(beats);
+        _rolls.Add(beats);
+        PlaceRoll(beats);
+    }
+
+    /// <summary>
+    /// A loop roll of <paramref name="beats"/> let go: back to the size held before it, if any, or else on through the
+    /// song from where it would have been.
+    /// </summary>
+    public void RollUp(double beats)
+    {
+        beats = Math.Clamp(beats, MIN_LOOP_BEATS, MAX_LOOP_BEATS);
+        var wasRolling = RollBeats == beats;
+        if (!_rolls.Remove(beats))
+            return;
+        if (_rolls.Count > 0)
+        {
+            if (wasRolling)
+                PlaceRoll(_rolls[^1]);
+            return;
+        }
+
+        AdvanceShadow();
+        _loopBeats = _loopBeatsBeforeRoll;
+        if (!IsLooping || _pcm is null)
+            return;
+        _engine.Mixer.Lock();
+        try
+        {
+            var playing = IsPlaying;
+            _track.SetAudio(_audio);
+            _track.Play(0);
+            _track.SetPlaybackPosition(Math.Clamp(ToFrames(TimeSpan.FromSeconds(_rollShadow)), 0, _pcm.Frames - 1));
+            if (!playing)
+                _track.Pause();
+            _loopAudio.Dispose();
+            _loopAudio = default;
+        }
+        finally
+        {
+            _engine.Mixer.Unlock();
+        }
+    }
+
+    /// <summary>
+    /// The roll's loop, <paramref name="beats"/> long from the beat (or fraction) the song's reached, playing on from
+    /// where the song is in it.
+    /// </summary>
+    void PlaceRoll(double beats)
+    {
+        AdvanceShadow();
+        var beat = _analysis!.Grid.BeatNumberAt(_rollShadow);
+        var startBeat = beats >= 1 ? Math.Floor(beat) : Math.Floor(beat / beats) * beats;
+        _loopBeats = beats;
+        PlaceLoop(startBeat, ToFrames(TimeSpan.FromSeconds(_rollShadow)));
+    }
+
+    /// <summary>
+    /// Moves where the song would be on by the time since it was last worked out, at the speed it's playing.
+    /// </summary>
+    void AdvanceShadow()
+    {
+        var now = Stopwatch.GetTimestamp();
+        if (IsPlaying)
+            _rollShadow += Stopwatch.GetElapsedTime(_rollClock, now).TotalSeconds * Volatile.Read(ref _speed);
+        _rollClock = now;
+    }
+
+    /// <summary>
+    /// Keeps a roll's place in the song, and ends it, staying where it is, if the deck stops playing.
+    /// </summary>
+    void UpdateRoll()
+    {
+        if (!IsRolling)
+            return;
+        AdvanceShadow();
+        if (!IsPlaying)
+            EndRollHere();
+    }
+
+    /// <summary>
+    /// Forgets the roll, leaving the loop it was playing for whoever ends it.
+    /// </summary>
+    void EndRollHere()
+    {
+        _rolls.Clear();
+        _loopBeats = _loopBeatsBeforeRoll;
     }
 
     public void Dispose()

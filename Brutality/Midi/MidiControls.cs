@@ -1,3 +1,4 @@
+using Brutality.Music;
 using Brutality.Audio;
 
 namespace Brutality.Midi;
@@ -85,6 +86,18 @@ sealed class MidiControls : IDisposable
     /// as when the pads are fixing the beat grid, or false to leave it to work the hotcue.
     /// </summary>
     public Func<Deck, int, bool, bool>? PadPressed { get; set; }
+
+    /// <summary>
+    /// A deck's pad was let go, for a pad that's held (a loop roll).
+    /// </summary>
+    public Action<Deck, int>? PadReleased { get; set; }
+
+    /// <summary>
+    /// A deck's pad mode button was pressed: true for loop rolls, false for hotcues.
+    /// </summary>
+    public event Action<Deck, bool>? RollModePressed;
+
+    public Func<Deck, bool>? IsRollMode { get; set; }
 
     /// <summary>
     /// A deck's grid mode button was pressed, and whether that deck's grid mode is on, for its light.
@@ -307,8 +320,22 @@ sealed class MidiControls : IDisposable
                 deck.CueUp();
             return;
         }
-        if (!pressed)
+
+        // A loop roll lasts as long as its pad's held.
+        if (Roll(action) is { } roll)
+        {
+            if (pressed)
+                deck.RollDown(RollPads.Sizes[roll]);
+            else
+                deck.RollUp(RollPads.Sizes[roll]);
             return;
+        }
+        if (!pressed)
+        {
+            if (Hotcue(action) is { } released && !action.EndsWith(".delete"))
+                PadReleased?.Invoke(deck, released);
+            return;
+        }
 
         switch (action)
         {
@@ -342,6 +369,12 @@ sealed class MidiControls : IDisposable
             case "grid":
                 GridModePressed?.Invoke(deck);
                 break;
+            case "roll":
+                RollModePressed?.Invoke(deck, true);
+                break;
+            case "hotcues":
+                RollModePressed?.Invoke(deck, false);
+                break;
             default:
                 if (Hotcue(action) is { } hotcue)
                 {
@@ -355,6 +388,12 @@ sealed class MidiControls : IDisposable
                 break;
         }
     }
+
+    /// <summary>
+    /// The loop roll pad, from 0, an action like "roll3" is for.
+    /// </summary>
+    static int? Roll(string action) =>
+        action.StartsWith("roll") && int.TryParse(action["roll".Length..], out var number) && number >= 1 && number <= RollPads.Sizes.Count ? number - 1 : null;
 
     /// <summary>
     /// The hotcue, from 0, an action like "hotcue3" or "hotcue3.delete" is for.
@@ -466,6 +505,9 @@ sealed class MidiControls : IDisposable
             "keylock" => deck.KeyLocked,
             "loop" => deck.IsLooping,
             "grid" => IsGridMode?.Invoke(deck) == true,
+            "roll" => IsRollMode?.Invoke(deck) == true,
+            "hotcues" => IsRollMode?.Invoke(deck) != true && IsGridMode?.Invoke(deck) != true,
+            _ when Roll(action) is { } roll => deck.RollBeats == RollPads.Sizes[roll],
             _ => Hotcue(action) is { } hotcue && hotcue < deck.Hotcues.Count && deck.Hotcues[hotcue] is not null,
         };
     }

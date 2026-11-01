@@ -133,8 +133,12 @@ static void Run()
     var gridEditors = decks.Select(deck => new GridEditor(deck, library, database)).ToArray();
     GridEditor? GridEditorFor(Deck deck) => gridEditors.FirstOrDefault(editor => editor.Deck == deck);
 
+    // And each deck's pads can roll loops instead, with them in ROLL mode.
+    var rollPads = gridEditors.Select(editor => new RollPads(editor.Deck, editor)).ToArray();
+    RollPads? RollPadsFor(Deck deck) => rollPads.FirstOrDefault(roll => roll.Deck == deck);
+
     var ui = new Root();
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor));
     foreach (var editor in gridEditors)
         editor.Log += screen.Log;
     using var input = new GlfwUiInput(window, ui);
@@ -357,11 +361,28 @@ static void Run()
         // In GRID mode the controller's pads are the grid tools too, Shift + pad making a nudge a fine one.
         controllers.PadPressed = (deck, pad, shifted) =>
         {
+            if (RollPadsFor(deck) is { Active: true } roll && !shifted)
+            {
+                roll.Down(pad);
+                return true;
+            }
             if (GridEditorFor(deck) is not { Active: true } editor)
                 return false;
             editor.Pad(pad, fine: shifted);
             return true;
         };
+        controllers.PadReleased = (deck, pad) => RollPadsFor(deck)?.Up(pad);
+
+        // The controller's pad mode buttons: its rolls page puts the pads on screen in ROLL mode too, and HOT CUE
+        // puts them back to hotcues.
+        controllers.RollModePressed += (deck, on) =>
+        {
+            if (RollPadsFor(deck) is { } roll)
+                roll.Active = on;
+            if (!on && GridEditorFor(deck) is { } editor)
+                editor.Active = false;
+        };
+        controllers.IsRollMode = deck => RollPadsFor(deck)?.Active == true;
         controllers.GridModePressed += deck =>
         {
             if (GridEditorFor(deck) is { } editor)
@@ -385,10 +406,15 @@ static void Run()
         var pressed = action == GlfwKeyAction.Press;
 
         // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear; or in GRID mode, its tools,
-        // Shift making a nudge a fine one.
+        // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held.
         if (HotcueKeys.For(key) is { } hotcue)
         {
-            if (pressed && hotcue.Deck < decks.Length && gridEditors[hotcue.Deck].Active)
+            // A roll lasts while its key's held, whatever mode the pads are in by the time it's let go.
+            if (!pressed && hotcue.Deck < decks.Length)
+                rollPads[hotcue.Deck].Up(hotcue.Hotcue);
+            else if (pressed && hotcue.Deck < decks.Length && rollPads[hotcue.Deck].Active)
+                rollPads[hotcue.Deck].Down(hotcue.Hotcue);
+            else if (pressed && hotcue.Deck < decks.Length && gridEditors[hotcue.Deck].Active)
                 gridEditors[hotcue.Deck].Pad(hotcue.Hotcue, fine: (mods & GlfwModifier.Shift) != 0);
             else if (pressed && hotcue.Deck < decks.Length)
             {

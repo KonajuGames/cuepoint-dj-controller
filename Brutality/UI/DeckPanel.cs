@@ -51,6 +51,8 @@ sealed class DeckPanel : Panel
     readonly Button _tempoRange;
     readonly Button _keyLock;
     readonly Button? _gridMode;
+    readonly RollPads? _roll;
+    readonly Button? _rollMode;
     readonly GridEditor? _grid;
     readonly Images? _images;
 
@@ -91,10 +93,12 @@ sealed class DeckPanel : Panel
         IReadOnlyList<string>? padKeys = null,
         DeckKeyHints? keys = null,
         GridEditor? grid = null,
-        Images? images = null
+        Images? images = null,
+        RollPads? roll = null
     )
     {
         _images = images;
+        _roll = roll;
         _grid = grid;
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
@@ -193,6 +197,13 @@ sealed class DeckPanel : Panel
             _gridMode.Clicked += _ => grid.Active = !grid.Active;
         }
 
+        // ROLL turns the pads into loop rolls, held for as long as each pad is, and back.
+        if (roll is not null)
+        {
+            _rollMode = Add(new Button(bold, "ROLL") { MinSize = new float2(56, 30), FocusColor = Theme.Focus });
+            _rollMode.Clicked += _ => roll.Active = !roll.Active;
+        }
+
         for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
         {
             var index = i;
@@ -205,14 +216,18 @@ sealed class DeckPanel : Panel
                     HintFont = small,
                 }
             );
-            // In GRID mode each pad is a tool; Shift (or a right-click) makes a nudge a fine one.
+            // In GRID mode each pad is a tool; Shift (or a right-click) makes a nudge a fine one. In ROLL mode each
+            // rolls a loop while it's held.
             pad.Triggered += _ =>
             {
                 if (_grid is { Active: true })
                     _grid.Pad(index);
+                else if (_roll is { Active: true })
+                    _roll.Down(index);
                 else
                     _deck.HotcueDown(index);
             };
+            pad.PressEnded += _ => _roll?.Up(index);
             pad.Deleted += _ =>
             {
                 if (_grid is { Active: true })
@@ -233,6 +248,11 @@ sealed class DeckPanel : Panel
         {
             _gridMode.Background = _grid.Active ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
             _gridMode.HoverBackground = _grid.Active ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+        }
+        if (_rollMode is not null && _roll is not null)
+        {
+            _rollMode.Background = _roll.Active ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.5f) : Colors.Hex(0x2A2A35);
+            _rollMode.HoverBackground = _roll.Active ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.65f) : Colors.Hex(0x3A3A48);
         }
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
 
@@ -303,15 +323,16 @@ sealed class DeckPanel : Panel
 
         var flags = new List<(float, float4, string)>();
         var gridMode = _grid is { Active: true };
+        var rollMode = !gridMode && _roll is { Active: true };
         for (var i = 0; i < _pads.Count; i++)
         {
             var hotcue = _deck.Hotcues[i];
-            (_pads[i].Enabled, _pads[i].IsSet) = (true, hotcue is not null && !gridMode);
-            _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : null;
+            (_pads[i].Enabled, _pads[i].IsSet) = (true, rollMode ? _roll!.IsRolling(i) : hotcue is not null && !gridMode);
+            _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : rollMode ? RollPads.Label(i) : null;
             var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : 0;
             _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
             _pads[i].IconAfter = direction > 0;
-            _pads[i].Color = gridMode ? Theme.Accent : Theme.HotcueColor(i);
+            _pads[i].Color = gridMode ? Theme.Accent : rollMode ? Theme.Loop : Theme.HotcueColor(i);
             if (hotcue is { } at)
                 flags.Add(((float)at.TotalSeconds, Theme.HotcueColor(i), (i + 1).ToString()));
         }
@@ -446,6 +467,11 @@ sealed class DeckPanel : Panel
         {
             Place(_gridMode, Outer(transport + 12, _gridMode), buttonsY);
             transport += 12 + _gridMode.Size.X;
+        }
+        if (_rollMode is not null)
+        {
+            Place(_rollMode, Outer(transport + 6, _rollMode), buttonsY);
+            transport += 6 + _rollMode.Size.X;
         }
         Place(_loading, Outer(transport + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
 

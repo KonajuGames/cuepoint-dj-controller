@@ -1,3 +1,4 @@
+using Brutality.Music;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -52,8 +53,12 @@ static class ControlCatalog
                     new($"{deck}.loop.halve", $"Deck {deck} halve loop", ControlKind.Button),
                     new($"{deck}.loop.double", $"Deck {deck} double loop", ControlKind.Button),
                     new($"{deck}.grid", $"Deck {deck} grid mode (pads fix the beat grid)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.roll", $"Deck {deck} roll mode (pads roll loops)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.hotcues", $"Deck {deck} hotcue mode (pads back to hotcues)", ControlKind.Button, HasLight: true),
                 ]
             );
+            for (var i = 1; i <= HOTCUES; i++)
+                controls.Add(new($"{deck}.roll{i}", $"Deck {deck} loop roll {RollPads.Label(i - 1)}", ControlKind.Button, HasLight: true));
             for (var i = 1; i <= HOTCUES; i++)
                 controls.Add(new($"{deck}.hotcue{i}", $"Deck {deck} hotcue {i}", ControlKind.Button, HasLight: true));
             for (var i = 1; i <= HOTCUES; i++)

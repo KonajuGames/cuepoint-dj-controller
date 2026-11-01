@@ -14,7 +14,9 @@ static class ControllerPresets
 
     /// <summary>
     /// Pioneer's DDJ layout, as on the DDJ-SB3: each deck's controls on its own channel (deck 1 on 1, deck 2 on 2),
-    /// its pads on another (8 and 9), and the shared mixer and browser on 7. Faders and knobs send fourteen bits,
+    /// its pads on another (8 and 9), and the shared mixer and browser on 7. The pad mode buttons change what the pads
+    /// send: HOT CUE their first page (notes 0 to 7), the next button (PAD FX on the SB3) the second (16 to 23), which
+    /// roll loops here. Faders and knobs send fourteen bits,
     /// the fine half 32 above the coarse. Shift sends different messages rather than changing what the app does, so
     /// shifted controls are bound like any other: pads with Shift held come 8 notes higher, and the jog wheel
     /// turned with Shift comes on its own controls.
@@ -56,7 +58,10 @@ static class ControllerPresets
             {
                 Note($"{deck}.hotcue{pad + 1}", pads, pad);
                 Note($"{deck}.hotcue{pad + 1}.delete", pads, pad + 8);
+                Note($"{deck}.roll{pad + 1}", pads, 0x10 + pad);
             }
+            Note($"{deck}.hotcues", channel, 0x1B);
+            Note($"{deck}.roll", channel, 0x1E);
 
             // Pioneer's tempo sliders are minus at the top, where they send 0.
             Control($"{deck}.tempo", channel, 0x00);
