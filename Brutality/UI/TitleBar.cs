@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Brutal.Numerics;
 using Brutality.Audio;
+using Brutality.Audio.Analysis;
 
 namespace Brutality.UI;
 
@@ -71,11 +72,31 @@ sealed class IconButton(TitleIcon icon) : Element
 /// </summary>
 sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
 {
-    const float BOX = 14;
+    const float BOX = 21;
     const float GAP = 3;
     const float ROW = 9;
     const float ROW_GAP = 5;
     const float LETTER = 14;
+
+    /// <summary>
+    /// How far in from a box's edges the beat's block sits.
+    /// </summary>
+    const float INSET = 2;
+
+    /// <summary>
+    /// Where <paramref name="seconds"/> is: its beat in the bar, and its bar in four, both from 0, counting bars from
+    /// the song's first (the one holding its first beat), as lighting software is told them.
+    /// </summary>
+    public static (int Beat, int Bar) Place(BeatGrid grid, double seconds)
+    {
+        var beat = (long)Math.Floor(grid.BeatNumberAt(seconds) + 1e-6);
+        var first = (long)Math.Floor(grid.BeatNumberAt(grid.FirstBeat) + 1e-6);
+        var firstBar = first - grid.BarPosition(first);
+        // Rounded down, so the bars before the first count back 3, 2, 1, 0 as well.
+        var sinceFirst = beat - firstBar;
+        var bar = sinceFirst >= 0 ? sinceFirst / BeatGrid.BEATS_PER_BAR : (sinceFirst - BeatGrid.BEATS_PER_BAR + 1) / BeatGrid.BEATS_PER_BAR;
+        return (grid.BarPosition(beat), (int)(((bar % 4) + 4) % 4));
+    }
 
     public override float2 Measure() =>
         Size = new float2(LETTER + 4 * BOX + 3 * GAP, decks.Count * ROW + Math.Max(0, decks.Count - 1) * ROW_GAP);
@@ -96,14 +117,19 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
             // The letter's capitals centred on the row, rather than its line box.
             batch.AddText(font, deck.Name, new float2(ScreenPosition.X, MathF.Round(top + ROW / 2 + CapHeight(font) / 2 - font.Ascender)), color);
 
-            var lit = -1;
+            var (beat, bar) = (-1, -1);
             if (deck.Analysis?.Grid is { } grid && deck.IsLoaded)
-                lit = grid.BarPosition(grid.BeatNumberAt(deck.Position.TotalSeconds));
+                (beat, bar) = Place(grid, deck.Position.TotalSeconds);
 
+            // Four black boxes: the bar (of four) filled with the deck's colour, and the beat (of four) as a smaller
+            // block of colour inside its box, which in the bar's own box is just the full colour.
+            var lit = deck.IsPlaying ? color : Theme.Fade(color, 0.45f);
             for (var i = 0; i < 4; i++)
             {
-                var on = i == lit ? (deck.IsPlaying ? color : Theme.Fade(color, 0.45f)) : Theme.Fade(color, 0.14f);
-                batch.AddRect(new float2(ScreenPosition.X + LETTER + i * (BOX + GAP), top), new float2(BOX, ROW), on);
+                var at = new float2(ScreenPosition.X + LETTER + i * (BOX + GAP), top);
+                batch.AddRect(at, new float2(BOX, ROW), i == bar ? lit : Colors.Hex(0x000000));
+                if (i == beat && i != bar)
+                    batch.AddRect(at + new float2(INSET, INSET), new float2(BOX - 2 * INSET, ROW - 2 * INSET), lit);
             }
         }
     }
