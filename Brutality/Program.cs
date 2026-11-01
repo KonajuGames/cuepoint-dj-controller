@@ -6,6 +6,7 @@ using Brutality.Audio;
 using Brutality.Input;
 using Brutality.Midi;
 using Brutality.Music;
+using Brutality.Os2l;
 using Brutality.Rendering;
 using Brutality.UI;
 
@@ -267,6 +268,27 @@ static void Run()
     // App shortcuts go through the UI first, so Escape in the search box only leaves the box, and typing there
     // doesn't work the decks. Cue acts on press and release; held keys' auto-repeat is ignored. Escape no longer
     // quits, now there's a close button, since a stray press mid-set would be a disaster.
+    // Lighting software, told the beat and what each deck is doing.
+    using var lighting = new Os2lLink(decks, audio);
+    lighting.Log += screen.Log;
+    lighting.Enabled = settings.Os2lEnabled;
+    lighting.DirectAddress = settings.Os2lAddress;
+    screen.Options.LightingEnabled = () => lighting.Enabled;
+    screen.Options.LightingStatus = () => lighting.Status;
+    screen.Options.LightingAddress.Text = settings.Os2lAddress ?? "";
+    screen.Options.LightingToggled += () =>
+    {
+        lighting.Enabled = settings.Os2lEnabled = !lighting.Enabled;
+        SaveSettings();
+    };
+    screen.Options.LightingAddressChanged += address =>
+    {
+        settings.Os2lAddress = address.Length == 0 ? null : address;
+        lighting.DirectAddress = settings.Os2lAddress;
+        SaveSettings();
+        screen.Log(settings.Os2lAddress is null ? "Lighting: no address given; finding it by itself" : $"Lighting: connecting to {settings.Os2lAddress} too");
+    };
+
     var menu = new ContextMenu(fonts.Body);
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
@@ -496,11 +518,20 @@ static void Run()
     {
         Glfw.PollEvents();
 
-        // Minimised: there's no framebuffer to draw to, so sleep until something happens.
+        // Minimised: there's no framebuffer to draw to, so sleep until something happens; but lighting software still
+        // wants every beat, so while it's connected, wake often enough to send them on time.
         var size = window.FramebufferSize;
         if (size.X == 0 || size.Y == 0)
         {
-            Glfw.WaitEvents();
+            if (lighting.IsConnected)
+            {
+                Glfw.WaitEventsTimeout(0.005);
+                foreach (var deck in decks)
+                    deck.Update();
+                lighting.Update(Glfw.Time);
+            }
+            else
+                Glfw.WaitEvents();
             continue;
         }
 
@@ -522,6 +553,7 @@ static void Run()
         var now = Glfw.Time;
         controls.Update(now - lastFrame);
         plays.Update(decks, now - lastFrame);
+        lighting.Update(now);
         controllers?.Update(now, now - lastFrame);
         lastFrame = now;
 

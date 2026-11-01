@@ -28,6 +28,16 @@ sealed class AppSettings
 
     public float HeadphoneVolume { get; set; } = 0.8f;
 
+    /// <summary>
+    /// Whether to find lighting software and tell it what the decks are doing, by OS2L.
+    /// </summary>
+    public bool Os2lEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Lighting software to connect to as well as any found on the network, as host:port; null for none.
+    /// </summary>
+    public string? Os2lAddress { get; set; }
+
     public static AppSettings Load(string path)
     {
         try

@@ -33,6 +33,29 @@ sealed class OptionsDialog : Panel
 
     readonly Button _headphones;
     readonly Label _controller;
+    readonly Button _lighting;
+    readonly Label _lightingStatus;
+
+    /// <summary>
+    /// Whether lighting software is followed by OS2L, and what's connected, to show.
+    /// </summary>
+    public Func<bool>? LightingEnabled { get; set; }
+    public Func<string>? LightingStatus { get; set; }
+
+    /// <summary>
+    /// The lighting on/off button was clicked.
+    /// </summary>
+    public event Action? LightingToggled;
+
+    /// <summary>
+    /// A lighting address was entered (empty for none).
+    /// </summary>
+    public event Action<string>? LightingAddressChanged;
+
+    /// <summary>
+    /// Where lighting software is reached directly, as host:port.
+    /// </summary>
+    public TextBox LightingAddress { get; }
 
     /// <summary>
     /// What's said about connected controllers; none if null.
@@ -114,6 +137,17 @@ sealed class OptionsDialog : Panel
         var map = controllerRow.Add(new Button(bold, "Map controls") { FocusColor = Theme.Focus });
         map.Clicked += _ => MapControllerClicked?.Invoke();
 
+        var lightingRow = Row("Lighting (OS2L)", body);
+        _lighting = lightingRow.Add(new Button(bold, "On") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
+        _lighting.Clicked += _ => LightingToggled?.Invoke();
+        _lightingStatus = lightingRow.Add(new Label(body) { Color = Theme.Text, MaxWidth = 280 });
+        var addressRow = Row("Lighting address", body);
+        LightingAddress = addressRow.Add(new TextBox(body) { Width = 220, Placeholder = "Found by itself; or host:port", FocusColor = Theme.Focus });
+        LightingAddress.Submitted += box => LightingAddressChanged?.Invoke(box.Text.Trim());
+        _box.Add(
+            new Label(body, "Sends beats and each deck's play state to lighting software such as SoundSwitch, QLC+ or sLight.") { Color = Theme.Muted }
+        );
+
         Row("Music library", body).Add(new Label(body, musicFolder) { Color = Theme.Text, MaxWidth = 340 });
         Row("Analysis saved in", body).Add(new Label(body, databasePath) { Color = Theme.Text, MaxWidth = 340 });
 
@@ -180,6 +214,10 @@ sealed class OptionsDialog : Panel
         _autoGain.Text = _engine.AutoGain ? "On" : "Off";
         _headphones.Text = _engine.HeadphoneDevice ?? "Off";
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";
+        var lighting = LightingEnabled?.Invoke() ?? false;
+        _lighting.Text = lighting ? "On" : "Off";
+        _lighting.Background = lighting ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
+        _lightingStatus.Text = lighting ? LightingStatus?.Invoke() ?? "" : "";
         _autoGain.Background = _engine.AutoGain ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
 
         _box.Measure();
