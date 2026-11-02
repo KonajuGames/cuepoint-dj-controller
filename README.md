@@ -59,6 +59,7 @@ Each song is analysed in the background as it comes into view in the list. The a
   - resizable columns, which can be shown or hidden
   - marks the songs loaded on each deck and those played this session
 - **Virtual folders:** playlists you put together by dragging songs onto them, saved as `.m3u8` files. They can be stored on any drive. One kept on a removable drive goes with it, and its songs are found again under whatever drive letter it gets.
+- **Watched for changes:** songs added to the library's folder, changed (their tags edited, say) or taken away show up a second after they stop changing, without starting again. A changed song is read and analysed afresh.
 - **Drag and drop:** drag songs onto a deck to load them, from the list or from outside the app.
 - **Large text:** turned on in the options, the folder list and song list use bigger text, and the folder list bigger icons, to read in the dark or without glasses.
 - **Where analyses, hotcues and fixed grids are kept:** with the songs themselves.
@@ -123,7 +124,7 @@ The tests in [Brutality.Tests](Brutality.Tests) cover what can go wrong without 
 
 - **Audio:** the master limiter, mix recording, automatic gain, the headphone mix, and what to do as sound cards come and go
 - **Analysis:** beat grids, fixing them by hand, keys, quantise and beat jumps
-- **Library:** the library files on each drive, scanning folders, virtual folders, the folder list, the analysis queue and the settings
+- **Library:** the library files on each drive, scanning and watching folders, virtual folders, the folder list, the analysis queue and the settings
 - **Crash recovery:** what's written down to pick up after a crash, and the error log
 
 They use temporary folders in place of drives, so they never touch your music or the app's own files.

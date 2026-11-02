@@ -114,6 +114,18 @@ sealed class LibraryNode
     public void RefreshSongs() => _folderSongs = null;
 
     /// <summary>
+    /// Forgets the songs of this folder and every folder below it already looked in that's under
+    /// <paramref name="folder"/>, after what's there has changed. Folders not yet looked in are left unlooked in.
+    /// </summary>
+    public void RefreshSongsUnder(string folder)
+    {
+        if (Path is { } path && LibraryFile.WithSeparator(path).StartsWith(folder, StringComparison.OrdinalIgnoreCase))
+            _folderSongs = null;
+        foreach (var child in _loadedChildren ?? [])
+            child.RefreshSongsUnder(folder);
+    }
+
+    /// <summary>
     /// Whether choosing it shows songs; a heading doesn't.
     /// </summary>
     public bool HasSongs => _songs is not null;

@@ -134,6 +134,17 @@ static void Run()
     // folder last chosen as the library, or Windows' own Music folder to begin with.
     using var library = new MusicLibrary(settings.MusicFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic));
 
+    // The library's folder is watched, so songs added, changed or taken away show up without starting again; watched
+    // afresh whenever the library moves or goes recursive. Paths notWatched says are passed over (recordings being
+    // written, once their folder's known).
+    LibraryWatcher? watcher = null;
+    Func<string, bool> notWatched = _ => false;
+    void WatchLibrary()
+    {
+        watcher?.Dispose();
+        watcher = LibraryWatcher.Start(library.Root, library.Recursive, path => notWatched(path));
+    }
+
     // Songs are analysed as they come into view in the list, and the results kept between runs.
     var database = LibraryDatabase.Load(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "library.json")
@@ -253,6 +264,7 @@ static void Run()
     void UseAsMusicLibrary(string path)
     {
         library.Scan(path);
+        WatchLibrary();
         analyser.LookUp(library.Songs);
         settings.MusicFolder = library.Root;
         settings.Save(settingsPath);
@@ -270,6 +282,7 @@ static void Run()
         if (node.Kind == LibraryNodeKind.Library)
         {
             library.Scan(library.Root, recursive);
+            WatchLibrary();
             analyser.LookUp(library.Songs);
         }
         else
@@ -290,6 +303,7 @@ static void Run()
     var recordingsFolder =
         settings.RecordingsFolder ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "Cuepoint Recordings");
     screen.Options.RecordingsFolder = recordingsFolder;
+    notWatched = path => path.StartsWith(LibraryFile.WithSeparator(recordingsFolder), StringComparison.OrdinalIgnoreCase);
     MixRecorder? recorder = null;
     void StartRecording()
     {
@@ -925,6 +939,37 @@ static void Run()
     const double DEVICE_CHECK_SECONDS = 1;
     var nextDeviceCheck = 0.0;
 
+    // What's changed in the library's folder is scanned in once it's been still for a second, so an album copied in
+    // is taken in one go. The library's own lists follow, and the folder being shown if it's in the library.
+    var libraryQuiet = TimeSpan.FromSeconds(1);
+    void TakeInLibraryChanges()
+    {
+        var before = library.Songs.ToDictionary(song => song.Path, StringComparer.OrdinalIgnoreCase);
+        library.Scan(library.Root, library.Recursive);
+        analyser.LookUp(library.Songs);
+
+        var added = library.Songs.Count(song => !before.ContainsKey(song.Path));
+        var changed = library.Songs.Count(song => before.TryGetValue(song.Path, out var was) && was != song);
+        var gone = before.Count - (library.Songs.Count - added);
+        if (added + changed + gone == 0)
+            return;
+
+        // Folders in the library already looked in list their songs afresh, the one shown straight away.
+        foreach (var node in folders)
+            node.RefreshSongsUnder(LibraryFile.WithSeparator(library.Root));
+        if (browser.Source?.Kind is LibraryNodeKind.Library or LibraryNodeKind.List or LibraryNodeKind.Filter or LibraryNodeKind.Folder or LibraryNodeKind.Drive or LibraryNodeKind.VirtualFolder)
+            browser.Reload();
+        var news = new List<string>();
+        if (added > 0)
+            news.Add($"{added} added");
+        if (changed > 0)
+            news.Add($"{changed} changed");
+        if (gone > 0)
+            news.Add($"{gone} gone");
+        screen.Log($"Music library: {string.Join(", ", news)}; {library.Songs.Count} songs now");
+    }
+    WatchLibrary();
+
     // Each part of a frame is kept apart from the rest, so one going wrong doesn't stop the others: drawing failing
     // still leaves the decks, the keyboard, a controller and the lighting working.
     void Guarded(string doing, Action step)
@@ -1022,6 +1067,14 @@ static void Run()
             nextSessionSave = now + SESSION_SAVE_SECONDS;
             Guarded("writing down where the decks are", () => SessionState.Of(decks).Save(sessionPath));
         }
+        Guarded(
+            "taking in changes to the library",
+            () =>
+            {
+                if (watcher?.TakeChanges(libraryQuiet) == true)
+                    TakeInLibraryChanges();
+            }
+        );
         if (now >= nextDeviceCheck)
         {
             nextDeviceCheck = now + DEVICE_CHECK_SECONDS;
@@ -1057,6 +1110,7 @@ static void Run()
 
     // Closing properly, nothing needs picking up next time.
     SessionState.Delete(sessionPath);
+    watcher?.Dispose();
 
     // A recording still going is finished as the app closes, so its file is whole.
     StopRecording();

@@ -143,12 +143,15 @@ sealed partial class MusicLibrary : IDisposable
 
     /// <summary>
     /// Makes <paramref name="root"/> the library's folder, scanning it now, and its subfolders too if
-    /// <paramref name="recursive"/>. Songs already known keep their tags; the old folder's songs are still there to
-    /// browse to, just no longer in the library. UI thread only.
+    /// <paramref name="recursive"/>; or scans it again, after it's changed. Songs already known keep their tags,
+    /// unless their files have changed since, when they're new songs, to read and analyse afresh; songs whose files
+    /// have gone are forgotten. The old folder's songs are still there to browse to, just no longer in the library.
+    /// UI thread only.
     /// </summary>
     public void Scan(string root, bool recursive = false)
     {
-        foreach (var song in Songs)
+        var before = Songs;
+        foreach (var song in before)
             song.InLibrary = false;
         _libraryToTag.Clear();
 
@@ -164,7 +167,7 @@ sealed partial class MusicLibrary : IDisposable
                 .EnumerateFiles("*", options)
                 .Where(file => Extensions.Contains(file.Extension))
                 .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
-                .Select(file => _byPath.GetValueOrDefault(file.FullName) ?? Guess(root, file))
+                .Select(file => _byPath.GetValueOrDefault(file.FullName) is { } known && known.Size == file.Length && known.Modified == file.LastWriteTimeUtc ? known : Guess(root, file))
                 .ToList();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
@@ -177,6 +180,11 @@ sealed partial class MusicLibrary : IDisposable
         {
             song.InLibrary = true;
             _byPath[song.Path] = song;
+        }
+        foreach (var gone in before)
+        {
+            if (!gone.InLibrary && !File.Exists(gone.Path) && _byPath.GetValueOrDefault(gone.Path) == gone)
+                _byPath.Remove(gone.Path);
         }
         Songs = songs;
         TaggedCount = songs.Count(song => song.HasTags);
