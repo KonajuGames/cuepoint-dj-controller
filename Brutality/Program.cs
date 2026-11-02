@@ -500,6 +500,24 @@ static void Run()
     lighting.Log += screen.Log;
     lighting.Enabled = settings.Os2lEnabled;
     lighting.DirectAddress = settings.Os2lAddress;
+    // The waveforms as they were left: zoom, colours, beat grid and height, kept as they're changed.
+    screen.Options.WaveformSeconds.Value = settings.WaveformSeconds;
+    screen.Options.WaveformColours.Selected = Enum.TryParse<WaveformColours>(settings.WaveformColours, out var colours) ? colours : WaveformColours.Deck;
+    screen.Options.WaveformBeatGrid.Checked = settings.WaveformBeatGrid;
+    screen.Options.TallWaveforms.Checked = settings.TallWaveforms;
+    void KeepWaveformSettings()
+    {
+        settings.WaveformSeconds = screen.Options.WaveformSeconds.Value;
+        settings.WaveformColours = screen.Options.WaveformColours.Selected.ToString();
+        settings.WaveformBeatGrid = screen.Options.WaveformBeatGrid.Checked;
+        settings.TallWaveforms = screen.Options.TallWaveforms.Checked;
+    }
+    screen.Options.WaveformsChanged += () =>
+    {
+        KeepWaveformSettings();
+        SaveSettings();
+    };
+
     screen.LargeListText = settings.LargeListText;
     screen.Options.LargeListText = () => screen.LargeListText;
     screen.Options.LargeListTextToggled += () =>
@@ -1133,6 +1151,7 @@ static void Run()
     // the browser was left, and the devices chosen, whether or not they're plugged in.
     settings.Browser = browser.Layout;
     settings.BrowserFolder = browser.Source is { } shown && shown != folders[0] ? [.. LibraryTree.PathOf(shown)] : null;
+    KeepWaveformSettings();
     SaveSettings();
 
     WindowsShell.KeepAwake(false);

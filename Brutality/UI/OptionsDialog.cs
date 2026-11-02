@@ -39,6 +39,19 @@ sealed class OptionsDialog : Panel
     /// </summary>
     public Slider WaveformSeconds { get; }
 
+    /// <summary>
+    /// How the scrolling waveforms are coloured, whether they show the beat grid, and whether they're tall, as chosen
+    /// here; any change is raised as <see cref="WaveformsChanged"/>.
+    /// </summary>
+    public Dropdown<WaveformColours> WaveformColours { get; }
+
+    public Checkbox WaveformBeatGrid { get; }
+    public Checkbox TallWaveforms { get; }
+
+    public event Action? WaveformsChanged;
+
+    readonly Label _waveformSeconds;
+
     public event Action? Closed;
 
     /// <summary>
@@ -58,14 +71,27 @@ sealed class OptionsDialog : Panel
     readonly Checkbox _lighting;
     readonly Checkbox _largeListText;
 
+    ContextMenu? _menu;
+
     /// <summary>
-    /// Where the output and headphone lists open, over everything.
+    /// Where the dialog's dropdowns open their lists, over everything: every one of them, so none is left unable to.
     /// </summary>
     public ContextMenu? Menu
     {
-        get => _output.Menu;
-        set => _output.Menu = _headphones.Menu = value;
+        get => _menu;
+        set
+        {
+            _menu = value;
+            foreach (var dropdown in Within(_content).OfType<IOpensMenu>())
+                dropdown.Menu = value;
+        }
     }
+
+    /// <summary>
+    /// <paramref name="element"/> and everything in it, however deep.
+    /// </summary>
+    static IEnumerable<Element> Within(Element element) =>
+        element is Panel panel ? panel.Children.SelectMany(Within).Prepend(element) : [element];
     readonly Label _lightingStatus;
     readonly Label _musicFolder;
     readonly Label _recordingsFolder;
@@ -226,9 +252,30 @@ sealed class OptionsDialog : Panel
                 FocusColor = Theme.Focus,
             }
         );
-        var seconds = zoomRow.Add(new Label(body) { Color = Theme.Text });
-        WaveformSeconds.Changed += slider => seconds.Text = $"{slider.Value:F0} seconds";
-        seconds.Text = $"{WaveformSeconds.Value:F0} seconds";
+        _waveformSeconds = zoomRow.Add(new Label(body) { Color = Theme.Text });
+        _content.Add(new Label(body, "The mouse wheel over the waveforms zooms them too.") { Color = Theme.Muted });
+
+        var coloursRow = Row("Waveform colours", body);
+        WaveformColours = coloursRow.Add(
+            new Dropdown<WaveformColours>(body)
+            {
+                Width = 300,
+                Items = () => [UI.WaveformColours.Deck, UI.WaveformColours.ThreeBand],
+                Text = colours =>
+                    colours == UI.WaveformColours.ThreeBand ? "Three bands: bass red, mids green, treble blue" : "Deck colour, brighter for treble",
+                Selected = UI.WaveformColours.Deck,
+            }
+        );
+        WaveformColours.Chosen += _ => WaveformsChanged?.Invoke();
+
+        var gridRow = Row("Beat grid", body);
+        WaveformBeatGrid = gridRow.Add(new Checkbox(body, "On the scrolling waveforms") { Checked = true });
+        WaveformBeatGrid.Changed += _ => WaveformsChanged?.Invoke();
+
+        var tallRow = Row("Tall waveforms", body);
+        TallWaveforms = tallRow.Add(new Checkbox(body));
+        TallWaveforms.Changed += _ => WaveformsChanged?.Invoke();
+        _content.Add(new Label(body, "Taller scrolling waveforms, to read from further away.") { Color = Theme.Muted });
 
         var textRow = Row("Large list text", body);
         _largeListText = textRow.Add(new Checkbox(body));
@@ -326,6 +373,8 @@ sealed class OptionsDialog : Panel
     public override float2 Measure()
     {
         _autoGain.Checked = _engine.AutoGain;
+        // The mouse wheel can change it too, so it's said afresh each time.
+        _waveformSeconds.Text = $"{WaveformSeconds.Value:F0} seconds";
         _limiter.Checked = _engine.Limiter.Enabled;
         _output.Selected = _engine.OutputDevice;
         _headphones.Selected = _engine.HeadphoneDevice;

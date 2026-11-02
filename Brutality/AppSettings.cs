@@ -46,6 +46,16 @@ sealed class AppSettings
     public List<string>? UnquantizedDecks { get; set; }
 
     /// <summary>
+    /// How many seconds of song the scrolling waveforms show across, how they're coloured, whether they show the beat
+    /// grid, and whether they're tall.
+    /// </summary>
+    public float WaveformSeconds { get; set; } = 12;
+
+    public string? WaveformColours { get; set; }
+    public bool WaveformBeatGrid { get; set; } = true;
+    public bool TallWaveforms { get; set; }
+
+    /// <summary>
     /// Whether the master limiter keeps the mix from clipping.
     /// </summary>
     public bool MasterLimiter { get; set; } = true;

@@ -375,6 +375,10 @@ sealed class Root
         if (_mouse is not { } mouse || (notches.X == 0 && notches.Y == 0))
             return false;
 
+        // What's under the mouse has first say, a waveform zooming, say; then the panels it's in scroll.
+        if (Hovered?.Wheel(notches) == true)
+            return true;
+
         // The path from the topmost element under the cursor down to the deepest one.
         var scrollers = new List<ScrollPanel>();
         for (var i = Elements.Count - 1; i >= 0; i--)

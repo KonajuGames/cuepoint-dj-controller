@@ -122,6 +122,12 @@ abstract class Element
     public virtual bool KeyDown(Key key, Modifiers modifiers) => false;
 
     /// <summary>
+    /// The mouse wheel turned by <paramref name="notches"/> (positive towards the left and top) over this element,
+    /// while it's <see cref="Root.Hovered"/>. Returns whether it was used; if not, it scrolls whatever it's in.
+    /// </summary>
+    public virtual bool Wheel(float2 notches) => false;
+
+    /// <summary>
     /// A character was typed while this element had focus.
     /// </summary>
     public virtual void TextInput(System.Text.Rune character) { }

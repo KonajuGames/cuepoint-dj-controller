@@ -4,12 +4,20 @@ using Brutality.Input;
 namespace Brutality.UI;
 
 /// <summary>
+/// Something that opens a list on a <see cref="ContextMenu"/>, which whoever lays it out gives it.
+/// </summary>
+interface IOpensMenu
+{
+    ContextMenu? Menu { get; set; }
+}
+
+/// <summary>
 /// A box showing one choice from a list, with an arrow; clicking it, or Space or Enter while it has focus, opens the
 /// list below it on <see cref="Menu"/> to choose another, with the current one marked. Up and Down step through the
 /// list without opening it. The list is asked for afresh each time (see <see cref="Items"/>), so it can change, as
 /// the sound cards plugged in do.
 /// </summary>
-sealed class Dropdown<T> : Element
+sealed class Dropdown<T> : Element, IOpensMenu
 {
     const float ARROW = 4;
 

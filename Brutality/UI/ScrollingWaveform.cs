@@ -6,6 +6,22 @@ using Brutality.Music;
 namespace Brutality.UI;
 
 /// <summary>
+/// How the scrolling waveforms are coloured.
+/// </summary>
+enum WaveformColours
+{
+    /// <summary>
+    /// In the deck's colour, darker where bass dominates and brighter where treble does.
+    /// </summary>
+    Deck,
+
+    /// <summary>
+    /// In three colours mixed by how much of each band there is: bass red, mids green and treble blue.
+    /// </summary>
+    ThreeBand,
+}
+
+/// <summary>
 /// A deck's song as a waveform scrolling past a fixed line in the middle, which is where the deck is playing: what's
 /// coming is to the right. Drawn in the deck's colour, darker where bass dominates and brighter where treble does,
 /// so kicks, vocals and hi-hats look different, with a lighter core showing the average level inside the peaks, the
@@ -73,6 +89,27 @@ sealed class ScrollingWaveform : Element
     public GridEditor? Editor { get; set; }
 
     public float4 Background { get; set; } = Theme.Well;
+
+    public WaveformColours Colours { get; set; }
+
+    /// <summary>
+    /// Whether the beat grid's lines are drawn over the waveform. They always are while the grid's being fixed.
+    /// </summary>
+    public bool ShowBeatGrid { get; set; } = true;
+
+    /// <summary>
+    /// The mouse wheel turned over the waveform, by this many notches, up to zoom in: whoever sets
+    /// <see cref="PixelsPerSecond"/> zooms it.
+    /// </summary>
+    public event Action<float>? Zoomed;
+
+    public override bool Wheel(float2 notches)
+    {
+        if (notches.Y == 0)
+            return false;
+        Zoomed?.Invoke(notches.Y);
+        return true;
+    }
 
     public override bool IsInteractive => _deck.IsLoaded;
 
@@ -164,11 +201,9 @@ sealed class ScrollingWaveform : Element
                 // Treble is far quieter than bass in energy, so it's weighted up to count about as much as it sounds.
                 var mid = mids * 1.5f;
                 var high = treble * 2.5f;
-                var brightness = (0.5f * mid + high) / MathF.Max(1e-6f, bass + mid + high);
-                var outer = brightness < 0.5f
-                    ? Theme.Mix(dark, Color, brightness * 2)
-                    : Theme.Mix(Color, bright, (brightness - 0.5f) * 2);
-                var inner = Theme.Mix(outer, Colors.White, 0.45f);
+                var outer = Colours == WaveformColours.ThreeBand ? ThreeBand(bass, mid, high) : DeckShade(bass, mid, high, dark, bright);
+                // The average level inside the peaks, lighter; less so in three bands, so as not to wash them out.
+                var inner = Theme.Mix(outer, Colors.White, Colours == WaveformColours.ThreeBand ? 0.2f : 0.45f);
 
                 var height = MathF.Max(1, MathF.Round(peak * half));
                 batch.AddRect(new float2(ScreenPosition.X + x, middle - height), new float2(1, height * 2), outer);
@@ -188,6 +223,34 @@ sealed class ScrollingWaveform : Element
         // Where the deck is.
         batch.AddRect(new float2(centre - 1, ScreenPosition.Y), new float2(2, Size.Y), Colors.White);
         DrawLabel(batch);
+    }
+
+    /// <summary>
+    /// A column in the deck's colour, from <paramref name="dark"/> where it's all bass to <paramref name="bright"/>
+    /// where it's all treble.
+    /// </summary>
+    float4 DeckShade(float bass, float mid, float high, float4 dark, float4 bright)
+    {
+        var brightness = (0.5f * mid + high) / MathF.Max(1e-6f, bass + mid + high);
+        return brightness < 0.5f ? Theme.Mix(dark, Color, brightness * 2) : Theme.Mix(Color, bright, (brightness - 0.5f) * 2);
+    }
+
+    /// <summary>
+    /// How sharply the weaker bands fade beside the strongest in <see cref="ThreeBand"/>: at 1, each would show as much
+    /// as it is, and music, which nearly always has some of everything, would come out pale.
+    /// </summary>
+    const float THREE_BAND_CONTRAST = 2.5f;
+
+    /// <summary>
+    /// A column mixed from red for bass, green for mids and blue for treble: the strongest at full, the others
+    /// falling away sharply as they're weaker, so a kick shows a strong red, a vocal green and hi-hats blue, and only
+    /// everything at once, evenly, shows white.
+    /// </summary>
+    internal static float4 ThreeBand(float bass, float mid, float high)
+    {
+        var most = MathF.Max(1e-6f, MathF.Max(bass, MathF.Max(mid, high)));
+        float Share(float band) => MathF.Pow(band / most, THREE_BAND_CONTRAST);
+        return new float4(Share(bass), Share(mid), Share(high), 1);
     }
 
     /// <summary>
@@ -212,7 +275,7 @@ sealed class ScrollingWaveform : Element
 
     void DrawBeats(Batch batch, double position, float centre)
     {
-        if (_deck.Analysis?.Grid is not { } grid)
+        if (_deck.Analysis?.Grid is not { } grid || !ShowBeatGrid && Editor is not { Active: true })
             return;
 
         // Across the whole view, before the song and after it too: the grid carries on at its first tempo and

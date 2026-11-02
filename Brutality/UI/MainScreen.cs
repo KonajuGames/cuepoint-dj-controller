@@ -20,6 +20,9 @@ sealed class MainScreen : Panel
 {
     const float GAP = 6;
     const float WAVEFORM_HEIGHT = 66;
+    const float TALL_WAVEFORM_HEIGHT = 110;
+
+    float WaveformHeight => Options.TallWaveforms.Checked ? TALL_WAVEFORM_HEIGHT : WAVEFORM_HEIGHT;
     const float FOLDERS_WIDTH = 270;
     const float LARGE_FOLDERS_WIDTH = 340;
 
@@ -154,6 +157,10 @@ sealed class MainScreen : Panel
         };
 
         Options = Add(new OptionsDialog(engine, library.Root, databasePath, fonts.Body, fonts.Bold, fonts.Heading));
+
+        // The wheel over a waveform zooms both together, as the options' slider does: up shows less of the song, closer.
+        foreach (var waveform in _waveforms)
+            waveform.Zoomed += notches => Options.WaveformSeconds.Value *= MathF.Pow(0.85f, notches);
     }
 
     /// <summary>
@@ -205,7 +212,9 @@ sealed class MainScreen : Panel
         {
             // Fixing a deck's grid, its waveform zooms right in, to put beats on hits to the millisecond.
             var waveform = _waveforms[i];
-            waveform.FixedSize = new float2(waveformWidth, WAVEFORM_HEIGHT);
+            waveform.FixedSize = new float2(waveformWidth, WaveformHeight);
+            waveform.Colours = Options.WaveformColours.Selected;
+            waveform.ShowBeatGrid = Options.WaveformBeatGrid.Checked;
             waveform.PixelsPerSecond = waveformWidth / (_gridEditors[i] is { Active: true } ? GRID_EDIT_SECONDS : Options.WaveformSeconds.Value);
         }
 
@@ -233,7 +242,7 @@ sealed class MainScreen : Panel
 
     float WaveformsTop => TitleBar.HEIGHT + GAP;
 
-    float DecksTop => WaveformsTop + _waveforms.Count * (WAVEFORM_HEIGHT + 2) - 2 + GAP;
+    float DecksTop => WaveformsTop + _waveforms.Count * (WaveformHeight + 2) - 2 + GAP;
 
     float BrowserTop => DecksTop + DeckPanel.HEIGHT + GAP;
 
@@ -246,7 +255,7 @@ sealed class MainScreen : Panel
         foreach (var waveform in _waveforms)
         {
             waveform.Arrange(new float2(position.X + GAP, y));
-            y += WAVEFORM_HEIGHT + 2;
+            y += WaveformHeight + 2;
         }
 
         // The decks and mixer in the order they were added, left to right.
