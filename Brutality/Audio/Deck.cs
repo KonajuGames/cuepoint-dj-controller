@@ -794,7 +794,14 @@ sealed partial class Deck : IDisposable
         if (!_track.Paused())
             PauseAt(0);
 
-        _cueFrames = Math.Max(0, _track.GetPlaybackPosition());
+        // Quantised, the cue point goes on the nearest beat.
+        var frames = Math.Max(0, _track.GetPlaybackPosition());
+        if (QuantizeGrid is { } grid && _pcm is { } pcm)
+        {
+            frames = Math.Clamp(ToFrames(TimeSpan.FromSeconds(Quantizing.Snap(grid, ToTime(frames).TotalSeconds))), 0, pcm.Frames - 1);
+            _track.SetPlaybackPosition(frames);
+        }
+        _cueFrames = frames;
         _track.Resume();
         _previewing = true;
     }
@@ -839,8 +846,17 @@ sealed partial class Deck : IDisposable
     }
 
     /// <summary>
-    /// Hotcue <paramref name="index"/>'s pad was pressed: an empty one is set where the deck is; a set one jumps
-    /// there, playing on if it was playing, or staying paused if it was paused.
+    /// Whether hotcues and the cue point go on the nearest beat as they're set, and a hotcue jumped to while playing
+    /// lands at the same point in the beat as the music was, so it stays in time. Only for a song with a beat grid.
+    /// </summary>
+    public bool Quantize { get; set; } = true;
+
+    BeatGrid? QuantizeGrid => Quantize ? _analysis?.Grid : null;
+
+    /// <summary>
+    /// Hotcue <paramref name="index"/>'s pad was pressed: an empty one is set where the deck is (on the nearest beat,
+    /// with <see cref="Quantize"/>); a set one jumps there, playing on if it was playing, or staying paused if it was
+    /// paused.
     /// </summary>
     public void HotcueDown(int index)
     {
@@ -849,11 +865,36 @@ sealed partial class Deck : IDisposable
 
         if (_hotcues[index] is { } at)
         {
+            if (IsPlaying && QuantizeGrid is { } grid)
+                at = TimeSpan.FromSeconds(Quantizing.InPhase(grid, ToTime(SongFrame).TotalSeconds, at.TotalSeconds));
             Seek(at);
             return;
         }
-        _hotcues[index] = Position;
+        _hotcues[index] = QuantizeGrid is { } snapTo
+            ? TimeSpan.FromSeconds(Math.Clamp(Quantizing.Snap(snapTo, Position.TotalSeconds), 0, Duration.TotalSeconds))
+            : Position;
         HotcuesChanged?.Invoke(this);
+    }
+
+    /// <summary>
+    /// Jumps <paramref name="beats"/> beats on through the song (back, if negative), at the same point in the beat, so
+    /// a jump while playing stays in time. A loop goes with it, the same length. Needs a beat grid, and returns false,
+    /// doing nothing, without one, during a roll, or for a jump past either end of the song.
+    /// </summary>
+    public bool BeatJump(double beats)
+    {
+        if (!IsLoaded || IsRolling || _analysis?.Grid is not { } grid)
+            return false;
+
+        // From where the track is, rather than what's heard (key lock holds that back a little), so jumps don't drift.
+        var target = Quantizing.Jump(grid, ToTime(SongFrame).TotalSeconds, beats);
+        if (target < 0 || target >= Duration.TotalSeconds)
+            return false;
+        if (IsLooping)
+            PlaceLoop(_loopStartBeat + beats, ToFrames(TimeSpan.FromSeconds(target)));
+        else
+            Seek(TimeSpan.FromSeconds(target));
+        return true;
     }
 
     public void DeleteHotcue(int index)

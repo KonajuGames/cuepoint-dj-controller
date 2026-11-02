@@ -15,6 +15,8 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 - **Hotcues:** eight per deck, kept with each song.
 - **Loops:** from 1/16 to 32 beats, fitted to the beat grid, with halve and double.
 - **Loop rolls:** on the pads in ROLL mode. A roll loops for as long as its pad is held, then drops back in where the song would have got to.
+- **Beat jumps:** on the pads in JUMP mode (Shift + HOT CUE on the DDJ-SB3), back or on by 1, 4, 16 or 32 beats, staying in time. A loop moves with the jump.
+- **Quantise:** with a deck's **Q** lit, hotcues and the cue point go on the nearest beat, and jumping to a hotcue while playing lands in time. It's on to begin with.
 - **Scratching and backspins:** from a controller's jog wheel. The record follows the wheel, backwards too.
 - **Waveforms:** a scrolling waveform for each deck, coloured by bass, mids and treble. When synced, both decks scroll at the same rate. There's also an overview of the whole song with its hotcues, loop and beat grid.
 - **End-of-song warning:** in a song's last 30 seconds, the remaining time and the end of its overview flash red.
@@ -65,7 +67,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 ### Controllers and lighting
 
 - **MIDI controllers:** they're found as they're plugged in. Any control can be learned to any function, and lit buttons follow what the decks are doing.
-- **Pioneer DDJ-SB3:** mapped out of the box. That includes its loop rolls (Shift + FX FADE), the FX FADE transitions (filter sweeps, loop fade out, loop chop and backspins) and the PAD SCRATCH patterns.
+- **Pioneer DDJ-SB3:** mapped out of the box. That includes its loop rolls (Shift + FX FADE), beat jumps (Shift + HOT CUE), the FX FADE transitions (filter sweeps, loop fade out, loop chop and backspins) and the PAD SCRATCH patterns.
 - **Lighting:** what each deck is doing, and every beat, is sent to lighting software over [OS2L](https://os2l.org/), including the SoundSwitch extensions. The software is found on the network by itself. While OS2L is on, the title bar shows **OS2L** in green once it's connected, and pulsing orange while it's still looking.
 
 ### While a set is running
@@ -90,7 +92,7 @@ Each deck has its own side of the keyboard.
 | Kill low / mid / high, reset EQ | F1 F2 F3, F4 | F9 F10 F11, F12 |
 | Low-pass / high-pass filter | F5 / F6 | F7 / F8 |
 
-- **Hotcues:** Shift with a hotcue key clears it. In GRID or ROLL mode, the hotcue keys work the pads instead.
+- **Hotcues:** Shift with a hotcue key clears it. In GRID, ROLL or JUMP mode, the hotcue keys work the pads instead.
 - **Faders:** they move while their keys are held, a quarter as fast with Ctrl.
 - **Crossfader:** `[` and `]` slide it, and `B` centres it.
 - **Loading songs:** `1` loads the selected song onto deck A and `2` onto deck B.
@@ -118,7 +120,7 @@ The app's images are drawn by [Assets/draw_assets.py](Brutality/Assets/draw_asse
 The tests in [Brutality.Tests](Brutality.Tests) cover what can go wrong without a sound card or a window:
 
 - **Audio:** the master limiter, mix recording, automatic gain, the headphone mix, and what to do as sound cards come and go
-- **Analysis:** beat grids, fixing them by hand, and keys
+- **Analysis:** beat grids, fixing them by hand, keys, quantise and beat jumps
 - **Library:** the library files on each drive, scanning folders, virtual folders, the folder list, the analysis queue and the settings
 - **Crash recovery:** what's written down to pick up after a crash, and the error log
 

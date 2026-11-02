@@ -63,10 +63,20 @@ static class ControlCatalog
                     new($"{deck}.grid", $"Deck {deck} grid mode (pads fix the beat grid)", ControlKind.Button, HasLight: true),
                     new($"{deck}.roll", $"Deck {deck} roll mode (pads roll loops)", ControlKind.Button, HasLight: true),
                     new($"{deck}.hotcues", $"Deck {deck} hotcue mode (pads back to hotcues)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.jump", $"Deck {deck} beat jump mode (pads jump by beats)", ControlKind.Button, HasLight: true),
                 ]
             );
             for (var i = 1; i <= HOTCUES; i++)
                 controls.Add(new($"{deck}.roll{i}", $"Deck {deck} loop roll {RollPads.Label(i - 1)}", ControlKind.Button, HasLight: true));
+            for (var i = 1; i <= JumpPads.Sizes.Count; i++)
+                controls.Add(
+                    new(
+                        $"{deck}.jump{i}",
+                        $"Deck {deck} beat jump {JumpPads.Label(i - 1)} {(JumpPads.Direction(i - 1) < 0 ? "back" : "on")}",
+                        ControlKind.Button,
+                        HasLight: true
+                    )
+                );
             for (var i = 1; i <= HOTCUES; i++)
                 controls.Add(new($"{deck}.hotcue{i}", $"Deck {deck} hotcue {i}", ControlKind.Button, HasLight: true));
             for (var i = 1; i <= HOTCUES; i++)

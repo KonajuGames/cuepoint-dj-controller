@@ -111,6 +111,14 @@ sealed class MidiControls : IDisposable
     public Func<Deck, bool>? IsRollMode { get; set; }
 
     /// <summary>
+    /// A deck's beat jump mode button was pressed, to put the pads in JUMP mode; and whether that deck's in it, for
+    /// its light.
+    /// </summary>
+    public event Action<Deck>? JumpModePressed;
+
+    public Func<Deck, bool>? IsJumpMode { get; set; }
+
+    /// <summary>
     /// A deck's grid mode button was pressed, and whether that deck's grid mode is on, for its light.
     /// </summary>
     public event Action<Deck>? GridModePressed;
@@ -339,6 +347,14 @@ sealed class MidiControls : IDisposable
             return;
         }
 
+        // A beat jump pad: the controller sends its own notes for them in its beat jump mode.
+        if (Jump(action) is { } jump)
+        {
+            if (pressed)
+                deck.BeatJump(JumpPads.Sizes[jump]);
+            return;
+        }
+
         // A loop roll lasts as long as its pad's held.
         if (Roll(action) is { } roll)
         {
@@ -411,6 +427,9 @@ sealed class MidiControls : IDisposable
             case "hotcues":
                 HotcueModePressed?.Invoke(deck);
                 break;
+            case "jump":
+                JumpModePressed?.Invoke(deck);
+                break;
             default:
                 if (Hotcue(action) is { } hotcue)
                 {
@@ -430,6 +449,12 @@ sealed class MidiControls : IDisposable
     /// </summary>
     static int? Roll(string action) =>
         action.StartsWith("roll") && int.TryParse(action["roll".Length..], out var number) && number >= 1 && number <= RollPads.Sizes.Count ? number - 1 : null;
+
+    /// <summary>
+    /// The beat jump pad, from 0, an action like "jump3" is for.
+    /// </summary>
+    static int? Jump(string action) =>
+        action.StartsWith("jump") && int.TryParse(action["jump".Length..], out var number) && number >= 1 && number <= JumpPads.Sizes.Count ? number - 1 : null;
 
     /// <summary>
     /// The hotcue, from 0, an action like "hotcue3" or "hotcue3.delete" is for.
@@ -545,7 +570,10 @@ sealed class MidiControls : IDisposable
             "loop" => deck.IsLooping,
             "grid" => IsGridMode?.Invoke(deck) == true,
             "roll" => IsRollMode?.Invoke(deck) == true,
-            "hotcues" => IsRollMode?.Invoke(deck) != true && IsGridMode?.Invoke(deck) != true,
+            "jump" => IsJumpMode?.Invoke(deck) == true,
+            "hotcues" => IsRollMode?.Invoke(deck) != true && IsGridMode?.Invoke(deck) != true && IsJumpMode?.Invoke(deck) != true,
+            // The beat jump pads light while they're beat jumps, so the mode shows on the controller.
+            _ when Jump(action) is not null => IsJumpMode?.Invoke(deck) == true,
             _ when Roll(action) is { } roll => deck.RollBeats == RollPads.Sizes[roll],
             // In ROLL mode a pad lights while it's rolling; otherwise while its hotcue's set.
             _ when Hotcue(action) is { } pad && IsRollMode?.Invoke(deck) == true => !action.EndsWith(".delete") && pad < RollPads.Sizes.Count && deck.RollBeats == RollPads.Sizes[pad],

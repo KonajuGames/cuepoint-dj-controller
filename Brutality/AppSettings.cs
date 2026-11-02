@@ -41,6 +41,11 @@ sealed class AppSettings
     public bool Os2lEnabled { get; set; } = true;
 
     /// <summary>
+    /// The decks with quantise turned off, by name; it's on for the rest.
+    /// </summary>
+    public List<string>? UnquantizedDecks { get; set; }
+
+    /// <summary>
     /// Whether the master limiter keeps the mix from clipping.
     /// </summary>
     public bool MasterLimiter { get; set; } = true;

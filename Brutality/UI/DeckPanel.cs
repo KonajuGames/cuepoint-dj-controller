@@ -60,6 +60,9 @@ sealed class DeckPanel : Panel
     readonly Button? _gridMode;
     readonly RollPads? _roll;
     readonly Button? _rollMode;
+    readonly JumpPads? _jump;
+    readonly Button? _jumpMode;
+    readonly Button _quantize;
     readonly GridEditor? _grid;
     readonly Images? _images;
 
@@ -101,11 +104,13 @@ sealed class DeckPanel : Panel
         DeckKeyHints? keys = null,
         GridEditor? grid = null,
         Images? images = null,
-        RollPads? roll = null
+        RollPads? roll = null,
+        JumpPads? jump = null
     )
     {
         _images = images;
         _roll = roll;
+        _jump = jump;
         _grid = grid;
         _deck = deck;
         _color = Theme.DeckColor(deck.Name);
@@ -186,6 +191,17 @@ sealed class DeckPanel : Panel
         _doubleLoop = Add(new Button(bold, "") { Icon = images?.TriangleRight, MinSize = new float2(26, 30), FocusColor = Theme.Focus, Tooltip = "Double the loop" });
         _doubleLoop.Clicked += _ => _deck.DoubleLoop();
 
+        // Quantise: lit while hotcues and the cue point go on the beat, and jumps to them stay in time.
+        _quantize = Add(
+            new Button(bold, "Q")
+            {
+                MinSize = new float2(30, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Quantise: hotcues and the cue point go on the nearest beat, and jumping to a hotcue while playing stays in time",
+            }
+        );
+        _quantize.Clicked += _ => _deck.Quantize = !_deck.Quantize;
+
         // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
         _tempoReadout = Add(new Label(small) { Color = Theme.Muted });
         _tempoFader = Add(
@@ -254,6 +270,15 @@ sealed class DeckPanel : Panel
             _rollMode.Clicked += _ => roll.Active = !roll.Active;
         }
 
+        // JUMP turns the pads into beat jumps, back and on by a beat up to eight bars, and back.
+        if (jump is not null)
+        {
+            _jumpMode = Add(
+                new Button(bold, "JUMP") { MinSize = new float2(56, 30), FocusColor = Theme.Focus, Tooltip = "Pads jump back or on through the song by beats, staying in time" }
+            );
+            _jumpMode.Clicked += _ => jump.Active = !jump.Active;
+        }
+
         for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
         {
             var index = i;
@@ -274,6 +299,8 @@ sealed class DeckPanel : Panel
                     _grid.Pad(index);
                 else if (_roll is { Active: true })
                     _roll.Down(index);
+                else if (_jump is { Active: true })
+                    _jump.Down(index);
                 else
                     _deck.HotcueDown(index);
             };
@@ -320,6 +347,15 @@ sealed class DeckPanel : Panel
             _rollMode.Background = _roll.Active ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.5f) : Colors.Hex(0x2A2A35);
             _rollMode.HoverBackground = _roll.Active ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.65f) : Colors.Hex(0x3A3A48);
         }
+        if (_jumpMode is not null && _jump is not null)
+        {
+            _jumpMode.Background = _jump.Active ? Theme.Mix(Theme.PanelRaised, Theme.Focus, 0.5f) : Colors.Hex(0x2A2A35);
+            _jumpMode.HoverBackground = _jump.Active ? Theme.Mix(Theme.PanelRaised, Theme.Focus, 0.65f) : Colors.Hex(0x3A3A48);
+        }
+        var quantized = _deck.Quantize;
+        _quantize.Background = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+        _quantize.HoverBackground = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+        _quantize.TextColor = quantized ? Colors.White : Theme.Muted;
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
 
         if (!_deck.IsLoaded)
@@ -397,18 +433,21 @@ sealed class DeckPanel : Panel
         var flags = new List<(float, float4, string)>();
         var gridMode = _grid is { Active: true };
         var rollMode = !gridMode && _roll is { Active: true };
+        var jumpMode = !gridMode && !rollMode && _jump is { Active: true };
         for (var i = 0; i < _pads.Count; i++)
         {
             var hotcue = _deck.Hotcues[i];
-            (_pads[i].Enabled, _pads[i].IsSet) = (true, rollMode ? _roll!.IsRolling(i) : hotcue is not null && !gridMode);
-            _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : rollMode ? RollPads.Label(i) : null;
-            var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : 0;
+            (_pads[i].Enabled, _pads[i].IsSet) = (true, rollMode ? _roll!.IsRolling(i) : hotcue is not null && !gridMode && !jumpMode);
+            _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : rollMode ? RollPads.Label(i) : jumpMode ? JumpPads.Label(i) : null;
+            var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : jumpMode ? JumpPads.Direction(i) : 0;
             _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
             _pads[i].IconAfter = direction > 0;
-            _pads[i].Color = gridMode ? Theme.Accent : rollMode ? Theme.Loop : Theme.HotcueColor(i);
+            _pads[i].Color = gridMode ? Theme.Accent : rollMode ? Theme.Loop : jumpMode ? Theme.Focus : Theme.HotcueColor(i);
+            var jumpBeats = Math.Abs(JumpPads.Sizes[i]);
             _pads[i].Tooltip =
                 gridMode ? GridTooltip(GridEditor.Pads[i])
                 : rollMode ? $"Loops {RollPads.Label(i)} {(RollPads.Sizes[i] > 1 ? "beats" : "beat")} while held, then carries on from where the song would have got to"
+                : jumpMode ? $"Jump {jumpBeats:0} {(jumpBeats == 1 ? "beat" : "beats")} {(JumpPads.Sizes[i] < 0 ? "back" : "on")}, staying in time; a loop goes with it"
                 : hotcue is not null ? $"Hotcue {i + 1}: jump to it. Shift-click or right-click to clear it"
                 : $"Hotcue {i + 1}: set it here";
             if (hotcue is { } at)
@@ -482,7 +521,7 @@ sealed class DeckPanel : Panel
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
         foreach (var pad in _pads)
             pad.FixedSize = new float2(padWidth, PAD_HEIGHT);
-        _loading.MaxWidth = MathF.Max(0, content - 64 - 6 - 84 - 6 - 64 - 24 - (26 + 4 + 84 + 4 + 26) - 12);
+        _loading.MaxWidth = MathF.Max(0, content - 64 - 6 - 84 - 6 - 64 - 24 - (30 + 6 + 26 + 4 + 84 + 4 + 26) - 12);
 
         // The fader fills its column between the readout above and the range button below, down to the transport.
         _tempoReadout.Measure();
@@ -551,6 +590,11 @@ sealed class DeckPanel : Panel
             Place(_rollMode, Outer(transport + 6, _rollMode), buttonsY);
             transport += 6 + _rollMode.Size.X;
         }
+        if (_jumpMode is not null)
+        {
+            Place(_jumpMode, Outer(transport + 6, _jumpMode), buttonsY);
+            transport += 6 + _jumpMode.Size.X;
+        }
         Place(_loading, Outer(transport + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
 
         // The loop's buttons keep their order, halve on the left, whichever side the group is on.
@@ -559,6 +603,8 @@ sealed class DeckPanel : Panel
         Place(_halveLoop, loopLeft, buttonsY);
         Place(_loop, loopLeft + _halveLoop.Size.X + 4, buttonsY);
         Place(_doubleLoop, loopLeft + _halveLoop.Size.X + 4 + _loop.Size.X + 4, buttonsY);
+        // Quantise beside the loop, on the side nearer the transport.
+        Place(_quantize, Mirrored ? loopLeft + loopWidth + 6 : loopLeft - 6 - _quantize.Size.X, buttonsY);
 
         Place(_tempoReadout, columnLeft + (TEMPO_COLUMN - _tempoReadout.Size.X) / 2, top - 2);
         var faderTop = top - 2 + _tempoReadout.Size.Y + 4;

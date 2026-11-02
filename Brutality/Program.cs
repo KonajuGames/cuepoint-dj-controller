@@ -119,6 +119,7 @@ static void Run()
         settings.HeadphoneDevice = audio.ChosenHeadphoneDevice;
         settings.CueMix = audio.CueMix;
         settings.HeadphoneVolume = audio.HeadphoneVolume;
+        settings.UnquantizedDecks = decks.Where(deck => !deck.Quantize).Select(deck => deck.Name).ToList() is { Count: > 0 } off ? off : null;
         settings.Save(settingsPath);
     }
 
@@ -167,8 +168,16 @@ static void Run()
     var rollPads = gridEditors.Select(editor => new RollPads(editor.Deck, editor)).ToArray();
     RollPads? RollPadsFor(Deck deck) => rollPads.FirstOrDefault(roll => roll.Deck == deck);
 
+    // Or beat jumps, with them in JUMP mode.
+    var jumpPads = gridEditors.Select((editor, i) => new JumpPads(editor.Deck, editor, rollPads[i])).ToArray();
+    JumpPads? JumpPadsFor(Deck deck) => jumpPads.FirstOrDefault(jump => jump.Deck == deck);
+
+    // Quantise is on for each deck unless it was turned off.
+    foreach (var deck in decks)
+        deck.Quantize = settings.UnquantizedDecks?.Contains(deck.Name) != true;
+
     var ui = new Root { TooltipFont = fonts.Body };
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor, JumpPadsFor));
     foreach (var editor in gridEditors)
         editor.Log += screen.Log;
     using var input = new GlfwUiInput(window, ui);
@@ -550,6 +559,11 @@ static void Run()
                 roll.Down(pad);
                 return true;
             }
+            if (JumpPadsFor(deck) is { Active: true } jump && !shifted)
+            {
+                jump.Down(pad);
+                return true;
+            }
             if (GridEditorFor(deck) is not { Active: true } editor)
                 return false;
             editor.Pad(pad, fine: shifted);
@@ -570,8 +584,18 @@ static void Run()
                 roll.Active = false;
             if (GridEditorFor(deck) is { } editor)
                 editor.Active = false;
+            if (JumpPadsFor(deck) is { } jump)
+                jump.Active = false;
         };
         controllers.IsRollMode = deck => RollPadsFor(deck)?.Active == true;
+
+        // Shift + HOT CUE puts the controller's pads in its beat jump mode, and the deck's in JUMP mode to match.
+        controllers.JumpModePressed += deck =>
+        {
+            if (JumpPadsFor(deck) is { } jump)
+                jump.Active = true;
+        };
+        controllers.IsJumpMode = deck => JumpPadsFor(deck)?.Active == true;
         controllers.GridModePressed += deck =>
         {
             if (GridEditorFor(deck) is { } editor)
@@ -595,7 +619,7 @@ static void Run()
         var pressed = action == GlfwKeyAction.Press;
 
         // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear; or in GRID mode, its tools,
-        // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held.
+        // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held; or in JUMP mode, beat jumps.
         if (HotcueKeys.For(key) is { } hotcue)
         {
             // A roll lasts while its key's held, whatever mode the pads are in by the time it's let go.
@@ -605,6 +629,8 @@ static void Run()
                 rollPads[hotcue.Deck].Down(hotcue.Hotcue);
             else if (pressed && hotcue.Deck < decks.Length && gridEditors[hotcue.Deck].Active)
                 gridEditors[hotcue.Deck].Pad(hotcue.Hotcue, fine: (mods & GlfwModifier.Shift) != 0);
+            else if (pressed && hotcue.Deck < decks.Length && jumpPads[hotcue.Deck].Active)
+                jumpPads[hotcue.Deck].Down(hotcue.Hotcue);
             else if (pressed && hotcue.Deck < decks.Length)
             {
                 if ((mods & GlfwModifier.Shift) != 0)

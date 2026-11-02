@@ -1,3 +1,5 @@
+using Brutality.Music;
+
 namespace Brutality.Midi;
 
 /// <summary>
@@ -15,7 +17,9 @@ static class ControllerPresets
     /// <summary>
     /// Pioneer's DDJ layout, as on the DDJ-SB3: each deck's controls on its own channel (deck 1 on 1, deck 2 on 2),
     /// its pads on another (8 and 9), and the shared mixer and browser on 7. Shift + FX FADE puts the pads in ROLL
-    /// mode, and HOT CUE back to hotcues; the pads send the same notes either way.
+    /// mode, and HOT CUE back to hotcues; the pads send the same notes either way. Shift + HOT CUE puts them in BEAT
+    /// JUMP mode, where they send notes of their own (0x40 up, Shift 8 higher still), back on the top row and on along
+    /// the bottom.
     ///
     /// FX FADE's pads (notes 16 to 23) play transition effects by working other controls over time, which is mostly
     /// all there is to map for them: the filter swept, the channel fader faded, and loops set (notes 0x4A and 0x4C, 4
@@ -70,6 +74,12 @@ static class ControllerPresets
             }
             Note($"{deck}.hotcues", channel, 0x1B);
             Note($"{deck}.roll", channel, 0x6B);
+            Note($"{deck}.jump", channel, 0x69);
+            for (var pad = 0; pad < JumpPads.Sizes.Count; pad++)
+            {
+                Note($"{deck}.jump{pad + 1}", pads, 0x40 + pad);
+                Note($"{deck}.jump{pad + 1}", pads, 0x48 + pad);
+            }
 
             // Pioneer's tempo sliders are minus at the top, where they send 0.
             Control($"{deck}.tempo", channel, 0x00);
