@@ -222,7 +222,7 @@ sealed class TitleBar : Panel
     public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold, Images images)
     {
         _engine = engine;
-        Background = Theme.TitleBar;
+        Background = Theme.Panel;
 
         _left = Add(new Panel { Direction = Direction.Horizontal, Spacing = 10 });
         _left.Add(new Picture(images.Logo));
