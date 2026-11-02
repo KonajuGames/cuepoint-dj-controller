@@ -709,6 +709,21 @@ static void Run()
         menu.Show(
             at,
             [
+                // The songs chosen, analysed again from scratch: after a file's been edited, say, or to try a bad grid
+                // again. A grid fixed by hand stays as it was.
+                new MenuItem(
+                    songs.Count > 1 ? $"Re-analyse {songs.Count} songs" : "Re-analyse",
+                    () =>
+                    {
+                        var queued = analyser.Reanalyse(songs);
+                        screen.Log(
+                            queued == 0 ? (songs.Count == 1 ? $"{songs[0].Title} is being analysed already" : "Those are being analysed already")
+                            : queued == 1 && songs.Count == 1 ? $"Analysing {songs[0].Title} again"
+                            : $"Analysing {queued} songs again"
+                        );
+                    },
+                    Enabled: songs.Count > 0
+                ),
                 // Every song in the list that hasn't been analysed yet, with a bar across the top while it goes.
                 new MenuItem(
                     "Analyse All",

@@ -30,6 +30,8 @@ Each song is analysed in the background as it comes into view in the list. The a
 
 **Analysing a whole list:** right-click a song and choose **Analyse All** to queue every song in the list that isn't analysed yet. A bar above the list shows how far it's got, and the cross beside it stops it. Songs scrolled into view still go first.
 
+**Analysing again:** right-click songs and choose **Re-analyse** to analyse them again from scratch, after a file's been edited, say. A beat grid fixed by hand stays as it was.
+
 **Fixing a beat grid by hand:** in a deck's **GRID** mode, the pads become tools.
 
 - **Pinning beats:** pin a beat to the music, set the downbeat, nudge, halve or double the tempo, make it steady, or reset it.

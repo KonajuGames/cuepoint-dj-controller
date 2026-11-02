@@ -120,6 +120,33 @@ sealed class LibraryAnalyser : IDisposable
     public void Request(Song song) => Request([song]);
 
     /// <summary>
+    /// Analyses <paramref name="songs"/> again, analysed already or not, ahead of everything waiting. Each keeps its
+    /// analysis until the new one's in, and a beat grid fixed by hand stays fixed. Songs being analysed right now are
+    /// left to finish. Returns how many were queued.
+    /// </summary>
+    public int Reanalyse(IReadOnlyList<Song> songs)
+    {
+        lock (_lock)
+        {
+            var queued = 0;
+            for (var i = songs.Count - 1; i >= 0; i--)
+            {
+                var song = songs[i];
+                _lookedUp.Add(song);
+                if (_active.ContainsKey(song))
+                    continue;
+                _queue.Remove(song);
+                _requested.Add(song);
+                _queue.Add(song);
+                queued++;
+            }
+            if (queued > 0)
+                Monitor.PulseAll(_lock);
+            return queued;
+        }
+    }
+
+    /// <summary>
     /// Asks for <paramref name="songs"/> to be analysed, ahead of everything already waiting and in the order given,
     /// such as the rows on screen from the top down. All are queued before any worker takes one, so the first is
     /// started first.
@@ -256,9 +283,12 @@ sealed class LibraryAnalyser : IDisposable
                 // Kept as analysed; the song gets its grid as fixed by hand, if it was.
                 Database.Set(song, analysis);
                 song.Analysis = Database.WithEdits(song.Path, analysis);
+                // Analysed again, it may have failed before.
+                song.AnalysisError = null;
             }
             else
             {
+                song.Analysis = null;
                 song.AnalysisError = finished.Error ?? "Analysis failed";
                 Database.SetFailed(song, song.AnalysisError);
             }
