@@ -42,6 +42,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 
 - **Each channel:** a trim, a three-band EQ with kills, a filter, a level meter, a fader, and headphone cue (PFL).
 - **Crossfader**, and automatic gain for each song.
+- **Recording the mix:** the record button in the title bar records the main mix, as the room hears it, to a 24-bit WAV file in `Music\Cuepoint Recordings`, showing how long it's been going. A set of over four hours carries on into a second file.
 - **Outputs:** the main mix and the headphones can go to separate sound cards, or the headphones can use channels 3 and 4 of a four-channel controller's sound card.
 
 ### Library

@@ -179,6 +179,59 @@ sealed class Os2lIndicator(Font font) : Element
 }
 
 /// <summary>
+/// The title bar's record button: a dot and REC, grey while the mix isn't being recorded, and red with how long it's
+/// been going while it is.
+/// </summary>
+sealed class RecordButton(Font font) : Element
+{
+    const float DOT = 10;
+    const float GAP = 6;
+    const float PADDING = 8;
+    const float HEIGHT = 26;
+
+    /// <summary>
+    /// How long the mix has been recorded for; null while it isn't.
+    /// </summary>
+    public TimeSpan? Recording { get; set; }
+
+    public override bool IsInteractive => true;
+    public override Cursor Cursor => Cursor.Arrow;
+
+    // Wide enough for hours, so the button doesn't grow and shuffle the title bar as the time ticks on.
+    public override float2 Measure() => Size = new float2(MathF.Ceiling(PADDING + DOT + GAP + font.Measure("REC 0:00:00").X + PADDING), HEIGHT);
+
+    static string Text(TimeSpan? recording) =>
+        recording is not { } time ? "REC"
+        : time.TotalHours >= 1 ? $"REC {(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}"
+        : $"REC {time.Minutes}:{time.Seconds:00}";
+
+    public override void Draw(Batch batch)
+    {
+        if (IsHovered || IsPressed)
+            batch.AddRect(ScreenPosition, Size, Colors.Hex(0xFFFFFF, IsPressed && IsHovered ? 0.05f : 0.1f));
+
+        var color = Recording is null ? Theme.Muted : Theme.Warning;
+        var middle = ScreenPosition.Y + HEIGHT / 2;
+
+        // A round dot, a row of pixels at a time.
+        var left = MathF.Round(ScreenPosition.X + PADDING);
+        var top = MathF.Round(middle - DOT / 2);
+        const float radius = DOT / 2;
+        for (var row = 0; row < DOT; row++)
+        {
+            var y = row + 0.5f - radius;
+            var half = MathF.Round(MathF.Sqrt(MathF.Max(0, radius * radius - y * y)));
+            batch.AddRect(new float2(left + radius - half, top + row), new float2(2 * half, 1), color);
+        }
+
+        // The text's capitals centred on the button, as the title bar's other text is.
+        var x = left + DOT + GAP;
+        var textY = MathF.Round(middle + BeatTrackers.CapHeight(font) / 2 - font.Ascender);
+        batch.AddText(font, Text(Recording), new float2(x, textY), color);
+    }
+}
+
+/// <summary>
 /// The window's own title bar: the app's name, each deck's place in the bar stacked beside the master level, whether
 /// lighting software is connected, the CPU and the time, the options button and the window's buttons. Its empty space is where the window can be
 /// dragged from (see <see cref="IsCaption"/>). Call <see cref="Update"/> once a frame.
@@ -194,6 +247,7 @@ sealed class TitleBar : Panel
     readonly LevelMeter _master;
     readonly Label _masterLabel;
     readonly Os2lIndicator _os2l;
+    readonly RecordButton _record;
     readonly Spacer _os2lGap;
     readonly Label _cpu;
     readonly Label _clock;
@@ -213,6 +267,16 @@ sealed class TitleBar : Panel
     /// Whether lighting software is connected by OS2L; null while OS2L is off, which hides its indicator.
     /// </summary>
     public Func<bool?> Os2lConnected { get; set; } = () => null;
+
+    /// <summary>
+    /// How long the mix has been recorded for, which the record button shows; null while it isn't being recorded.
+    /// </summary>
+    public Func<TimeSpan?> Recording { get; set; } = () => null;
+
+    /// <summary>
+    /// The record button was clicked, to start recording the mix or to stop.
+    /// </summary>
+    public event Action? RecordClicked;
 
     public event Action? OptionsClicked;
     public event Action? MinimizeClicked;
@@ -236,6 +300,9 @@ sealed class TitleBar : Panel
         _master = _centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 });
 
         _right = Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
+        _record = _right.Add(new RecordButton(body));
+        _record.Clicked += _ => RecordClicked?.Invoke();
+        _right.Add(new Spacer(12));
         _os2l = _right.Add(new Os2lIndicator(bold) { Visible = false });
         _os2lGap = _right.Add(new Spacer(16) { Visible = false });
         _cpu = _right.Add(new Label(body) { Color = Theme.Muted });
@@ -266,6 +333,8 @@ sealed class TitleBar : Panel
     {
         _clock.Text = DateTime.Now.ToString("HH:mm:ss");
         _maximize.Icon = IsMaximized() ? TitleIcon.Restore : TitleIcon.Maximize;
+        _record.Recording = Recording();
+        _record.Tooltip = _record.Recording is null ? "Record the mix" : "Stop recording the mix";
         var os2l = Os2lConnected();
         _os2l.Visible = _os2lGap.Visible = os2l is not null;
         _os2l.IsConnected = os2l == true;

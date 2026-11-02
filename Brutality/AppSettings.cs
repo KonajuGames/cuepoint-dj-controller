@@ -51,6 +51,11 @@ sealed class AppSettings
     public string? MusicFolder { get; set; }
 
     /// <summary>
+    /// The folder recordings of the mix go in; null for Cuepoint Recordings in Windows' own Music folder.
+    /// </summary>
+    public string? RecordingsFolder { get; set; }
+
+    /// <summary>
     /// Whether the folder list and song list are in large text.
     /// </summary>
     public bool LargeListText { get; set; }

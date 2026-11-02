@@ -238,6 +238,53 @@ static void Run()
         screen.Log(recursiveNode == node ? $"Listing every song under {where}" : $"Listing only the songs directly in {where}");
     }
 
+    // The mix can be recorded, as the room hears it, with the title bar's record button: into a WAV file named for
+    // when it started, in the recordings folder.
+    var recordingsFolder =
+        settings.RecordingsFolder ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "Cuepoint Recordings");
+    screen.Options.RecordingsFolder = recordingsFolder;
+    MixRecorder? recorder = null;
+    void StartRecording()
+    {
+        var path = Path.Combine(recordingsFolder, $"Mix {DateTime.Now:yyyy-MM-dd HH-mm-ss}.wav");
+        try
+        {
+            recorder = new MixRecorder(path);
+            audio.Recorder = recorder;
+            screen.Log($"Recording the mix to {path}");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            screen.Log($"Couldn't record the mix in {recordingsFolder}: {e.Message}");
+        }
+    }
+    void StopRecording()
+    {
+        if (recorder is not { } stopping)
+            return;
+        // The audio thread lets go of it first, so nothing more comes in as it finishes the file.
+        audio.Recorder = null;
+        recorder = null;
+        stopping.Dispose();
+        var files = stopping.Paths;
+        var saved = files.Count > 1 ? $"{stopping.Path} and {files.Count - 1} more" : stopping.Path;
+        var length = stopping.Duration;
+        var time = length.TotalHours >= 1 ? $"{(int)length.TotalHours}:{length.Minutes:00}:{length.Seconds:00}" : $"{length.Minutes}:{length.Seconds:00}";
+        screen.Log(
+            stopping.Error is { } error
+                ? $"Recording stopped: {error}. What was recorded is in {saved}"
+                : $"Saved {time} of the mix in {saved}"
+        );
+    }
+    screen.TitleBar.Recording = () => recorder?.Duration;
+    screen.TitleBar.RecordClicked += () =>
+    {
+        if (recorder is null)
+            StartRecording();
+        else
+            StopRecording();
+    };
+
     // The window's own buttons, and dragging it by the title bar, which Windows does once told where it is.
     screen.TitleBar.IsMaximized = () => window.IsMaximised;
     screen.TitleBar.MinimizeClicked += window.Iconify;
@@ -795,6 +842,10 @@ static void Run()
         if (analyser.SaveError is { } newSaveError && newSaveError != saveError)
             screen.Log($"Couldn't save {database.FilePath}: {newSaveError}");
 
+        // A recording that can't carry on (a full disk, say) is stopped, keeping what it has.
+        if (recorder?.Error is not null)
+            StopRecording();
+
         // New tags can change what matches a search.
         if (library.ApplyReadTags() > 0)
             browser.Refilter();
@@ -821,6 +872,9 @@ static void Run()
         if (!windowShown)
             window.Visible = windowShown = true;
     }
+
+    // A recording still going is finished as the app closes, so its file is whole.
+    StopRecording();
 
     // Anything about the library not yet saved (a drive's file to write again with relative paths, say) is saved as
     // the app closes.

@@ -41,6 +41,18 @@ sealed unsafe class AudioEngine : IDisposable
     /// </summary>
     public AudioMeter Meter { get; } = new();
 
+    MixRecorder? _recorder;
+
+    /// <summary>
+    /// Where the final mix is recorded to, as it goes to the speakers; none if null. Set it to null before stopping
+    /// the recorder, so the audio thread lets go of it.
+    /// </summary>
+    public MixRecorder? Recorder
+    {
+        get => Volatile.Read(ref _recorder);
+        set => Volatile.Write(ref _recorder, value);
+    }
+
     /// <summary>
     /// This engine, for SDL_mixer's audio thread to find from its callback.
     /// </summary>
@@ -391,8 +403,8 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// SDL_mixer's callback once the mix is done, on the audio thread: measures it, and sends the headphones their
-    /// mix of it and the cue.
+    /// SDL_mixer's callback once the mix is done, on the audio thread: measures it, records it if it's being
+    /// recorded, and sends the headphones their mix of it and the cue.
     /// </summary>
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
     static void MixDone(void* userData, MixMixer mixer, SdlAudioSpec* spec, float* samples, int count)
@@ -401,6 +413,7 @@ sealed unsafe class AudioEngine : IDisposable
         {
             var engine = (AudioEngine)GCHandle.FromIntPtr((nint)userData).Target!;
             engine.Meter.Measure(samples, count, spec->channels);
+            engine.Recorder?.Write(samples, count);
             engine.FeedHeadphones(samples, count);
         }
         catch

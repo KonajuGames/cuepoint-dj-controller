@@ -67,6 +67,7 @@ sealed class OptionsDialog : Panel
     }
     readonly Label _lightingStatus;
     readonly Label _musicFolder;
+    readonly Label _recordingsFolder;
 
     /// <summary>
     /// Whether the folder list and song list are in large text, to show.
@@ -116,6 +117,15 @@ sealed class OptionsDialog : Panel
     {
         get => _musicFolder.Text;
         set => _musicFolder.Text = value;
+    }
+
+    /// <summary>
+    /// The folder recordings of the mix go in, as shown.
+    /// </summary>
+    public string RecordingsFolder
+    {
+        get => _recordingsFolder.Text;
+        set => _recordingsFolder.Text = value;
     }
 
     public OptionsDialog(AudioEngine engine, string musicFolder, string databasePath, Font body, Font bold, Font heading)
@@ -224,6 +234,7 @@ sealed class OptionsDialog : Panel
         _musicFolder = Row("Music library", body).Add(new Label(body, musicFolder) { Color = Theme.Text, MaxWidth = 340 });
         _content.Add(new Label(body, "Right-click a folder in the folder list to make it the music library.") { Color = Theme.Muted });
         Row("Analysis saved in", body).Add(new Label(body, databasePath) { Color = Theme.Text, MaxWidth = 340 });
+        _recordingsFolder = Row("Recordings saved in", body).Add(new Label(body) { Color = Theme.Text, MaxWidth = 340 });
 
         _content.Add(new Label(bold, "Keyboard") { Color = Theme.Text });
         var keys = _content.Add(new Panel { Spacing = 3 });
