@@ -29,6 +29,7 @@ sealed unsafe class MixRecorder : IDisposable
     volatile bool _stopping;
     long _frames;
 
+    readonly long _maxDataBytes;
     FileStream? _file;
     long _dataBytes;
     readonly List<string> _paths = [];
@@ -65,7 +66,14 @@ sealed unsafe class MixRecorder : IDisposable
     /// <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> if the file can't be made.
     /// </summary>
     public MixRecorder(string path)
+        : this(path, MAX_DATA_BYTES) { }
+
+    /// <summary>
+    /// A recording that moves on to its next file every <paramref name="maxDataBytes"/> (whole frames), for tests.
+    /// </summary>
+    internal MixRecorder(string path, long maxDataBytes)
     {
+        _maxDataBytes = maxDataBytes / FRAME_BYTES * FRAME_BYTES;
         Path = System.IO.Path.GetFullPath(path);
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
         Open(Path);
@@ -140,12 +148,12 @@ sealed unsafe class MixRecorder : IDisposable
     {
         while (data.Length > 0)
         {
-            if (_dataBytes >= MAX_DATA_BYTES)
+            if (_dataBytes >= _maxDataBytes)
             {
                 Close();
                 Open(NextPath());
             }
-            var room = (int)Math.Min(data.Length, MAX_DATA_BYTES - _dataBytes);
+            var room = (int)Math.Min(data.Length, _maxDataBytes - _dataBytes);
             _file!.Write(data[..room]);
             _dataBytes += room;
             data = data[room..];

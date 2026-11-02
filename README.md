@@ -110,6 +110,20 @@ Settings and the library's analyses are kept in `%LOCALAPPDATA%\Cuepoint`.
 
 The app's images are drawn by [Assets/draw_assets.py](Brutality/Assets/draw_assets.py), which needs only Python 3. Run it again after changing them.
 
+## Tests
+
+The tests in [Brutality.Tests](Brutality.Tests) cover what can go wrong without a sound card or a window:
+
+- **Audio:** the master limiter, mix recording, automatic gain and the headphone mix
+- **Analysis:** beat grids, fixing them by hand, and keys
+- **Library:** the library files on each drive, scanning folders, virtual folders, the folder list, the analysis queue and the settings
+
+They use temporary folders in place of drives, so they never touch your music or the app's own files.
+
+```
+dotnet test
+```
+
 ## License
 
 [MIT](LICENSE)
