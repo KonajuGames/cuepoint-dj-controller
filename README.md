@@ -14,6 +14,7 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 - **Tempo fader:** ±8%, ±16% or ±50%.
 - **Hotcues:** eight per deck, kept with each song.
 - **Loops:** from 1/16 to 32 beats, fitted to the beat grid, with halve and double.
+- **Loops set by hand:** **IN** marks where a loop starts and **OUT** loops back to it from there, on the beat with quantise on. Pressed while it loops, OUT moves its end. Halve and double work on it too, and reloop goes back to the loop's start, or plays the last loop again. They work without a beat grid as well.
 - **Loop rolls:** on the pads in ROLL mode. A roll loops for as long as its pad is held, then drops back in where the song would have got to.
 - **Beat jumps:** on the pads in JUMP mode (Shift + HOT CUE on the DDJ-SB3), back or on by 1, 4, 16 or 32 beats, staying in time. A loop moves with the jump.
 - **Quantise:** with a deck's **Q** lit, hotcues and the cue point go on the nearest beat, and jumping to a hotcue while playing lands in time. It's on to begin with.
@@ -67,7 +68,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 ### Controllers and lighting
 
 - **MIDI controllers:** they're found as they're plugged in. Any control can be learned to any function, and lit buttons follow what the decks are doing.
-- **Pioneer DDJ-SB3:** mapped out of the box. That includes its loop rolls (Shift + FX FADE), beat jumps (Shift + HOT CUE), the FX FADE transitions (filter sweeps, loop fade out, loop chop and backspins) and the PAD SCRATCH patterns.
+- **Pioneer DDJ-SB3:** mapped out of the box. That includes its loop rolls (Shift + FX FADE), beat jumps (Shift + HOT CUE), loop in and out (Shift + 1/2X and 2X), reloop (Shift + AUTO LOOP), the FX FADE transitions (filter sweeps, loop fade out, loop chop and backspins) and the PAD SCRATCH patterns.
 - **Lighting:** what each deck is doing, and every beat, is sent to lighting software over [OS2L](https://os2l.org/), including the SoundSwitch extensions. The software is found on the network by itself. While OS2L is on, the title bar shows **OS2L** in green once it's connected, and pulsing orange while it's still looking.
 
 ### While a set is running
@@ -87,6 +88,7 @@ Each deck has its own side of the keyboard.
 | Hotcues 1–8 | Q W E R A S D F | U I O P J K L ; |
 | Cue, play, sync, loop | Z X C V | N M , . |
 | Halve / double loop | 3 / 4 | 9 / 0 |
+| Loop in / out, reloop | Shift + 3 / 4, Shift + V | Shift + 9 / 0, Shift + . |
 | Tempo down / up (Shift: volume) | 5 / 6 | 7 / 8 |
 | Headphone cue, key lock | T, G | Y, H |
 | Kill low / mid / high, reset EQ | F1 F2 F3, F4 | F9 F10 F11, F12 |

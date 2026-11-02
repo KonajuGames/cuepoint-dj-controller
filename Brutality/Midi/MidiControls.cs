@@ -400,6 +400,15 @@ sealed class MidiControls : IDisposable
             case "loop.exit":
                 deck.ExitLoop();
                 break;
+            case "loop.in":
+                deck.LoopIn();
+                break;
+            case "loop.out":
+                deck.LoopOut();
+                break;
+            case "reloop":
+                deck.Reloop();
+                break;
             case "loop.beats1" or "loop.beats2" or "loop.beats4" or "loop.beats8":
                 // A loop of that size: started if there isn't one, or the one going on made that size.
                 deck.LoopBeats = int.Parse(action["loop.beats".Length..]);

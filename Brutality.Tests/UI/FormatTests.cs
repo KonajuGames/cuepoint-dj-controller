@@ -14,4 +14,16 @@ public class FormatTests
     {
         Assert.Equal(expected, SongBrowser.FormatTotal(new TimeSpan(days, hours, minutes, seconds)));
     }
+
+    [Theory]
+    [InlineData(4, "4")]
+    [InlineData(0.5, "1/2")]
+    [InlineData(3.5, "3.5")]
+    [InlineData(2.004, "2")]
+    [InlineData(6, "6")]
+    [InlineData(1.33, "1.3")]
+    public void A_loop_set_by_hand_says_its_length_in_beats(double beats, string expected)
+    {
+        Assert.Equal(expected, DeckPanel.FormatLength(beats));
+    }
 }

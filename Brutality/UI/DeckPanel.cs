@@ -63,6 +63,8 @@ sealed class DeckPanel : Panel
     readonly JumpPads? _jump;
     readonly Button? _jumpMode;
     readonly Button _quantize;
+    readonly Button _loopIn;
+    readonly Button _loopOut;
     readonly GridEditor? _grid;
     readonly Images? _images;
 
@@ -201,6 +203,26 @@ sealed class DeckPanel : Panel
             }
         );
         _quantize.Clicked += _ => _deck.Quantize = !_deck.Quantize;
+
+        // A loop set by hand: IN marks its start, OUT its end, looping straight back.
+        _loopIn = Add(
+            new Button(small, "IN")
+            {
+                MinSize = new float2(34, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Loop in: mark where a loop starts, on the beat with Q lit",
+            }
+        );
+        _loopIn.Clicked += _ => _deck.LoopIn();
+        _loopOut = Add(
+            new Button(small, "OUT")
+            {
+                MinSize = new float2(34, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Loop out: loop from loop in to here. While it loops, moves its end to here",
+            }
+        );
+        _loopOut.Clicked += _ => _deck.LoopOut();
 
         // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
         _tempoReadout = Add(new Label(small) { Color = Theme.Muted });
@@ -493,11 +515,22 @@ sealed class DeckPanel : Panel
 
     void RefreshLoop()
     {
-        _loop.Text = $"LOOP {FormatBeats(_deck.LoopBeats)}";
-        var canLoop = _deck.CanLoop;
+        // A loop set by hand says how long it is, if there's a beat grid to say it by.
+        _loop.Text = !_deck.IsManualLoop ? $"LOOP {FormatBeats(_deck.LoopBeats)}"
+            : _deck.LoopLengthBeats is { } beats ? $"LOOP {FormatLength(beats)}"
+            : "LOOP";
+        // Looping, the loop can always be halved, doubled and left, even one set by hand without a beat grid.
+        var looping = _deck.IsLooping;
+        var canLoop = _deck.CanLoop || looping;
         _loop.Enabled = canLoop;
         _halveLoop.Enabled = _doubleLoop.Enabled = canLoop;
-        var looping = _deck.IsLooping;
+
+        _loopIn.Enabled = _deck.IsLoaded;
+        _loopOut.Enabled = _deck.IsLoaded && (_deck.LoopInPoint is not null || _deck.IsManualLoop);
+        var marked = _deck.IsLoaded && _deck.LoopInPoint is not null;
+        _loopIn.Background = marked ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.35f) : Colors.Hex(0x2A2A35);
+        _loopIn.HoverBackground = marked ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.5f) : Colors.Hex(0x3A3A48);
+
         _loop.Background = looping ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.6f) : Colors.Hex(0x2A2A35);
         _loop.HoverBackground = looping ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.75f) : Colors.Hex(0x3A3A48);
         _loop.TextColor = looping ? Theme.TitleBar : Theme.Text;
@@ -507,6 +540,16 @@ sealed class DeckPanel : Panel
     /// A loop's length as DJs say it: "4", or "1/2" for half a beat.
     /// </summary>
     public static string FormatBeats(double beats) => beats >= 1 ? $"{beats:0}" : $"1/{Math.Round(1 / beats):0}";
+
+    /// <summary>
+    /// A loop set by hand's length in beats: as <see cref="FormatBeats"/> for a whole power of two, as a loop by
+    /// beats would be, or else to a tenth of a beat, "3.5".
+    /// </summary>
+    public static string FormatLength(double beats)
+    {
+        var power = Math.Pow(2, Math.Round(Math.Log2(Math.Max(beats, 1.0 / 64))));
+        return Math.Abs(beats - power) < 0.02 ? FormatBeats(power) : $"{beats:0.#}";
+    }
 
     public override float2 Measure()
     {
@@ -521,7 +564,7 @@ sealed class DeckPanel : Panel
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
         foreach (var pad in _pads)
             pad.FixedSize = new float2(padWidth, PAD_HEIGHT);
-        _loading.MaxWidth = MathF.Max(0, content - 64 - 6 - 84 - 6 - 64 - 24 - (30 + 6 + 26 + 4 + 84 + 4 + 26) - 12);
+        _loading.MaxWidth = MathF.Max(0, content - 64 - 6 - 84 - 6 - 64 - 24 - (30 + 6 + 34 + 4 + 34 + 6 + 26 + 4 + 84 + 4 + 26) - 12);
 
         // The fader fills its column between the readout above and the range button below, down to the transport.
         _tempoReadout.Measure();
@@ -603,8 +646,12 @@ sealed class DeckPanel : Panel
         Place(_halveLoop, loopLeft, buttonsY);
         Place(_loop, loopLeft + _halveLoop.Size.X + 4, buttonsY);
         Place(_doubleLoop, loopLeft + _halveLoop.Size.X + 4 + _loop.Size.X + 4, buttonsY);
-        // Quantise beside the loop, on the side nearer the transport.
-        Place(_quantize, Mirrored ? loopLeft + loopWidth + 6 : loopLeft - 6 - _quantize.Size.X, buttonsY);
+        // Beside the loop, on the side nearer the transport: loop in and out, IN before OUT either way, then quantise.
+        var inOutWidth = _loopIn.Size.X + 4 + _loopOut.Size.X;
+        var inLeft = Mirrored ? loopLeft + loopWidth + 6 : loopLeft - 6 - inOutWidth;
+        Place(_loopIn, inLeft, buttonsY);
+        Place(_loopOut, inLeft + _loopIn.Size.X + 4, buttonsY);
+        Place(_quantize, Mirrored ? inLeft + inOutWidth + 6 : inLeft - 6 - _quantize.Size.X, buttonsY);
 
         Place(_tempoReadout, columnLeft + (TEMPO_COLUMN - _tempoReadout.Size.X) / 2, top - 2);
         var faderTop = top - 2 + _tempoReadout.Size.Y + 4;

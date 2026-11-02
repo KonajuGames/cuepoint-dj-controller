@@ -35,6 +35,17 @@ public class ControllerPresetTests
         }
     }
 
+    [Theory]
+    // Shift + 1/2X, Shift + 2X and Shift + AUTO LOOP, on each deck's own channel.
+    [InlineData("loop.in", 0x61)]
+    [InlineData("loop.out", 0x62)]
+    [InlineData("reloop", 0x50)]
+    public void Shift_and_the_loop_buttons_set_loops_by_hand(string action, int note)
+    {
+        Assert.Equal((0, note), Notes($"A.{action}").Select(binding => (binding.Channel, binding.Number)).Single());
+        Assert.Equal((1, note), Notes($"B.{action}").Select(binding => (binding.Channel, binding.Number)).Single());
+    }
+
     [Fact]
     public void No_two_controls_share_a_message()
     {

@@ -103,6 +103,12 @@ sealed partial class Deck : IDisposable
     double _loopStartBeat;
     double _loopBeats = 4;
 
+    // Whether the loop going on was set by hand, with loop in and out, rather than a number of beats; where loop in
+    // was marked; and the last loop there was, for reloop.
+    bool _manualLoop;
+    TimeSpan? _loopIn;
+    (long Start, long End, bool Manual, double StartBeat)? _lastLoop;
+
     /// <summary>
     /// The background load in progress, if any. A newer load replaces it; the older one's result is thrown away.
     /// </summary>
@@ -717,6 +723,7 @@ sealed partial class Deck : IDisposable
         _cueFrames = 0;
         _previewing = false;
         Array.Clear(_hotcues);
+        (_manualLoop, _loopIn, _lastLoop) = (false, null, null);
     }
 
     public void Play()
@@ -890,7 +897,15 @@ sealed partial class Deck : IDisposable
         var target = Quantizing.Jump(grid, ToTime(SongFrame).TotalSeconds, beats);
         if (target < 0 || target >= Duration.TotalSeconds)
             return false;
-        if (IsLooping)
+        if (IsLooping && _manualLoop && _pcm is { } pcm)
+        {
+            // A loop set by hand moves by as much as the music does.
+            var by = ToFrames(TimeSpan.FromSeconds(target)) - SongFrame;
+            if (_loopStart + by < 0 || _loopEnd + by > pcm.Frames)
+                return false;
+            PlaceLoopFrames(_loopStart + by, _loopEnd + by, SongFrame + by, manual: true, _loopStartBeat + beats);
+        }
+        else if (IsLooping)
             PlaceLoop(_loopStartBeat + beats, ToFrames(TimeSpan.FromSeconds(target)));
         else
             Seek(TimeSpan.FromSeconds(target));
@@ -1010,9 +1025,135 @@ sealed partial class Deck : IDisposable
         PlaceLoop(startBeat);
     }
 
-    public void HalveLoop() => LoopBeats = _loopBeats / 2;
+    /// <summary>
+    /// Halves the loop: one set by hand keeps its start and loses its second half; otherwise it's
+    /// <see cref="LoopBeats"/> halved, looping or not.
+    /// </summary>
+    public void HalveLoop()
+    {
+        if (IsLooping && _manualLoop)
+            ResizeManualLoop(0.5);
+        else
+            LoopBeats = _loopBeats / 2;
+    }
 
-    public void DoubleLoop() => LoopBeats = _loopBeats * 2;
+    /// <summary>
+    /// Doubles the loop: one set by hand keeps its start and runs on twice as far, as far as the end of the song;
+    /// otherwise it's <see cref="LoopBeats"/> doubled, looping or not.
+    /// </summary>
+    public void DoubleLoop()
+    {
+        if (IsLooping && _manualLoop)
+            ResizeManualLoop(2);
+        else
+            LoopBeats = _loopBeats * 2;
+    }
+
+    /// <summary>
+    /// The shortest loop that can be set by hand.
+    /// </summary>
+    static readonly TimeSpan MinManualLoop = TimeSpan.FromMilliseconds(10);
+
+    void ResizeManualLoop(double factor)
+    {
+        if (_pcm is not { } pcm)
+            return;
+        var length = (long)Math.Round((_loopEnd - _loopStart) * factor);
+        if (length < ToFrames(MinManualLoop) || _loopStart + length > pcm.Frames)
+            return;
+        PlaceLoopFrames(_loopStart, _loopStart + length, SongFrame, manual: true, _loopStartBeat);
+    }
+
+    /// <summary>
+    /// Where loop in was marked, for <see cref="LoopOut"/> to loop back to; null if it hasn't been since the song
+    /// loaded.
+    /// </summary>
+    public TimeSpan? LoopInPoint => _loopIn;
+
+    /// <summary>
+    /// Whether the loop going on was set by hand, with <see cref="LoopIn"/> and <see cref="LoopOut"/>.
+    /// </summary>
+    public bool IsManualLoop => IsLooping && _manualLoop;
+
+    /// <summary>
+    /// How long the loop going on is, in beats; null if there's no loop, or no beat grid to count them by.
+    /// </summary>
+    public double? LoopLengthBeats =>
+        IsLooping && _analysis?.Grid is { } grid
+            ? grid.BeatNumberAt(ToTime(_loopEnd).TotalSeconds) - grid.BeatNumberAt(ToTime(_loopStart).TotalSeconds)
+            : null;
+
+    /// <summary>
+    /// Whether there's a loop to go back to with <see cref="Reloop"/>.
+    /// </summary>
+    public bool CanReloop => IsLooping || _lastLoop is not null;
+
+    /// <summary>
+    /// Marks where a loop set by hand starts: where the deck is (on the nearest beat, with <see cref="Quantize"/>).
+    /// Nothing loops until <see cref="LoopOut"/>. Works without a beat grid.
+    /// </summary>
+    public void LoopIn()
+    {
+        if (!IsLoaded)
+            return;
+        var at = Position.TotalSeconds;
+        if (QuantizeGrid is { } grid)
+            at = Quantizing.Snap(grid, at);
+        _loopIn = TimeSpan.FromSeconds(Math.Clamp(at, 0, Duration.TotalSeconds));
+    }
+
+    /// <summary>
+    /// Loops from loop in to where the deck is now (on the nearest beat, with <see cref="Quantize"/>), going straight
+    /// back to loop in. While a loop set by hand goes, its end comes to here instead. Returns false, doing nothing,
+    /// with no loop in before here, or during a roll.
+    /// </summary>
+    public bool LoopOut()
+    {
+        if (!IsLoaded || IsRolling || _pcm is not { } pcm)
+            return false;
+
+        long start;
+        if (IsLooping && _manualLoop)
+            start = _loopStart;
+        else if (_loopIn is { } loopIn)
+            start = ToFrames(loopIn);
+        else
+            return false;
+
+        var at = Position.TotalSeconds;
+        var grid = QuantizeGrid;
+        if (grid is not null)
+        {
+            at = Quantizing.Snap(grid, at);
+            // A beat at least, rather than nothing, when the nearest beat is loop in's own.
+            if (ToFrames(TimeSpan.FromSeconds(at)) <= start)
+                at = Quantizing.Jump(grid, ToTime(start).TotalSeconds, 1);
+        }
+        var end = Math.Min(ToFrames(TimeSpan.FromSeconds(at)), pcm.Frames);
+        if (end - start < ToFrames(MinManualLoop))
+            return false;
+
+        var startBeat = _analysis?.Grid is { } beats ? beats.BeatNumberAt(ToTime(start).TotalSeconds) : 0;
+        PlaceLoopFrames(start, end, SongFrame, manual: true, startBeat);
+        return true;
+    }
+
+    /// <summary>
+    /// Back to the start of the loop going on, or else the last loop there was, looping it again from its start.
+    /// Playing or paused stays as it was.
+    /// </summary>
+    public void Reloop()
+    {
+        if (IsRolling)
+            return;
+        if (IsLooping)
+        {
+            _track.SetPlaybackPosition(0);
+            return;
+        }
+        if (_lastLoop is { } last)
+            PlaceLoopFrames(last.Start, last.End, last.Start, last.Manual, last.StartBeat);
+    }
 
     /// <summary>
     /// Puts the loop from <paramref name="startBeat"/> for <see cref="LoopBeats"/> on the track, carrying on from the
@@ -1026,6 +1167,17 @@ sealed partial class Deck : IDisposable
 
         var start = Math.Clamp(ToFrames(TimeSpan.FromSeconds(grid.TimeOfBeat(startBeat))), 0, pcm.Frames - 1);
         var end = Math.Clamp(ToFrames(TimeSpan.FromSeconds(grid.TimeOfBeat(startBeat + _loopBeats))), start + 1, pcm.Frames);
+        PlaceLoopFrames(start, end, from, manual: false, startBeat);
+    }
+
+    /// <summary>
+    /// Puts the loop from frame <paramref name="start"/> to <paramref name="end"/> on the track, as
+    /// <see cref="PlaceLoop"/> does, set by hand or by beats, and remembers it for <see cref="Reloop"/>.
+    /// </summary>
+    void PlaceLoopFrames(long start, long end, long? from, bool manual, double startBeat)
+    {
+        if (_pcm is not { } pcm)
+            return;
 
         _engine.Mixer.Lock();
         try
@@ -1043,7 +1195,10 @@ sealed partial class Deck : IDisposable
                 _track.Pause();
 
             _loopAudio.Dispose();
-            (_loopAudio, _loopStart, _loopEnd, _loopStartBeat) = (loop, start, end, startBeat);
+            (_loopAudio, _loopStart, _loopEnd, _loopStartBeat, _manualLoop) = (loop, start, end, startBeat, manual);
+            // A roll's loop is only borrowed while its pad's held, so it's not one to go back to.
+            if (!IsRolling)
+                _lastLoop = (start, end, manual, startBeat);
         }
         finally
         {

@@ -6,7 +6,8 @@ namespace Brutality;
 
 /// <summary>
 /// One deck's keys, besides its hotcues (see <see cref="HotcueKeys"/>). Shift with the tempo keys moves the volume
-/// fader instead.
+/// fader instead; Shift with halve and double loop marks loop in and out, as on a Pioneer controller, and with the
+/// loop key, reloops.
 /// </summary>
 sealed record DeckKeys(
     GlfwKey Cue,
@@ -177,10 +178,17 @@ sealed class KeyboardControls
         // The rest act once, on the press. The filter keys only slide, in Update.
         if (!pressed)
             return;
+        var shifted = (mods & GlfwModifier.Shift) != 0;
         if (key == keys.Play)
             deck.TogglePlay();
         else if (key == keys.Sync)
             deck.Sync();
+        else if (key == keys.Loop && shifted)
+            deck.Reloop();
+        else if (key == keys.HalveLoop && shifted)
+            deck.LoopIn();
+        else if (key == keys.DoubleLoop && shifted)
+            deck.LoopOut();
         else if (key == keys.Loop)
             deck.ToggleLoop();
         else if (key == keys.HalveLoop)

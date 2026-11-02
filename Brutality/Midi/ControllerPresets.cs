@@ -66,6 +66,10 @@ static class ControllerPresets
             Note($"{deck}.loop.beats4", channel, 0x4A);
             Note($"{deck}.loop.beats1", channel, 0x4C);
             Note($"{deck}.loop.exit", channel, 0x4D);
+            // Shift + 1/2X and Shift + 2X are loop in and out, and Shift + AUTO LOOP reloops.
+            Note($"{deck}.loop.in", channel, 0x61);
+            Note($"{deck}.loop.out", channel, 0x62);
+            Note($"{deck}.reloop", channel, 0x50);
             for (var pad = 0; pad < ControlCatalog.HOTCUES; pad++)
             {
                 Note($"{deck}.hotcue{pad + 1}", pads, pad);
