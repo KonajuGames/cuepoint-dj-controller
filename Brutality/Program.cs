@@ -153,7 +153,7 @@ static void Run()
     var rollPads = gridEditors.Select(editor => new RollPads(editor.Deck, editor)).ToArray();
     RollPads? RollPadsFor(Deck deck) => rollPads.FirstOrDefault(roll => roll.Deck == deck);
 
-    var ui = new Root();
+    var ui = new Root { TooltipFont = fonts.Body };
     var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor));
     foreach (var editor in gridEditors)
         editor.Log += screen.Log;

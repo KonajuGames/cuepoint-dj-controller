@@ -111,6 +111,23 @@ sealed class Root
     /// </summary>
     public const float DRAG_DISTANCE = 6;
 
+    /// <summary>
+    /// How long the pointer rests on an element before its <see cref="Element.Tooltip"/> shows, in seconds.
+    /// </summary>
+    public const double TOOLTIP_DELAY = 0.6;
+
+    /// <summary>
+    /// The font tooltips are written in; none show without one.
+    /// </summary>
+    public Font? TooltipFont { get; set; }
+
+    // When the hovered element was last hovered afresh, from Clock; where the pointer was when its tooltip showed;
+    // and whether a press has put it away until the pointer moves to something else.
+    double _hoveredSince;
+    float2? _tooltipAt;
+    bool _tooltipDismissed;
+    float2 _screenSize;
+
     float2 _pressPoint;
     bool _dragTried;
 
@@ -156,6 +173,7 @@ sealed class Root
     /// </summary>
     public void Layout(float2 screenSize)
     {
+        _screenSize = screenSize;
         foreach (var element in Elements)
         {
             if (!element.Visible)
@@ -198,6 +216,44 @@ sealed class Root
             batch.AddBorder(at, size, 1, Colors.Hex(0xFFFFFF, 0.25f));
             batch.AddText(drag.Font, drag.Label, at + new float2(6, 4), Colors.White);
         }
+
+        DrawTooltip(batch);
+    }
+
+    /// <summary>
+    /// The hovered element's tooltip, over everything, once the pointer's rested on it long enough. It's only drawn,
+    /// never hit tested, so it can't come between the mouse and anything under it.
+    /// </summary>
+    void DrawTooltip(Batch batch)
+    {
+        if (
+            TooltipFont is not { } font
+            || Hovered is not { Tooltip: { Length: > 0 } text }
+            || _mouse is not { } mouse
+            || _tooltipDismissed
+            || Pressed is not null
+            || Dragging is not null
+            || Clock.Seconds() - _hoveredSince < TOOLTIP_DELAY
+        )
+        {
+            _tooltipAt = null;
+            return;
+        }
+
+        // Below and to the right of where the pointer was when it showed, clear of the cursor, kept on screen.
+        var anchor = _tooltipAt ??= mouse;
+        var size = font.Measure(text) + new float2(16, 10);
+        var at = anchor + new float2(12, 22);
+        if (at.X + size.X > _screenSize.X)
+            at = new float2(_screenSize.X - size.X, at.Y);
+        if (at.Y + size.Y > _screenSize.Y)
+            at = new float2(at.X, anchor.Y - 6 - size.Y);
+        at = float2.Max(at, float2.Zero);
+        at = new float2(MathF.Round(at.X), MathF.Round(at.Y));
+
+        batch.AddRect(at, size, Colors.Hex(0x23242C, 0.97f));
+        batch.AddBorder(at, size, 1, Colors.Hex(0xFFFFFF, 0.25f));
+        batch.AddText(font, text, at + new float2(8, 5), Colors.Hex(0xE4E5EC));
     }
 
     /// <summary>
@@ -345,6 +401,10 @@ sealed class Root
 
     public void MouseButton(MouseButton button, bool down, Modifiers modifiers = Modifiers.None)
     {
+        // Any press puts the tooltip away, until the pointer moves on to something else.
+        if (down)
+            _tooltipDismissed = true;
+
         // A right-click goes to what's under the mouse as it goes down, and does nothing else: no focus, no press.
         // Qualified, since inside this class the bare name means this method.
         if (button == Input.MouseButton.Right)
@@ -533,5 +593,10 @@ sealed class Root
         Hovered = hit;
         if (Hovered is not null)
             Hovered.IsHovered = true;
+
+        // A tooltip waits afresh for each element the pointer comes to.
+        _hoveredSince = Clock.Seconds();
+        _tooltipAt = null;
+        _tooltipDismissed = false;
     }
 }

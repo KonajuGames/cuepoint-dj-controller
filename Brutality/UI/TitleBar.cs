@@ -242,7 +242,7 @@ sealed class TitleBar : Panel
         _right.Add(new Spacer(16));
         _clock = _right.Add(new Label(body) { Color = Theme.Text });
         _right.Add(new Spacer(12));
-        var options = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Cog });
+        var options = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Cog, Tooltip = "Options" });
         options.Clicked += _ => OptionsClicked?.Invoke();
         _right.Add(new Spacer(8));
         var minimize = _right.Add(new IconButton(TitleIcon.Minimize));

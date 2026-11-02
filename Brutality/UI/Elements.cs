@@ -46,6 +46,12 @@ abstract class Element
     public float2 ScreenPosition { get; private set; }
 
     /// <summary>
+    /// A few words shown beside the pointer once it's rested on this element a moment, saying what it does; none if
+    /// null. Only an interactive element shows one, since only it takes the mouse (see <see cref="Root.Hovered"/>).
+    /// </summary>
+    public string? Tooltip { get; set; }
+
+    /// <summary>
     /// The mouse is over this element, and nothing interactive inside it is in the way.
     /// </summary>
     public bool IsHovered { get; internal set; }
