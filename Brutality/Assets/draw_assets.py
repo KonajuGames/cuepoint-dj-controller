@@ -312,6 +312,16 @@ def main():
         ("icon-list-14.png", LIST, 14, 14),
         ("icon-history-14.png", CLOCK, 14, 14),
         ("icon-filter-14.png", FUNNEL, 14, 14),
+        # The folder list's arrows and icons again, larger, for its large text.
+        ("triangle-right-14.png", TRIANGLE_RIGHT, 14, 10),
+        ("triangle-down-14.png", TRIANGLE_DOWN, 14, 10),
+        ("icon-library-20.png", NOTE, 20, 14),
+        ("icon-drive-20.png", DRIVE, 20, 14),
+        ("icon-folder-20.png", FOLDER, 20, 14),
+        ("icon-playlist-20.png", PLAYLIST, 20, 14),
+        ("icon-list-20.png", LIST, 20, 14),
+        ("icon-history-20.png", CLOCK, 20, 14),
+        ("icon-filter-20.png", FUNNEL, 20, 14),
     ]
     # Previews go over the title bar's colour, since the icons are white.
     previews = [("preview-logo.png", LOGO, 512, 64), ("preview-logo-small.png", LOGO, 22, 64), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16)]

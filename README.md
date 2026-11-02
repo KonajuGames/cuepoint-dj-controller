@@ -51,6 +51,7 @@ Each song is analysed in the background as it comes into view in the list. The a
   - marks the songs loaded on each deck and those played this session
 - **Virtual folders:** playlists you put together by dragging songs onto them, saved as `.m3u8` files. They can be stored on any drive. One kept on a removable drive goes with it, and its songs are found again under whatever drive letter it gets.
 - **Drag and drop:** drag songs onto a deck to load them, from the list or from outside the app.
+- **Large text:** turned on in the options, the folder list and song list use bigger text, and the folder list bigger icons, to read in the dark or without glasses.
 - **Where analyses, hotcues and fixed grids are kept:** with the songs themselves.
   - **On the system drive:** in the app's own `library.json`.
   - **On any other drive:** in a `Cuepoint\library.json` at that drive's root.

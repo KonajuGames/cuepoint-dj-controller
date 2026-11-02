@@ -5,8 +5,9 @@ namespace Brutality.UI;
 
 /// <summary>
 /// The app's pictures, packed into the atlas with the fonts: the logo, and small white icons for tinting, among them
-/// the triangles drawn for arrows, the options button's cog, the search box's cross and the folder list's icons. Each
-/// is a PNG built into the app (see Assets\draw_assets.py).
+/// the triangles drawn for arrows, the options button's cog, the search box's cross and the folder list's icons, the
+/// last two again larger for the folder list's large text. Each is a PNG built into the app (see
+/// Assets\draw_assets.py).
 /// </summary>
 sealed record Images(
     Image Logo,
@@ -16,7 +17,10 @@ sealed record Images(
     Image TriangleLeft,
     Image Cog,
     Image Cross,
-    FolderIcons Folders
+    FolderIcons Folders,
+    Image LargeTriangleRight,
+    Image LargeTriangleDown,
+    FolderIcons LargeFolders
 )
 {
     /// <summary>
@@ -31,15 +35,10 @@ sealed record Images(
             TriangleLeft: atlas.AddImage(Read("triangle-left-10.png")),
             Cog: atlas.AddImage(Read("cog-18.png")),
             Cross: atlas.AddImage(Read("cross-10.png")),
-            Folders: new FolderIcons(
-                Library: atlas.AddImage(Read("icon-library-14.png")),
-                Drive: atlas.AddImage(Read("icon-drive-14.png")),
-                Folder: atlas.AddImage(Read("icon-folder-14.png")),
-                Playlist: atlas.AddImage(Read("icon-playlist-14.png")),
-                List: atlas.AddImage(Read("icon-list-14.png")),
-                History: atlas.AddImage(Read("icon-history-14.png")),
-                Filter: atlas.AddImage(Read("icon-filter-14.png"))
-            )
+            Folders: FolderIcons.Load(atlas, 14),
+            LargeTriangleRight: atlas.AddImage(Read("triangle-right-14.png")),
+            LargeTriangleDown: atlas.AddImage(Read("triangle-down-14.png")),
+            LargeFolders: FolderIcons.Load(atlas, 20)
         );
 
     /// <summary>
@@ -57,7 +56,22 @@ sealed record Images(
 /// <summary>
 /// The folder list's icons, one for each kind of thing in it.
 /// </summary>
-sealed record FolderIcons(Image Library, Image Drive, Image Folder, Image Playlist, Image List, Image History, Image Filter);
+sealed record FolderIcons(Image Library, Image Drive, Image Folder, Image Playlist, Image List, Image History, Image Filter)
+{
+    /// <summary>
+    /// Adds the icons drawn <paramref name="size"/> pixels square to <paramref name="atlas"/>.
+    /// </summary>
+    public static FolderIcons Load(FontAtlas atlas, int size) =>
+        new(
+            Library: atlas.AddImage(Images.Read($"icon-library-{size}.png")),
+            Drive: atlas.AddImage(Images.Read($"icon-drive-{size}.png")),
+            Folder: atlas.AddImage(Images.Read($"icon-folder-{size}.png")),
+            Playlist: atlas.AddImage(Images.Read($"icon-playlist-{size}.png")),
+            List: atlas.AddImage(Images.Read($"icon-list-{size}.png")),
+            History: atlas.AddImage(Images.Read($"icon-history-{size}.png")),
+            Filter: atlas.AddImage(Images.Read($"icon-filter-{size}.png"))
+        );
+}
 
 /// <summary>
 /// An image on its own, at its own size, tinted (white shows it as it is).

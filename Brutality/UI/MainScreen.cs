@@ -7,7 +7,8 @@ namespace Brutality.UI;
 /// <summary>
 /// The fonts the screen is drawn in.
 /// </summary>
-sealed record Fonts(Font Small, Font Body, Font Bold, Font Heading, Font Big);
+/// <param name="Large">The folder list's and song list's text when it's made large, to read from further away.</param>
+sealed record Fonts(Font Small, Font Body, Font Bold, Font Heading, Font Big, Font Large);
 
 /// <summary>
 /// The whole window: the title bar across the top; each deck's waveform scrolling past beneath it; the decks either
@@ -20,6 +21,7 @@ sealed class MainScreen : Panel
     const float GAP = 6;
     const float WAVEFORM_HEIGHT = 66;
     const float FOLDERS_WIDTH = 270;
+    const float LARGE_FOLDERS_WIDTH = 340;
 
     readonly List<ScrollingWaveform> _waveforms = [];
     readonly List<GridEditor?> _gridEditors = [];
@@ -32,6 +34,9 @@ sealed class MainScreen : Panel
     readonly MixerPanel _mixer;
     readonly Panel _folders;
     readonly ScrollPanel _folderScroll;
+    readonly Fonts _fonts;
+    readonly Images _images;
+    bool _largeListText;
 
     public float2 ScreenSize { get; set; } = new(1280, 720);
 
@@ -39,6 +44,26 @@ sealed class MainScreen : Panel
     public TreeView<LibraryNode> FolderTree { get; }
     public SongBrowser Browser { get; }
     public OptionsDialog Options { get; }
+
+    /// <summary>
+    /// Whether the folder list and song list are in large text, for reading in the dark or without glasses. The
+    /// folder list widens to fit.
+    /// </summary>
+    public bool LargeListText
+    {
+        get => _largeListText;
+        set
+        {
+            _largeListText = value;
+            FolderTree.Font = Browser.List.Font = value ? _fonts.Large : _fonts.Body;
+            // The folder list's arrows and icons grow with its text, and the room they're given, and the indent, too.
+            FolderTree.Arrows = value ? (_images.LargeTriangleRight, _images.LargeTriangleDown) : (_images.TriangleRight, _images.TriangleDown);
+            FolderTree.Cell = value ? 24 : 17;
+            FolderTree.Indent = value ? 24 : 18;
+        }
+    }
+
+    float FoldersWidth => _largeListText ? LARGE_FOLDERS_WIDTH : FOLDERS_WIDTH;
 
     /// <summary>
     /// A song was dragged from the list onto a deck, to load there.
@@ -61,6 +86,8 @@ sealed class MainScreen : Panel
     )
     {
         Background = Theme.Background;
+        _fonts = fonts;
+        _images = images;
 
         TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold, images));
 
@@ -99,7 +126,7 @@ sealed class MainScreen : Panel
                 Text = node => node.Name,
                 Children = node => node.Children,
                 CanExpand = node => node.CanExpand,
-                Icon = node => IconFor(node, images.Folders),
+                Icon = node => IconFor(node, _largeListText ? images.LargeFolders : images.Folders),
                 Arrows = (images.TriangleRight, images.TriangleDown),
                 Roots = folders,
                 ScrollOwner = _folderScroll,
@@ -187,12 +214,12 @@ sealed class MainScreen : Panel
 
         var browserTop = BrowserTop;
         var browserHeight = MathF.Max(120, ScreenSize.Y - browserTop - GAP);
-        var folderInner = new float2(FOLDERS_WIDTH - 2 * _folders.Padding - 2, browserHeight - 2 * _folders.Padding - 2);
+        var folderInner = new float2(FoldersWidth - 2 * _folders.Padding - 2, browserHeight - 2 * _folders.Padding - 2);
         _folderScroll.MinSize = folderInner;
         _folderScroll.MaxWidth = folderInner.X;
         _folderScroll.MaxHeight = folderInner.Y;
         FolderTree.MinWidth = folderInner.X - _folderScroll.ScrollbarHitWidth;
-        Browser.FixedSize = new float2(width - FOLDERS_WIDTH - 3 * GAP, browserHeight);
+        Browser.FixedSize = new float2(width - FoldersWidth - 3 * GAP, browserHeight);
         Options.ScreenSize = ScreenSize;
 
         foreach (var child in Children)
@@ -233,7 +260,7 @@ sealed class MainScreen : Panel
         }
 
         _folders.Arrange(new float2(position.X + GAP, position.Y + BrowserTop));
-        Browser.Arrange(new float2(position.X + GAP + FOLDERS_WIDTH + GAP, position.Y + BrowserTop));
+        Browser.Arrange(new float2(position.X + GAP + FoldersWidth + GAP, position.Y + BrowserTop));
         if (Options.Visible)
             Options.Arrange(position);
     }

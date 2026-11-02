@@ -65,7 +65,8 @@ static void Run()
         Body: atlas.Add(regular, 14),
         Bold: atlas.Add(bold, 14),
         Heading: atlas.Add(bold, 18),
-        Big: atlas.Add(bold, 26)
+        Big: atlas.Add(bold, 26),
+        Large: atlas.Add(regular, 20)
     );
     var images = Images.Load(atlas);
 
@@ -371,6 +372,14 @@ static void Run()
     lighting.Log += screen.Log;
     lighting.Enabled = settings.Os2lEnabled;
     lighting.DirectAddress = settings.Os2lAddress;
+    screen.LargeListText = settings.LargeListText;
+    screen.Options.LargeListText = () => screen.LargeListText;
+    screen.Options.LargeListTextToggled += () =>
+    {
+        screen.LargeListText = settings.LargeListText = !screen.LargeListText;
+        settings.Save(settingsPath);
+    };
+
     screen.Options.LightingEnabled = () => lighting.Enabled;
     screen.Options.LightingStatus = () => lighting.Status;
     screen.TitleBar.Os2lConnected = () => lighting.Enabled ? lighting.IsConnected : null;

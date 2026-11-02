@@ -41,8 +41,19 @@ sealed class OptionsDialog : Panel
     readonly Button _headphones;
     readonly Label _controller;
     readonly Button _lighting;
+    readonly Button _largeListText;
     readonly Label _lightingStatus;
     readonly Label _musicFolder;
+
+    /// <summary>
+    /// Whether the folder list and song list are in large text, to show.
+    /// </summary>
+    public Func<bool>? LargeListText { get; set; }
+
+    /// <summary>
+    /// The large text on/off button was clicked.
+    /// </summary>
+    public event Action? LargeListTextToggled;
 
     /// <summary>
     /// Whether lighting software is followed by OS2L, and what's connected, to show.
@@ -170,6 +181,11 @@ sealed class OptionsDialog : Panel
         WaveformSeconds.Changed += slider => seconds.Text = $"{slider.Value:F0} seconds";
         seconds.Text = $"{WaveformSeconds.Value:F0} seconds";
 
+        var textRow = Row("Large list text", body);
+        _largeListText = textRow.Add(new Button(bold, "Off") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
+        _largeListText.Clicked += _ => LargeListTextToggled?.Invoke();
+        _box.Add(new Label(body, "Bigger text in the folder list and song list, to read in the dark or without glasses.") { Color = Theme.Muted });
+
         var controllerRow = Row("Controller", body);
         _controller = controllerRow.Add(new Label(body) { Color = Theme.Text, MaxWidth = 200 });
         var map = controllerRow.Add(new Button(bold, "Map controls") { FocusColor = Theme.Focus });
@@ -260,6 +276,9 @@ sealed class OptionsDialog : Panel
         _lighting.Background = lighting ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
         _lightingStatus.Text = lighting ? LightingStatus?.Invoke() ?? "" : "";
         _autoGain.Background = _engine.AutoGain ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
+        var large = LargeListText?.Invoke() ?? false;
+        _largeListText.Text = large ? "On" : "Off";
+        _largeListText.Background = large ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
 
         _box.Measure();
         return Size = ScreenSize;

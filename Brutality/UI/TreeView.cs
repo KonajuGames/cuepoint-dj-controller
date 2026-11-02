@@ -50,9 +50,9 @@ sealed class TreeView<T> : Element
     public float Indent { get; set; } = 18;
 
     /// <summary>
-    /// The width given to the arrow, and to the icon, before the text.
+    /// The width given to the arrow, and to the icon, before the text; wider for larger ones.
     /// </summary>
-    const float CELL = 17;
+    public float Cell { get; set; } = 17;
     public float MinWidth { get; set; }
 
     public float4 TextColor { get; set; } = Colors.White;
@@ -215,7 +215,7 @@ sealed class TreeView<T> : Element
         return -1;
     }
 
-    float TextLeft(int depth) => 4 + depth * Indent + CELL + (HasIcons ? CELL + 2 : 0);
+    float TextLeft(int depth) => 4 + depth * Indent + Cell + (HasIcons ? Cell + 2 : 0);
 
     public override float2 Measure()
     {
@@ -258,9 +258,9 @@ sealed class TreeView<T> : Element
             if (CanExpand(item) && Arrows is { } arrows)
             {
                 var image = _expanded.Contains(item) ? arrows.Expanded : arrows.Collapsed;
-                batch.AddImage(image, new float2(x + (CELL - image.Size.X) / 2 - 2, position.Y + (RowHeight - image.Size.Y) / 2), ArrowColor);
+                batch.AddImage(image, new float2(x + (Cell - image.Size.X) / 2 - 2, position.Y + (RowHeight - image.Size.Y) / 2), ArrowColor);
             }
-            x += CELL;
+            x += Cell;
 
             if (Icon?.Invoke(item) is { } picture)
                 batch.AddImage(picture.Image, new float2(x - 1, position.Y + (RowHeight - picture.Image.Size.Y) / 2), picture.Tint);
@@ -270,7 +270,7 @@ sealed class TreeView<T> : Element
                 batch.AddRect(new float2(x, MathF.Round(position.Y + (RowHeight - square) / 2)), new float2(square, square), icon);
             }
             if (HasIcons)
-                x += CELL + 2;
+                x += Cell + 2;
 
             batch.AddText(Font, Text(item), new float2(x, textY), TextColor);
         }
@@ -322,7 +322,7 @@ sealed class TreeView<T> : Element
 
         // The arrow, and a little either side of it, opens and closes without moving the selection.
         var arrowLeft = ScreenPosition.X + depth * Indent;
-        if (CanExpand(item) && point.X >= arrowLeft && point.X < arrowLeft + 4 + CELL)
+        if (CanExpand(item) && point.X >= arrowLeft && point.X < arrowLeft + 4 + Cell)
         {
             SetExpanded(item, !_expanded.Contains(item));
             return;

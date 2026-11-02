@@ -51,6 +51,11 @@ sealed class AppSettings
     public string? MusicFolder { get; set; }
 
     /// <summary>
+    /// Whether the folder list and song list are in large text.
+    /// </summary>
+    public bool LargeListText { get; set; }
+
+    /// <summary>
     /// How the song list was laid out: its sort, and its columns.
     /// </summary>
     public BrowserLayout Browser { get; set; } = new();
