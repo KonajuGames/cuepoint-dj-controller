@@ -116,11 +116,12 @@ static void Run()
     // What's been loaded onto a deck this run, oldest first, for the History folder.
     var history = new List<Song>();
 
-    // Songs put together by hand, a playlist file each, in the app's folder or on the drive of the user's choosing.
-    // Deleting one sends its file to the Recycle Bin, unless Windows is set to delete straight away on that drive.
+    // Songs put together by hand, a playlist file each, in the app's folder or on the drive of the user's choosing:
+    // Cuepoint\VirtualFolders either way. Deleting one sends its file to the Recycle Bin, unless Windows is set to
+    // delete straight away on that drive.
     var virtualFolders = new VirtualFolders(
         library,
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "Virtual folders"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), VirtualFolders.DriveFolder),
         () => VirtualFolders.ReadyDrives(WindowsShell.IsReadOnlyVolume)
     );
     if (OperatingSystem.IsWindows())
