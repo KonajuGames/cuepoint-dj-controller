@@ -373,6 +373,7 @@ static void Run()
     lighting.DirectAddress = settings.Os2lAddress;
     screen.Options.LightingEnabled = () => lighting.Enabled;
     screen.Options.LightingStatus = () => lighting.Status;
+    screen.TitleBar.Os2lConnected = () => lighting.Enabled ? lighting.IsConnected : null;
     screen.Options.LightingAddress.Text = settings.Os2lAddress ?? "";
     screen.Options.LightingToggled += () =>
     {

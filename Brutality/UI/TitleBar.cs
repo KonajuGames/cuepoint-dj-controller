@@ -143,8 +143,44 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
 }
 
 /// <summary>
-/// The window's own title bar: the app's name, each deck's place in the bar stacked beside the master level, the
-/// CPU and the time, the options button and the window's buttons. Its empty space is where the window can be
+/// "OS2L" in a box, for whether lighting software is listening: black on green while it's connected, and orange on
+/// black, pulsing, while it's still being looked for.
+/// </summary>
+sealed class Os2lIndicator(Font font) : Element
+{
+    const float PADDING = 6;
+    const float HEIGHT = 20;
+
+    /// <summary>
+    /// How long one pulse takes, in seconds, while there's no connection.
+    /// </summary>
+    const double PULSE_SECONDS = 1.2;
+
+    const string TEXT = "OS2L";
+
+    public bool IsConnected { get; set; }
+
+    public override float2 Measure() => Size = new float2(MathF.Ceiling(font.Measure(TEXT).X) + 2 * PADDING, HEIGHT);
+
+    public override void Draw(Batch batch)
+    {
+        // Brightening and dimming smoothly, never quite out, so it's always readable.
+        var pulse = 0.5 + 0.5 * Math.Cos(2 * Math.PI * Clock.Seconds() / PULSE_SECONDS);
+        var (background, text) = IsConnected
+            ? (Theme.Connected, Colors.Hex(0x000000))
+            : (Colors.Hex(0x000000), Theme.Fade(Theme.Accent, (float)(0.3 + 0.7 * pulse)));
+
+        batch.AddRect(ScreenPosition, Size, background);
+        // The capitals centred in the box, rather than the line box with room for descenders.
+        var x = MathF.Round(ScreenPosition.X + PADDING);
+        var y = MathF.Round(ScreenPosition.Y + HEIGHT / 2 + BeatTrackers.CapHeight(font) / 2 - font.Ascender);
+        batch.AddText(font, TEXT, new float2(x, y), text);
+    }
+}
+
+/// <summary>
+/// The window's own title bar: the app's name, each deck's place in the bar stacked beside the master level, whether
+/// lighting software is connected, the CPU and the time, the options button and the window's buttons. Its empty space is where the window can be
 /// dragged from (see <see cref="IsCaption"/>). Call <see cref="Update"/> once a frame.
 /// </summary>
 sealed class TitleBar : Panel
@@ -157,6 +193,8 @@ sealed class TitleBar : Panel
     readonly Panel _right;
     readonly LevelMeter _master;
     readonly Label _masterLabel;
+    readonly Os2lIndicator _os2l;
+    readonly Spacer _os2lGap;
     readonly Label _cpu;
     readonly Label _clock;
     readonly IconButton _maximize;
@@ -170,6 +208,11 @@ sealed class TitleBar : Panel
     /// Whether the window is maximised, which the middle button shows and toggles.
     /// </summary>
     public Func<bool> IsMaximized { get; set; } = () => false;
+
+    /// <summary>
+    /// Whether lighting software is connected by OS2L; null while OS2L is off, which hides its indicator.
+    /// </summary>
+    public Func<bool?> Os2lConnected { get; set; } = () => null;
 
     public event Action? OptionsClicked;
     public event Action? MinimizeClicked;
@@ -193,6 +236,8 @@ sealed class TitleBar : Panel
         _master = _centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 });
 
         _right = Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
+        _os2l = _right.Add(new Os2lIndicator(bold) { Visible = false });
+        _os2lGap = _right.Add(new Spacer(16) { Visible = false });
         _cpu = _right.Add(new Label(body) { Color = Theme.Muted });
         _right.Add(new Spacer(16));
         _clock = _right.Add(new Label(body) { Color = Theme.Text });
@@ -221,6 +266,9 @@ sealed class TitleBar : Panel
     {
         _clock.Text = DateTime.Now.ToString("HH:mm:ss");
         _maximize.Icon = IsMaximized() ? TitleIcon.Restore : TitleIcon.Maximize;
+        var os2l = Os2lConnected();
+        _os2l.Visible = _os2lGap.Visible = os2l is not null;
+        _os2l.IsConnected = os2l == true;
         var (left, right) = _engine.Meter.TakePeaks();
         _master.Push(left, right);
 

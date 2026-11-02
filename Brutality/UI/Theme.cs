@@ -33,6 +33,11 @@ static class Theme
     public static readonly float4 Loop = Colors.Hex(0x48D17A);
 
     /// <summary>
+    /// Lighting software connected, behind the title bar's OS2L.
+    /// </summary>
+    public static readonly float4 Connected = Colors.Hex(0x3CC25A);
+
+    /// <summary>
     /// A song about to run out.
     /// </summary>
     public static readonly float4 Warning = Colors.Hex(0xFF4D3A);
