@@ -45,11 +45,16 @@ static void Run()
 {
     Glfw.WindowHint(GlfwWindowHint.ClientApi, Glfw.Constants.GLFW_NO_API);
 
-    // Declared first so it's disposed last, after the GPU objects that draw to it. It opens maximised, as the screen
-    // is laid out to fill it, and can't be made too small for the decks and mixer to fit side by side.
+    // It's made maximised, as the screen is laid out to fill it, but hidden: Windows would otherwise show it empty
+    // while the app gets going, white where it was first sized and black beyond. It's shown once the first frame is
+    // drawn.
+    Glfw.WindowHint(GlfwWindowHint.Visible, 0);
+    Glfw.WindowHint(GlfwWindowHint.Maximized, 1);
+
+    // Declared first so it's disposed last, after the GPU objects that draw to it. It can't be made too small for the
+    // decks and mixer to fit side by side.
     using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Cuepoint", Size = new int2(1440, 860) });
     window.SetSizeLimits(new int2(1280, 720), new int2(-1, -1));
-    window.Maximize();
 
 #if DEBUG
     const bool ENABLE_VALIDATION = true;
@@ -744,6 +749,7 @@ static void Run()
     };
 
     var lastFrame = Glfw.Time;
+    var windowShown = false;
     while (!window.ShouldClose)
     {
         // Minimised, there's nothing to draw, but the decks, a controller and lighting software still need seeing to:
@@ -796,6 +802,8 @@ static void Run()
         ui.Layout(screen.ScreenSize);
         input.UpdateCursor();
         renderer.DrawFrame(ui);
+        if (!windowShown)
+            window.Visible = windowShown = true;
     }
 
     // Anything about the library not yet saved (a drive's file to write again with relative paths, say) is saved as
