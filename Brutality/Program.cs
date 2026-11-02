@@ -12,6 +12,15 @@ using Brutality.UI;
 
 WindowsShell.AttachParentConsole();
 
+// What goes wrong is written down beside the settings, to look into after a set; even on another thread, where it
+// still ends the app.
+ErrorLog.FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "errors.log");
+AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+{
+    if (args.ExceptionObject is Exception e)
+        ErrorLog.Write("working in the background", e);
+};
+
 try
 {
     if (!Glfw.Init())
@@ -35,6 +44,7 @@ try
 catch (Exception e)
 {
     // A windowed app has nowhere to print an unhandled exception, so it would otherwise just vanish.
+    ErrorLog.Write("running", e);
     WindowsShell.ShowFatalError(e);
     return 1;
 }
@@ -160,6 +170,30 @@ static void Run()
         editor.Log += screen.Log;
     using var input = new GlfwUiInput(window, ui);
     var browser = screen.Browser;
+
+    // Something going wrong in the app's own code mustn't stop a set: the decks play on their own thread regardless.
+    // So it's written to the error log and said on the status line, and the app carries on. The same thing going
+    // wrong frame after frame is said once a minute, not sixty times a second.
+    var lastFailure = "";
+    var lastFailureAt = double.NegativeInfinity;
+    void Failed(string doing, Exception e)
+    {
+        var what = $"{doing}: {e.GetType().Name}: {e.Message}";
+        var at = Glfw.Time;
+        if (what == lastFailure && at - lastFailureAt < 60)
+            return;
+        (lastFailure, lastFailureAt) = (what, at);
+        ErrorLog.Write(doing, e);
+        try
+        {
+            screen.Log($"Something went wrong {doing} ({e.Message}), but the decks play on. It's written down in {ErrorLog.FilePath}");
+        }
+        catch (Exception)
+        {
+            // Even the status line's failing; the log has it.
+        }
+    }
+    input.Failed += e => Failed("handling the mouse or keyboard", e);
 
     // The virtual folders, lists and filters are open below the drives. What shows is what was chosen last time, if
     // it's still there, opened out to; otherwise the library's own folder. The list is sorted and its columns laid out
@@ -323,10 +357,20 @@ static void Run()
     var plays = new SessionPlays();
     browser.IsPlayed = song => plays.Contains(song.Path);
 
+    // Decks being put back after the app didn't close properly, and where each goes once its song is in.
+    var restoring = new Dictionary<Deck, (double Position, bool Play)>();
+
     foreach (var deck in decks)
     {
         deck.Loaded += loaded =>
         {
+            if (restoring.Remove(loaded, out var restore))
+            {
+                loaded.Seek(TimeSpan.FromSeconds(restore.Position));
+                // Not if it would only reach the end at once.
+                if (restore.Play && restore.Position < loaded.Duration.TotalSeconds - 1)
+                    loaded.Play();
+            }
             plays.Restart(loaded);
             screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
             loaded.Analysis = loaded.FilePath is { } path ? library.Find(path)?.Analysis : null;
@@ -378,6 +422,19 @@ static void Run()
     browser.LoadRequested += (song, deckName) => Load(song, decks.First(deck => deck.Name == deckName));
     screen.SongDropped += (deck, song) => Load(song, deck);
 
+    // The song at a path: a file outside the library becomes one by browsing its folder, as the folder tree would; a
+    // folder gives its first song.
+    Song? SongFor(string path)
+    {
+        if (Directory.Exists(path))
+            return library.SongsIn(path).FirstOrDefault();
+        if (!File.Exists(path) || !MusicLibrary.Extensions.Contains(Path.GetExtension(path)))
+            return null;
+        if (library.Find(path) is null && Path.GetDirectoryName(Path.GetFullPath(path)) is { } folder)
+            library.SongsIn(folder);
+        return library.Find(path);
+    }
+
     // Files dragged in from Explorer load on the deck they're dropped on: the first audio file among them, or the
     // first in the first folder dropped.
     input.FilesDropped += (point, paths) =>
@@ -386,18 +443,6 @@ static void Run()
         {
             screen.Log("Drop songs on a deck to load them");
             return;
-        }
-
-        // A file outside the library becomes a song by browsing its folder, as the folder tree would.
-        Song? SongFor(string path)
-        {
-            if (Directory.Exists(path))
-                return library.SongsIn(path).FirstOrDefault();
-            if (!File.Exists(path) || !MusicLibrary.Extensions.Contains(Path.GetExtension(path)))
-                return null;
-            if (library.Find(path) is null && Path.GetDirectoryName(Path.GetFullPath(path)) is { } folder)
-                library.SongsIn(folder);
-            return library.Find(path);
         }
 
         var song = paths.Select(SongFor).FirstOrDefault(found => found is not null);
@@ -818,6 +863,47 @@ static void Run()
             screen.Log($"Couldn't save {folder.Name}: {error}");
     };
 
+    // What the decks are doing is written down every couple of seconds, and the record deleted as the app closes. One
+    // left from last time means the app didn't close properly, so each deck gets its song back where it was, with its
+    // tempo and key lock. A deck that was playing a moment ago plays on from where it would have got to; after longer,
+    // it waits where it was.
+    const double SESSION_SAVE_SECONDS = 2;
+    var sessionPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "session.json");
+    if (SessionState.Load(sessionPath) is { } left)
+    {
+        var resume = DateTime.UtcNow - left.SavedAt < TimeSpan.FromMinutes(2);
+        foreach (var state in left.Decks)
+        {
+            if (decks.FirstOrDefault(deck => deck.Name == state.Name) is not { } deck || state.Path is null || SongFor(state.Path) is not { } song)
+                continue;
+            deck.Tempo = state.Tempo;
+            deck.KeyLocked = state.KeyLocked;
+            restoring[deck] = (resume ? left.PositionAt(state, DateTime.UtcNow) : state.Position, resume && state.Playing);
+            Load(song, deck);
+        }
+        if (restoring.Count > 0)
+            screen.Log(
+                resume
+                    ? "Cuepoint didn't close properly, so the decks are picking up where they were"
+                    : "Cuepoint didn't close properly last time, so the decks have their songs back where they were"
+            );
+    }
+    var nextSessionSave = 0.0;
+
+    // Each part of a frame is kept apart from the rest, so one going wrong doesn't stop the others: drawing failing
+    // still leaves the decks, the keyboard, a controller and the lighting working.
+    void Guarded(string doing, Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch (Exception e)
+        {
+            Failed(doing, e);
+        }
+    }
+
     var lastFrame = Glfw.Time;
     var windowShown = false;
     while (!window.ShouldClose)
@@ -840,45 +926,90 @@ static void Run()
         WindowsShell.KeepAwake(!minimised);
 
         // Finishes any background loads, raising their Loaded events here on the UI thread.
-        foreach (var deck in decks)
-            deck.Update();
+        Guarded(
+            "loading a song",
+            () =>
+            {
+                foreach (var deck in decks)
+                    deck.Update();
+            }
+        );
 
         // Applies finished analyses and saves the database when any came in.
-        var saveError = analyser.SaveError;
-        analyser.Update();
-        if (analyser.SaveError is { } newSaveError && newSaveError != saveError)
-            screen.Log($"Couldn't save {database.FilePath}: {newSaveError}");
+        Guarded(
+            "taking in analyses",
+            () =>
+            {
+                var saveError = analyser.SaveError;
+                analyser.Update();
+                if (analyser.SaveError is { } newSaveError && newSaveError != saveError)
+                    screen.Log($"Couldn't save {database.FilePath}: {newSaveError}");
+            }
+        );
 
         // A recording that can't carry on (a full disk, say) is stopped, keeping what it has.
-        if (recorder?.Error is not null)
-            StopRecording();
+        Guarded(
+            "recording the mix",
+            () =>
+            {
+                if (recorder?.Error is not null)
+                    StopRecording();
+            }
+        );
 
         // New tags can change what matches a search.
-        if (library.ApplyReadTags() > 0)
-            browser.Refilter();
+        Guarded(
+            "reading tags",
+            () =>
+            {
+                if (library.ApplyReadTags() > 0)
+                    browser.Refilter();
+            }
+        );
 
         // Faders whose keys are held move by the time since the last frame.
         var now = Glfw.Time;
-        controls.Update(now - lastFrame);
-        plays.Update(decks, now - lastFrame);
-        lighting.Update(now);
-        controllers?.Update(now, now - lastFrame);
-        ScanDrives(now);
+        var elapsed = now - lastFrame;
         lastFrame = now;
+        Guarded(
+            "working the decks from the keyboard",
+            () =>
+            {
+                controls.Update(elapsed);
+                plays.Update(decks, elapsed);
+            }
+        );
+        Guarded("talking to the lighting software", () => lighting.Update(now));
+        Guarded("working the decks from the controller", () => controllers?.Update(now, elapsed));
+        Guarded("looking for drives", () => ScanDrives(now));
+        if (now >= nextSessionSave)
+        {
+            nextSessionSave = now + SESSION_SAVE_SECONDS;
+            Guarded("writing down where the decks are", () => SessionState.Of(decks).Save(sessionPath));
+        }
         if (minimised)
             continue;
 
-        screen.ScreenSize = new float2(size.X, size.Y);
-        if (controllerDialog is not null)
-            controllerDialog.ScreenSize = screen.ScreenSize;
-        menu.ScreenSize = prompt.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
-        screen.Update();
-        ui.Layout(screen.ScreenSize);
-        input.UpdateCursor();
-        renderer.DrawFrame(ui);
+        Guarded(
+            "drawing the screen",
+            () =>
+            {
+                screen.ScreenSize = new float2(size.X, size.Y);
+                if (controllerDialog is not null)
+                    controllerDialog.ScreenSize = screen.ScreenSize;
+                menu.ScreenSize = prompt.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
+                screen.Update();
+                ui.Layout(screen.ScreenSize);
+                input.UpdateCursor();
+                renderer.DrawFrame(ui);
+            }
+        );
         if (!windowShown)
             window.Visible = windowShown = true;
     }
+
+    // Closing properly, nothing needs picking up next time.
+    SessionState.Delete(sessionPath);
 
     // A recording still going is finished as the app closes, so its file is whole.
     StopRecording();

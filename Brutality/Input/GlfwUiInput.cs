@@ -30,6 +30,12 @@ sealed class GlfwUiInput : IDisposable
     /// </summary>
     public event Action<float2, string[]>? FilesDropped;
 
+    /// <summary>
+    /// Something went wrong handling an event, in the UI or the app's handlers of it. That event is dropped and the
+    /// app carries on, since the decks play on regardless; with nothing listening, it's thrown on as before.
+    /// </summary>
+    public event Action<Exception>? Failed;
+
     public GlfwUiInput(GlfwWindow window, Root ui)
     {
         _window = window;
@@ -50,7 +56,22 @@ sealed class GlfwUiInput : IDisposable
         window.OnDrop += OnDrop;
     }
 
-    void OnDrop(GlfwWindow window, int count, string[] paths) => FilesDropped?.Invoke(ToFramebuffer(window.CursorPos), paths);
+    void OnDrop(GlfwWindow window, int count, string[] paths) => Guard(() => FilesDropped?.Invoke(ToFramebuffer(window.CursorPos), paths));
+
+    /// <summary>
+    /// Handles an event, passing anything that goes wrong to <see cref="Failed"/> rather than up through GLFW.
+    /// </summary>
+    void Guard(Action handle)
+    {
+        try
+        {
+            handle();
+        }
+        catch (Exception e) when (Failed is not null)
+        {
+            Failed(e);
+        }
+    }
 
     /// <summary>
     /// GLFW reports the cursor in window coordinates, which differ from framebuffer pixels on high-DPI displays.
@@ -66,72 +87,78 @@ sealed class GlfwUiInput : IDisposable
         return new float2((float)windowPosition.X, (float)windowPosition.Y) * scale;
     }
 
-    void OnCursorPos(GlfwWindow window, double2 position)
-    {
-        _ui.MouseMove(ToFramebuffer(position));
-        UpdateCursor();
-    }
-
-    void OnCursorEnter(GlfwWindow window, bool entered)
-    {
-        if (entered)
-            _ui.MouseMove(ToFramebuffer(window.CursorPos));
-        else
-            _ui.MouseLeave();
-        UpdateCursor();
-    }
-
-    void OnMouseButton(GlfwWindow window, GlfwMouseButton button, GlfwButtonAction action, GlfwModifier mods)
-    {
-        MouseButton? uiButton = button switch
+    void OnCursorPos(GlfwWindow window, double2 position) =>
+        Guard(() =>
         {
-            GlfwMouseButton.Left => MouseButton.Left,
-            GlfwMouseButton.Right => MouseButton.Right,
-            GlfwMouseButton.Middle => MouseButton.Middle,
-            _ => null,
-        };
-        if (uiButton is { } b)
-            _ui.MouseButton(b, action == GlfwButtonAction.Press, ToModifiers(mods));
-        UpdateCursor();
-    }
+            _ui.MouseMove(ToFramebuffer(position));
+            UpdateCursor();
+        });
 
-    void OnScroll(GlfwWindow window, double2 offset)
-    {
-        // X comes from a tilt wheel or a sideways touchpad swipe. Holding Shift turns an ordinary wheel sideways,
-        // as in most apps; GLFW's scroll event carries no modifiers, so ask for Shift directly.
-        var notches = new float2((float)offset.X, (float)offset.Y);
-        var shift =
-            window.GetKey(GlfwKey.LeftShift) != GlfwKeyAction.Release
-            || window.GetKey(GlfwKey.RightShift) != GlfwKeyAction.Release;
-        if (shift && notches.X == 0)
-            notches = new float2(notches.Y, 0);
-        _ui.MouseWheel(notches);
-    }
-
-    void OnKey(GlfwWindow window, GlfwKey key, int scancode, GlfwKeyAction action, GlfwModifier mods)
-    {
-        bool handled;
-        if (action == GlfwKeyAction.Release)
+    void OnCursorEnter(GlfwWindow window, bool entered) =>
+        Guard(() =>
         {
-            // The UI ignores releases, but one whose press it used shouldn't reach the app on its own.
-            handled = _keysHeldByUi.Remove(key);
-        }
-        else
+            if (entered)
+                _ui.MouseMove(ToFramebuffer(window.CursorPos));
+            else
+                _ui.MouseLeave();
+            UpdateCursor();
+        });
+
+    void OnMouseButton(GlfwWindow window, GlfwMouseButton button, GlfwButtonAction action, GlfwModifier mods) =>
+        Guard(() =>
         {
-            handled = _ui.KeyDown(ToKey(key), ToModifiers(mods));
-            if (handled)
-                _keysHeldByUi.Add(key);
-        }
+            MouseButton? uiButton = button switch
+            {
+                GlfwMouseButton.Left => MouseButton.Left,
+                GlfwMouseButton.Right => MouseButton.Right,
+                GlfwMouseButton.Middle => MouseButton.Middle,
+                _ => null,
+            };
+            if (uiButton is { } b)
+                _ui.MouseButton(b, action == GlfwButtonAction.Press, ToModifiers(mods));
+            UpdateCursor();
+        });
 
-        if (!handled)
-            UnhandledKey?.Invoke(key, action, mods);
-    }
+    void OnScroll(GlfwWindow window, double2 offset) =>
+        Guard(() =>
+        {
+            // X comes from a tilt wheel or a sideways touchpad swipe. Holding Shift turns an ordinary wheel sideways,
+            // as in most apps; GLFW's scroll event carries no modifiers, so ask for Shift directly.
+            var notches = new float2((float)offset.X, (float)offset.Y);
+            var shift =
+                window.GetKey(GlfwKey.LeftShift) != GlfwKeyAction.Release
+                || window.GetKey(GlfwKey.RightShift) != GlfwKeyAction.Release;
+            if (shift && notches.X == 0)
+                notches = new float2(notches.Y, 0);
+            _ui.MouseWheel(notches);
+        });
 
-    void OnChar(GlfwWindow window, uint codePoint)
-    {
-        if (Rune.TryCreate(codePoint, out var rune))
-            _ui.TextInput(rune);
-    }
+    void OnKey(GlfwWindow window, GlfwKey key, int scancode, GlfwKeyAction action, GlfwModifier mods) =>
+        Guard(() =>
+        {
+            bool handled;
+            if (action == GlfwKeyAction.Release)
+            {
+                // The UI ignores releases, but one whose press it used shouldn't reach the app on its own.
+                handled = _keysHeldByUi.Remove(key);
+            }
+            else
+            {
+                handled = _ui.KeyDown(ToKey(key), ToModifiers(mods));
+                if (handled)
+                    _keysHeldByUi.Add(key);
+            }
+
+            if (!handled)
+                UnhandledKey?.Invoke(key, action, mods);
+        });
+
+    void OnChar(GlfwWindow window, uint codePoint) =>
+        Guard(() =>
+        {
+            if (Rune.TryCreate(codePoint, out var rune))
+                _ui.TextInput(rune);
+        });
 
     // GLFW's Shift, Control, Alt and Super bits match Modifiers; Caps Lock and Num Lock are dropped.
     static Modifiers ToModifiers(GlfwModifier mods) => (Modifiers)((int)mods & 0xF);

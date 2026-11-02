@@ -70,6 +70,8 @@ Each song is analysed in the background as it comes into view in the list. The a
 
 ### While a set is running
 
+- **Keeps going when something goes wrong:** an error in the app's own code is written to `errors.log` and mentioned on the status line, and the app carries on. The decks play on their own regardless, and the keyboard, a controller and the lighting keep working even if the screen can't be drawn.
+- **Picks up after a crash:** where each deck is gets written down every couple of seconds. If the app didn't close properly, the next start puts each deck's song back with its tempo and key lock. A deck that was playing moments before carries on from where it would have got to.
 - **Keeps the computer awake:** while the window is visible, the computer won't sleep and the screen won't switch off.
 - **Remembered between runs:** the audio devices, the music library's folder, the song list's layout and the last folder or virtual folder chosen.
 
@@ -106,7 +108,7 @@ dotnet run --project Brutality -c Release
 
 The music library starts out as your Windows Music folder. To use another folder, right-click it in the folder list and choose **Use as music library**.
 
-Settings and the library's analyses are kept in `%LOCALAPPDATA%\Cuepoint`.
+Settings, the library's analyses, and `errors.log` for anything that went wrong are kept in `%LOCALAPPDATA%\Cuepoint`.
 
 The app's images are drawn by [Assets/draw_assets.py](Brutality/Assets/draw_assets.py), which needs only Python 3. Run it again after changing them.
 
@@ -117,6 +119,7 @@ The tests in [Brutality.Tests](Brutality.Tests) cover what can go wrong without 
 - **Audio:** the master limiter, mix recording, automatic gain and the headphone mix
 - **Analysis:** beat grids, fixing them by hand, and keys
 - **Library:** the library files on each drive, scanning folders, virtual folders, the folder list, the analysis queue and the settings
+- **Crash recovery:** what's written down to pick up after a crash, and the error log
 
 They use temporary folders in place of drives, so they never touch your music or the app's own files.
 
