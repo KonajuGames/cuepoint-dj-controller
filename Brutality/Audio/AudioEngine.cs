@@ -41,6 +41,11 @@ sealed unsafe class AudioEngine : IDisposable
     /// </summary>
     public AudioMeter Meter { get; } = new();
 
+    /// <summary>
+    /// Keeps the final mix under full scale, before it's measured, recorded or heard.
+    /// </summary>
+    public MasterLimiter Limiter { get; } = new();
+
     MixRecorder? _recorder;
 
     /// <summary>
@@ -403,8 +408,8 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// SDL_mixer's callback once the mix is done, on the audio thread: measures it, records it if it's being
-    /// recorded, and sends the headphones their mix of it and the cue.
+    /// SDL_mixer's callback once the mix is done, on the audio thread: limits it, measures it, records it if it's
+    /// being recorded, and sends the headphones their mix of it and the cue.
     /// </summary>
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
     static void MixDone(void* userData, MixMixer mixer, SdlAudioSpec* spec, float* samples, int count)
@@ -412,6 +417,8 @@ sealed unsafe class AudioEngine : IDisposable
         try
         {
             var engine = (AudioEngine)GCHandle.FromIntPtr((nint)userData).Target!;
+            if (spec->channels == AudioOutput.CHANNELS)
+                engine.Limiter.Process(new Span<float>(samples, count));
             engine.Meter.Measure(samples, count, spec->channels);
             engine.Recorder?.Write(samples, count);
             engine.FeedHeadphones(samples, count);
@@ -428,12 +435,18 @@ sealed unsafe class AudioEngine : IDisposable
         {
             if (_phones.Length < count)
                 Array.Resize(ref _phones, count);
-            var cue = _cue.AsSpan(0, Math.Min(_cueFilled, count));
+            // The cue held back as long as the limiter holds back the mix, so the two line up when blended. All of
+            // it, silence too, to keep the delay running smoothly.
+            if (_cue.Length < count)
+                Array.Resize(ref _cue, count);
+            var cue = _cue.AsSpan(0, count);
+            Limiter.DelayCue(cue);
             HeadphoneMix.Mix(cue, new ReadOnlySpan<float>(master, count), _phones.AsSpan(0, count), Volatile.Read(ref _cueMix), Volatile.Read(ref _headphoneVolume));
             fixed (float* phones = _phones)
                 headphones.Write(phones, count);
         }
-        _cue.AsSpan(0, _cueFilled).Clear();
+        // What the delay put out too, past what was added this time.
+        _cue.AsSpan(0, Math.Min(_cue.Length, Math.Max(_cueFilled, count))).Clear();
         _cueFilled = 0;
     }
 

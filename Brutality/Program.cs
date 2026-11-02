@@ -97,6 +97,7 @@ static void Run()
     var settings = AppSettings.Load(settingsPath);
     audio.CueMix = settings.CueMix;
     audio.HeadphoneVolume = settings.HeadphoneVolume;
+    audio.Limiter.Enabled = settings.MasterLimiter;
     var outputFound = audio.UseOutputDevice(settings.OutputDevice);
     var headphonesFound = audio.UseHeadphoneDevice(settings.HeadphoneDevice);
     void SaveSettings()
@@ -432,6 +433,12 @@ static void Run()
     screen.Options.LargeListTextToggled += () =>
     {
         screen.LargeListText = settings.LargeListText = !screen.LargeListText;
+        settings.Save(settingsPath);
+    };
+
+    screen.Options.MasterLimiterToggled += () =>
+    {
+        settings.MasterLimiter = audio.Limiter.Enabled;
         settings.Save(settingsPath);
     };
 

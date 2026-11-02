@@ -41,6 +41,11 @@ sealed class AppSettings
     public bool Os2lEnabled { get; set; } = true;
 
     /// <summary>
+    /// Whether the master limiter keeps the mix from clipping.
+    /// </summary>
+    public bool MasterLimiter { get; set; } = true;
+
+    /// <summary>
     /// Lighting software to connect to as well as any found on the network, as host:port; null for none.
     /// </summary>
     public string? Os2lAddress { get; set; }

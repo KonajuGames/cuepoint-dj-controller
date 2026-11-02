@@ -30,6 +30,7 @@ sealed class OptionsDialog : Panel
     /// </summary>
     Element? _lastFocused;
     readonly Checkbox _autoGain;
+    readonly Checkbox _limiter;
 
     public float2 ScreenSize { get; set; }
 
@@ -89,6 +90,11 @@ sealed class OptionsDialog : Panel
     /// The lighting on/off button was clicked.
     /// </summary>
     public event Action? LightingToggled;
+
+    /// <summary>
+    /// The master limiter was turned on or off here.
+    /// </summary>
+    public event Action? MasterLimiterToggled;
 
     /// <summary>
     /// A lighting address was entered (empty for none).
@@ -152,6 +158,20 @@ sealed class OptionsDialog : Panel
         _autoGain = gainRow.Add(new Checkbox(body));
         _autoGain.Changed += box => engine.AutoGain = box.Checked;
         _content.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
+
+        var limiterRow = Row("Master limiter", body);
+        _limiter = limiterRow.Add(new Checkbox(body));
+        _limiter.Changed += box =>
+        {
+            engine.Limiter.Enabled = box.Checked;
+            MasterLimiterToggled?.Invoke();
+        };
+        _content.Add(
+            new Label(body, "Keeps the mix from clipping when the decks are loud together, turning it down smoothly just before a peak.")
+            {
+                Color = Theme.Muted,
+            }
+        );
 
         // Every playback device there is now, to choose the main mix's from; the system's default first.
         var outputRow = Row("Main output", body);
@@ -306,6 +326,7 @@ sealed class OptionsDialog : Panel
     public override float2 Measure()
     {
         _autoGain.Checked = _engine.AutoGain;
+        _limiter.Checked = _engine.Limiter.Enabled;
         _output.Selected = _engine.OutputDevice;
         _headphones.Selected = _engine.HeadphoneDevice;
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";

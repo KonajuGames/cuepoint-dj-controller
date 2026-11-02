@@ -246,6 +246,20 @@ sealed class TitleBar : Panel
     readonly Panel _right;
     readonly LevelMeter _master;
     readonly Label _masterLabel;
+    readonly Label _limit;
+
+    /// <summary>
+    /// How much the limiter has to turn the mix down, as a gain, before its light comes on: about half a decibel,
+    /// so it only shows working that can be heard.
+    /// </summary>
+    const float LIMIT_LIGHT_GAIN = 0.944f;
+
+    /// <summary>
+    /// How long the light stays on after the limiter last worked, in seconds, so a moment's limiting is seen.
+    /// </summary>
+    const double LIMIT_LIGHT_HOLD = 0.5;
+
+    double _limitedAt = double.NegativeInfinity;
     readonly Os2lIndicator _os2l;
     readonly RecordButton _record;
     readonly Spacer _os2lGap;
@@ -298,6 +312,8 @@ sealed class TitleBar : Panel
         _centre.Add(new Spacer(20));
         _masterLabel = _centre.Add(new Label(small, "MASTER") { Color = Theme.Muted });
         _master = _centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 });
+        // Lit while the master limiter is turning the mix down: a sign the decks are too loud together.
+        _limit = _centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
 
         _right = Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
         _record = _right.Add(new RecordButton(body));
@@ -338,6 +354,11 @@ sealed class TitleBar : Panel
         var os2l = Os2lConnected();
         _os2l.Visible = _os2lGap.Visible = os2l is not null;
         _os2l.IsConnected = os2l == true;
+        var limiter = _engine.Limiter;
+        if (limiter.TakeReduction() < LIMIT_LIGHT_GAIN)
+            _limitedAt = Clock.Seconds();
+        _limit.Visible = limiter.Enabled;
+        _limit.Color = Clock.Seconds() - _limitedAt < LIMIT_LIGHT_HOLD ? Theme.Accent : Theme.Faint;
         var (left, right) = _engine.Meter.TakePeaks();
         _master.Push(left, right);
 
@@ -373,6 +394,7 @@ sealed class TitleBar : Panel
         // "MASTER" centred by its capitals rather than its line box, which has room for descenders below, so it
         // lines up with the meter beside it.
         CentreCapitals(_masterLabel, _master.ScreenPosition.Y + _master.Size.Y / 2);
+        CentreCapitals(_limit, _master.ScreenPosition.Y + _master.Size.Y / 2);
 
         // The CPU and the time likewise, so they line up with the OS2L indicator's text.
         var rightMiddle = _right.ScreenPosition.Y + _right.Size.Y / 2;
