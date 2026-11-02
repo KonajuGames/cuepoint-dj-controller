@@ -143,25 +143,47 @@ sealed class DeckPanel : Panel
             }
         );
         _overview.Changed += slider => _deck.Seek(TimeSpan.FromSeconds(slider.Value));
+        _overview.Tooltip = "The whole song: click or drag to jump there";
 
         // Cue acts on press and release rather than click, since holding it previews from the cue point.
-        _cue = Add(new Button(bold, "CUE") { MinSize = new float2(64, 30), FocusColor = Theme.Focus });
+        _cue = Add(
+            new Button(bold, "CUE")
+            {
+                MinSize = new float2(64, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Playing, back to the cue point. Paused, sets it here, playing from it while held",
+            }
+        );
         _cue.PressStarted += _ => _deck.CueDown();
         _cue.PressEnded += _ => _deck.CueUp();
 
-        _playPause = Add(new Button(bold, "PLAY") { MinSize = new float2(84, 30), FocusColor = Theme.Focus });
+        _playPause = Add(new Button(bold, "PLAY") { MinSize = new float2(84, 30), FocusColor = Theme.Focus, Tooltip = "Play or pause" });
         _playPause.Clicked += _ => _deck.TogglePlay();
 
         // Sync matches the other deck's tempo, and its beats if both are playing; it stays lit while they match.
-        _sync = Add(new Button(bold, "SYNC") { MinSize = new float2(64, 30), FocusColor = Theme.Focus });
+        _sync = Add(
+            new Button(bold, "SYNC")
+            {
+                MinSize = new float2(64, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Match the other deck's tempo, and its beats if both are playing; lit while they match",
+            }
+        );
         _sync.Clicked += _ => _deck.Sync();
 
         // The loop: halve it, start or stop it (its size on the button), double it.
-        _halveLoop = Add(new Button(bold, "") { Icon = images?.TriangleLeft, MinSize = new float2(26, 30), FocusColor = Theme.Focus });
+        _halveLoop = Add(new Button(bold, "") { Icon = images?.TriangleLeft, MinSize = new float2(26, 30), FocusColor = Theme.Focus, Tooltip = "Halve the loop" });
         _halveLoop.Clicked += _ => _deck.HalveLoop();
-        _loop = Add(new Button(bold, "LOOP 4") { MinSize = new float2(84, 30), FocusColor = Theme.Focus });
+        _loop = Add(
+            new Button(bold, "LOOP 4")
+            {
+                MinSize = new float2(84, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Loop this many beats from here, in time with the beat grid; again to let it go",
+            }
+        );
         _loop.Clicked += _ => _deck.ToggleLoop();
-        _doubleLoop = Add(new Button(bold, "") { Icon = images?.TriangleRight, MinSize = new float2(26, 30), FocusColor = Theme.Focus });
+        _doubleLoop = Add(new Button(bold, "") { Icon = images?.TriangleRight, MinSize = new float2(26, 30), FocusColor = Theme.Focus, Tooltip = "Double the loop" });
         _doubleLoop.Clicked += _ => _deck.DoubleLoop();
 
         // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
@@ -177,12 +199,29 @@ sealed class DeckPanel : Panel
                 Thickness = 22,
                 HandleLength = 10,
                 FocusColor = Theme.Focus,
+                Tooltip = "Tempo: down is faster, as on a turntable. Double-click to put it back to 0",
             }
         );
         _tempoFader.Marks.Add(0);
         _tempoFader.Changed += slider => _deck.Tempo = slider.Value;
-        _tempoRange = Add(new Button(small, "±8%") { MinSize = new float2(TEMPO_COLUMN, 22), Padding = 3, FocusColor = Theme.Focus });
-        _keyLock = Add(new Button(small, "KEY") { MinSize = new float2(TEMPO_COLUMN, 22), Padding = 3, FocusColor = Theme.Focus });
+        _tempoRange = Add(
+            new Button(small, "±8%")
+            {
+                MinSize = new float2(TEMPO_COLUMN, 22),
+                Padding = 3,
+                FocusColor = Theme.Focus,
+                Tooltip = "How far the tempo fader goes: ±8%, ±16% or ±50%",
+            }
+        );
+        _keyLock = Add(
+            new Button(small, "KEY")
+            {
+                MinSize = new float2(TEMPO_COLUMN, 22),
+                Padding = 3,
+                FocusColor = Theme.Focus,
+                Tooltip = "Key lock: keeps the song in its own key whatever its tempo",
+            }
+        );
         _keyLock.Clicked += _ => _deck.KeyLocked = !_deck.KeyLocked;
         _tempoRange.Clicked += _ =>
         {
@@ -200,14 +239,18 @@ sealed class DeckPanel : Panel
         // GRID turns the pads into tools for fixing the beat grid by hand, and back.
         if (grid is not null)
         {
-            _gridMode = Add(new Button(bold, "GRID") { MinSize = new float2(56, 30), FocusColor = Theme.Focus });
+            _gridMode = Add(
+                new Button(bold, "GRID") { MinSize = new float2(56, 30), FocusColor = Theme.Focus, Tooltip = "Pads become tools for fixing the beat grid by hand" }
+            );
             _gridMode.Clicked += _ => grid.Active = !grid.Active;
         }
 
         // ROLL turns the pads into loop rolls, held for as long as each pad is, and back.
         if (roll is not null)
         {
-            _rollMode = Add(new Button(bold, "ROLL") { MinSize = new float2(56, 30), FocusColor = Theme.Focus });
+            _rollMode = Add(
+                new Button(bold, "ROLL") { MinSize = new float2(56, 30), FocusColor = Theme.Focus, Tooltip = "Pads become loop rolls, each looping while it's held" }
+            );
             _rollMode.Clicked += _ => roll.Active = !roll.Active;
         }
 
@@ -247,6 +290,22 @@ sealed class DeckPanel : Panel
 
         Refresh();
     }
+
+    /// <summary>
+    /// What a pad does in GRID mode, at the playhead.
+    /// </summary>
+    static string GridTooltip(GridTool tool) =>
+        tool switch
+        {
+            GridTool.SetBeat => "Pin the nearest beat to the playhead: one pin moves the grid, two or more set its tempo. Shift takes out the nearest pin",
+            GridTool.Downbeat => "Make the beat at the playhead the first of its bar",
+            GridTool.NudgeEarlier => "Move the grid earlier; Shift for a finer step",
+            GridTool.NudgeLater => "Move the grid later; Shift for a finer step",
+            GridTool.Halve => "Halve the grid's tempo",
+            GridTool.Double => "Double the grid's tempo",
+            GridTool.Steady => "One steady tempo in place of a drifting one, keeping the beat at the playhead",
+            _ => "Put the grid back as it was analysed",
+        };
 
     public void Refresh()
     {
@@ -347,6 +406,11 @@ sealed class DeckPanel : Panel
             _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
             _pads[i].IconAfter = direction > 0;
             _pads[i].Color = gridMode ? Theme.Accent : rollMode ? Theme.Loop : Theme.HotcueColor(i);
+            _pads[i].Tooltip =
+                gridMode ? GridTooltip(GridEditor.Pads[i])
+                : rollMode ? $"Loops {RollPads.Label(i)} {(RollPads.Sizes[i] > 1 ? "beats" : "beat")} while held, then carries on from where the song would have got to"
+                : hotcue is not null ? $"Hotcue {i + 1}: jump to it. Shift-click or right-click to clear it"
+                : $"Hotcue {i + 1}: set it here";
             if (hotcue is { } at)
                 flags.Add(((float)at.TotalSeconds, Theme.HotcueColor(i), (i + 1).ToString()));
         }

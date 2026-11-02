@@ -27,6 +27,15 @@ sealed class MixerPanel : Panel
 
     static readonly string[] EqNames = ["TRIM", "HIGH", "MID", "LOW", "FILTER"];
 
+    static readonly string[] EqTooltips =
+    [
+        "Trim: the channel's level before its EQ and fader. Double-click for none",
+        "Treble: right to boost, left to take it out. Double-click for flat",
+        "Mids: right to boost, left to take them out. Double-click for flat",
+        "Bass: right to boost, left to take it out. Double-click for flat",
+        "Filter: left for low-pass, right for high-pass. Double-click for off",
+    ];
+
     readonly AudioEngine _engine;
     readonly Label _heading;
     readonly Label[] _eqLabels;
@@ -74,6 +83,7 @@ sealed class MixerPanel : Panel
                         FillFrom = 0,
                         FillColor = color,
                         FocusColor = Theme.Focus,
+                        Tooltip = EqTooltips[row],
                     }
                 );
                 eq[row].Marks.Add(0);
@@ -96,6 +106,7 @@ sealed class MixerPanel : Panel
                     FillColor = color,
                     ShowFill = true,
                     FocusColor = Theme.Focus,
+                    Tooltip = $"Deck {deck.Name}'s volume. Double-click for full",
                 }
             );
             fader.Changed += slider => deck.Volume = slider.Value;
@@ -107,6 +118,7 @@ sealed class MixerPanel : Panel
                     MinSize = new float2(44, 24),
                     KeyHint = pflKeys?.ElementAtOrDefault(_channels.Count),
                     HintFont = small,
+                    Tooltip = $"Hear deck {deck.Name} in the headphones",
                 }
             );
             pfl.Clicked += _ => deck.Headphones = !deck.Headphones;
@@ -124,17 +136,37 @@ sealed class MixerPanel : Panel
                 DefaultValue = 0.5f,
                 Value = engine.Crossfader,
                 FocusColor = Theme.Focus,
+                Tooltip = "Crossfader: from one deck to the other. Double-click for the middle",
             }
         );
         _crossfader.Marks.Add(0.5f);
         _crossfader.Changed += slider => engine.Crossfader = slider.Value;
 
-        _autoGain = Add(new Button(small, "AUTO GAIN") { FocusColor = Theme.Focus, MinSize = new float2(90, 24) });
+        _autoGain = Add(
+            new Button(small, "AUTO GAIN")
+            {
+                FocusColor = Theme.Focus,
+                MinSize = new float2(90, 24),
+                Tooltip = "Play every song at about the same loudness, from its analysis",
+            }
+        );
         _autoGain.Clicked += _ => engine.AutoGain = !engine.AutoGain;
 
         // The headphones: from the cued decks alone to the main mix alone, and their volume.
         _cueLabel = Add(new Label(small, "CUE") { Color = Theme.Muted });
-        _cueMix = Add(new Slider { Length = 64, Thickness = 14, TrackThickness = 3, HandleLength = 8, DefaultValue = 0, Value = engine.CueMix, FocusColor = Theme.Focus });
+        _cueMix = Add(
+            new Slider
+            {
+                Length = 64,
+                Thickness = 14,
+                TrackThickness = 3,
+                HandleLength = 8,
+                DefaultValue = 0,
+                Value = engine.CueMix,
+                FocusColor = Theme.Focus,
+                Tooltip = "What the headphones hear: the decks with PFL on, the main mix, or a blend",
+            }
+        );
         _cueMix.Changed += slider => engine.CueMix = slider.Value;
         _masterLabel = Add(new Label(small, "MST") { Color = Theme.Muted });
         _phonesLabel = Add(new Label(small, "VOL") { Color = Theme.Muted });
@@ -150,6 +182,7 @@ sealed class MixerPanel : Panel
                 ShowFill = true,
                 FillColor = Theme.Accent,
                 FocusColor = Theme.Focus,
+                Tooltip = "Headphone volume",
             }
         );
         _phonesVolume.Changed += slider => engine.HeadphoneVolume = slider.Value;

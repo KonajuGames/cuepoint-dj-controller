@@ -337,11 +337,13 @@ sealed class TitleBar : Panel
         var options = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Cog, Tooltip = "Options" });
         options.Clicked += _ => OptionsClicked?.Invoke();
         _right.Add(new Spacer(8));
-        var minimize = _right.Add(new IconButton(TitleIcon.Minimize));
+        var minimize = _right.Add(new IconButton(TitleIcon.Minimize) { Tooltip = "Minimise" });
         minimize.Clicked += _ => MinimizeClicked?.Invoke();
         _maximize = _right.Add(new IconButton(TitleIcon.Maximize));
         _maximize.Clicked += _ => MaximizeClicked?.Invoke();
-        var close = _right.Add(new IconButton(TitleIcon.Close) { HoverBackground = Colors.Hex(0xE81123), PressedBackground = Colors.Hex(0xF1707A) });
+        var close = _right.Add(
+            new IconButton(TitleIcon.Close) { HoverBackground = Colors.Hex(0xE81123), PressedBackground = Colors.Hex(0xF1707A), Tooltip = "Close Cuepoint" }
+        );
         close.Clicked += _ => CloseClicked?.Invoke();
 
         _cpuBefore = _process.TotalProcessorTime;
@@ -358,6 +360,7 @@ sealed class TitleBar : Panel
     {
         _clock.Text = DateTime.Now.ToString("HH:mm:ss");
         _maximize.Icon = IsMaximized() ? TitleIcon.Restore : TitleIcon.Maximize;
+        _maximize.Tooltip = IsMaximized() ? "Restore" : "Maximise";
         _record.Recording = Recording();
         var warning = AudioWarning();
         _audioWarning.Visible = _audioWarningGap.Visible = warning is not null;

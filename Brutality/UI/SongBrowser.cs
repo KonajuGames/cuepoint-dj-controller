@@ -124,6 +124,7 @@ sealed class SongBrowser : Panel
                 PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
                 TextColor = Theme.Muted,
                 Visible = false,
+                Tooltip = "Clear the search",
             }
         );
         _clearSearch.Clicked += _ =>
@@ -144,6 +145,7 @@ sealed class SongBrowser : Panel
                 PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
                 TextColor = Theme.Muted,
                 Visible = false,
+                Tooltip = "Stop analysing all; songs on screen are still analysed",
             }
         );
         _cancelBulk.Clicked += _ => AnalyseAllCancelled?.Invoke(_analyser.CancelBulk());
@@ -189,7 +191,9 @@ sealed class SongBrowser : Panel
 
         foreach (var name in deckNames)
         {
-            var button = Add(new Button(body, $"Load {name}") { FocusColor = Theme.Focus, TextColor = Theme.DeckColor(name) });
+            var button = Add(
+                new Button(body, $"Load {name}") { FocusColor = Theme.Focus, TextColor = Theme.DeckColor(name), Tooltip = $"Load the chosen song onto deck {name}" }
+            );
             button.Clicked += _ =>
             {
                 if (List.SelectedItem is { } song)
