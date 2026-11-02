@@ -80,8 +80,6 @@ static void Run()
     using var gpu = new GpuContext(window, ENABLE_VALIDATION);
     using var renderer = new Renderer(gpu, window, atlas);
 
-    const string MUSIC_FOLDER = "F:/Music";
-
     using var audio = new AudioEngine();
     using var deckA = audio.CreateDeck("A", CrossfaderSide.Left);
     using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
@@ -104,8 +102,9 @@ static void Run()
         settings.Save(settingsPath);
     }
 
-    // The library scans now and reads tags in the background; songs load onto decks in the background too.
-    using var library = new MusicLibrary(MUSIC_FOLDER);
+    // The library scans now and reads tags in the background; songs load onto decks in the background too. It's the
+    // folder last chosen as the library, or Windows' own Music folder to begin with.
+    using var library = new MusicLibrary(settings.MusicFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic));
 
     // Songs are analysed as they come into view in the list, and the results kept between runs.
     var database = LibraryDatabase.Load(
@@ -162,11 +161,41 @@ static void Run()
     else
         screen.FolderTree.Select(folders[0]);
 
-    screen.Log(
-        library.Error is { } error ? $"Couldn't read {MUSIC_FOLDER}: {error}"
-        : database.LoadError is { } loadError ? $"Couldn't read {loadError}; it starts afresh"
-        : $"{library.Songs.Count} songs in {MUSIC_FOLDER}, {library.Songs.Count(song => song.Analysis is not null)} analysed"
-    );
+    void LogLibrary() =>
+        screen.Log(
+            library.Error is { } error ? $"Couldn't read {library.Root}: {error}"
+            : $"{library.Songs.Count} songs in {library.Root}, {library.Songs.Count(song => song.Analysis is not null)} analysed"
+        );
+    if (library.Error is null && database.LoadError is { } loadError)
+        screen.Log($"Couldn't read {loadError}; it starts afresh");
+    else
+        LogLibrary();
+
+    // What's chosen in the folder list is kept as it's chosen, not only as the app closes, so it's back next time
+    // even if the app doesn't close properly.
+    void RememberFolder()
+    {
+        settings.BrowserFolder = browser.Source is { } shown && shown != folders[0] ? [.. LibraryTree.PathOf(shown)] : null;
+        settings.Save(settingsPath);
+    }
+    screen.FolderTree.SelectionChanged += node =>
+    {
+        if (node.HasSongs)
+            RememberFolder();
+    };
+
+    // Any folder can be made the music library. The library's own lists and filters follow it straight away.
+    void UseAsMusicLibrary(string path)
+    {
+        library.Scan(path);
+        analyser.LookUp(library.Songs);
+        settings.MusicFolder = library.Root;
+        settings.Save(settingsPath);
+        screen.Options.MusicFolder = library.Root;
+        if (browser.Source?.Kind is LibraryNodeKind.Library or LibraryNodeKind.List or LibraryNodeKind.Filter)
+            browser.Reload();
+        LogLibrary();
+    }
 
     // The window's own buttons, and dragging it by the title bar, which Windows does once told where it is.
     screen.TitleBar.IsMaximized = () => window.IsMaximised;
@@ -559,6 +588,17 @@ static void Run()
     {
         if (node.Kind == LibraryNodeKind.VirtualFolders)
             menu.Show(point, [new MenuItem("New virtual folder...", NewVirtualFolder)]);
+        else if (node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive, Path: { } path })
+            menu.Show(
+                point,
+                [
+                    new MenuItem(
+                        "Use as music library",
+                        () => UseAsMusicLibrary(path),
+                        Checked: string.Equals(Path.TrimEndingDirectorySeparator(path), Path.TrimEndingDirectorySeparator(library.Root), StringComparison.OrdinalIgnoreCase)
+                    ),
+                ]
+            );
         else if (node.Folder is { } folder)
             menu.Show(
                 point,

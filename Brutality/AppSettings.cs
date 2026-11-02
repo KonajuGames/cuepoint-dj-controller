@@ -46,6 +46,11 @@ sealed class AppSettings
     public string? Os2lAddress { get; set; }
 
     /// <summary>
+    /// The folder the music library is made from; null for Windows' own Music folder.
+    /// </summary>
+    public string? MusicFolder { get; set; }
+
+    /// <summary>
     /// How the song list was laid out: its sort, and its columns.
     /// </summary>
     public BrowserLayout Browser { get; set; } = new();

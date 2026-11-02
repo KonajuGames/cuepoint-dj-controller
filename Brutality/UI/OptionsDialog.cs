@@ -42,6 +42,7 @@ sealed class OptionsDialog : Panel
     readonly Label _controller;
     readonly Button _lighting;
     readonly Label _lightingStatus;
+    readonly Label _musicFolder;
 
     /// <summary>
     /// Whether lighting software is followed by OS2L, and what's connected, to show.
@@ -73,6 +74,15 @@ sealed class OptionsDialog : Panel
     /// Map controls was clicked, to open the controller's mapping.
     /// </summary>
     public event Action? MapControllerClicked;
+
+    /// <summary>
+    /// The folder the music library is made from, as shown.
+    /// </summary>
+    public string MusicFolder
+    {
+        get => _musicFolder.Text;
+        set => _musicFolder.Text = value;
+    }
 
     public OptionsDialog(AudioEngine engine, string musicFolder, string databasePath, Font body, Font bold, Font heading)
     {
@@ -176,7 +186,8 @@ sealed class OptionsDialog : Panel
             new Label(body, "Sends beats and each deck's play state to lighting software such as SoundSwitch, QLC+ or sLight.") { Color = Theme.Muted }
         );
 
-        Row("Music library", body).Add(new Label(body, musicFolder) { Color = Theme.Text, MaxWidth = 340 });
+        _musicFolder = Row("Music library", body).Add(new Label(body, musicFolder) { Color = Theme.Text, MaxWidth = 340 });
+        _box.Add(new Label(body, "Right-click a folder in the folder list to make it the music library.") { Color = Theme.Muted });
         Row("Analysis saved in", body).Add(new Label(body, databasePath) { Color = Theme.Text, MaxWidth = 340 });
 
         _box.Add(new Label(bold, "Keyboard") { Color = Theme.Text });

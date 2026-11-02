@@ -145,8 +145,8 @@ static class LibraryTree
 
     public static List<LibraryNode> Build(MusicLibrary library, IReadOnlyList<Deck> decks, IReadOnlyList<Song> history, VirtualFolders virtualFolders)
     {
-        var songs = library.Songs;
-        IReadOnlyList<Song> Where(Func<Song, bool> test) => songs.Where(test).ToList();
+        // The library's songs as they are when asked for, since its folder can be changed.
+        IReadOnlyList<Song> Where(Func<Song, bool> test) => library.Songs.Where(test).ToList();
 
         // One node for each virtual folder for as long as it lasts, so a renamed one stays selected and open.
         var folderNodes = new Dictionary<VirtualFolder, LibraryNode>();
@@ -167,7 +167,7 @@ static class LibraryTree
 
         var nodes = new List<LibraryNode>
         {
-            new("Music library", LibraryNodeKind.Library, () => songs) { Path = library.Root },
+            new("Music library", LibraryNodeKind.Library, () => library.Songs),
             new("Local drives", LibraryNodeKind.Group, children: () => Drives(library)),
             new("Virtual folders", LibraryNodeKind.VirtualFolders, children: VirtualFolderNodes) { Path = virtualFolders.Directory },
             new(
@@ -179,7 +179,7 @@ static class LibraryTree
                     new(
                         "Recently added",
                         LibraryNodeKind.List,
-                        () => songs.OrderByDescending(song => song.Modified).Take(RECENTLY_ADDED).ToList()
+                        () => library.Songs.OrderByDescending(song => song.Modified).Take(RECENTLY_ADDED).ToList()
                     ),
                 ]
             ),
@@ -249,7 +249,9 @@ static class LibraryTree
 
     /// <summary>
     /// The node at the end of <paramref name="path"/> (from <see cref="PathOf"/>) among <paramref name="roots"/>,
-    /// looking only along the way; null if it isn't there now (a drive taken out, or a folder gone).
+    /// looking only along the way; null if it isn't there now (a drive taken out, or a folder gone). A virtual folder on
+    /// a removable drive is still found when the drive comes back under another letter, as long as it's the only one by
+    /// that name.
     /// </summary>
     public static LibraryNode? Find(IReadOnlyList<LibraryNode> roots, IReadOnlyList<string> path)
     {
@@ -259,7 +261,12 @@ static class LibraryTree
         {
             found = nodes.FirstOrDefault(node => node.Name == name);
             if (found is null)
-                return null;
+            {
+                var moved = nodes.Where(node => node.Folder is { Drive: not null } folder && name.StartsWith(folder.Name + " (", StringComparison.Ordinal)).Take(2).ToList();
+                if (moved.Count != 1)
+                    return null;
+                found = moved[0];
+            }
             nodes = found.Children;
         }
         return found;

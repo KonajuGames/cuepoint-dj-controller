@@ -90,17 +90,17 @@ sealed partial class MusicLibrary : IDisposable
         StringComparer.OrdinalIgnoreCase
     );
 
-    public string Root { get; }
+    public string Root { get; private set; } = "";
 
     /// <summary>
     /// Every song, in folder order: by artist folder, then album, then track.
     /// </summary>
-    public IReadOnlyList<Song> Songs { get; }
+    public IReadOnlyList<Song> Songs { get; private set; } = [];
 
     /// <summary>
     /// Why the folder couldn't be scanned, if it couldn't.
     /// </summary>
-    public string? Error { get; }
+    public string? Error { get; private set; }
 
     /// <summary>
     /// How many of the library's songs have their tags so far.
@@ -125,36 +125,60 @@ sealed partial class MusicLibrary : IDisposable
 
     public MusicLibrary(string root)
     {
+        if (OperatingSystem.IsWindows())
+            _reader = StartReadingTags(_stop.Token);
+        Scan(root);
+    }
+
+    /// <summary>
+    /// Makes <paramref name="root"/> the library's folder, scanning it now. Songs already known keep their tags; the
+    /// old folder's songs are still there to browse to, just no longer in the library. UI thread only.
+    /// </summary>
+    public void Scan(string root)
+    {
+        foreach (var song in Songs)
+            song.InLibrary = false;
+        _libraryToTag.Clear();
+
         Root = root;
+        Error = null;
+        List<Song> songs;
         try
         {
             var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
             // FileInfos from enumerating already carry the size and time, so this costs no more than listing names.
-            Songs = new DirectoryInfo(root)
+            songs = new DirectoryInfo(root)
                 .EnumerateFiles("*", options)
                 .Where(file => Extensions.Contains(file.Extension))
                 .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
-                .Select(file => Guess(root, file))
+                .Select(file => _byPath.GetValueOrDefault(file.FullName) ?? Guess(root, file))
                 .ToList();
-            foreach (var song in Songs)
-            {
-                song.InLibrary = true;
-                _byPath[song.Path] = song;
-            }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
         {
-            Songs = [];
+            songs = [];
             Error = e.Message;
         }
 
-        if (OperatingSystem.IsWindows())
+        foreach (var song in songs)
         {
-            foreach (var song in Songs)
+            song.InLibrary = true;
+            _byPath[song.Path] = song;
+        }
+        Songs = songs;
+        TaggedCount = songs.Count(song => song.HasTags);
+
+        // Songs browsed to and waiting for tags may be in the new library too, so they're read twice; that's harmless.
+        if (_reader is not null)
+        {
+            var untagged = 0;
+            foreach (var song in songs.Where(song => !song.HasTags))
+            {
                 _libraryToTag.Enqueue(song);
-            if (Songs.Count > 0)
-                _toTag.Release(Songs.Count);
-            _reader = StartReadingTags(_stop.Token);
+                untagged++;
+            }
+            if (untagged > 0)
+                _toTag.Release(untagged);
         }
     }
 

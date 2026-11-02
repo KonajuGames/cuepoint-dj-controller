@@ -63,7 +63,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 ### While a set is running
 
 - **Keeps the computer awake:** while the window is visible, the computer won't sleep and the screen won't switch off.
-- **Remembered between runs:** the audio devices, the song list's layout and the last folder chosen.
+- **Remembered between runs:** the audio devices, the music library's folder, the song list's layout and the last folder or virtual folder chosen.
 
 ## Keyboard
 
@@ -96,7 +96,7 @@ You'll need:
 dotnet run --project Brutality -c Release
 ```
 
-The music library is read from `F:/Music`, set by `MUSIC_FOLDER` in [Program.cs](Brutality/Program.cs).
+The music library starts out as your Windows Music folder. To use another folder, right-click it in the folder list and choose **Use as music library**.
 
 Settings and the library's analyses are kept in `%LOCALAPPDATA%\Cuepoint`.
 

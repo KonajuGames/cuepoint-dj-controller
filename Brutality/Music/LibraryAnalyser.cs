@@ -79,8 +79,7 @@ sealed class LibraryAnalyser : IDisposable
     public LibraryAnalyser(IEnumerable<Song> songs, LibraryDatabase database, int workers = MAX_CONCURRENT)
     {
         Database = database;
-        foreach (var song in songs)
-            LookUp(song);
+        LookUp(songs);
 
         // Below normal priority, so decoding four songs at once never gets in the way of drawing or the audio.
         _workers = Enumerable
@@ -127,6 +126,19 @@ sealed class LibraryAnalyser : IDisposable
             }
             if (added)
                 Monitor.PulseAll(_lock);
+        }
+    }
+
+    /// <summary>
+    /// Puts what the database already knows onto <paramref name="songs"/>, such as a new library folder's, so the
+    /// filters see their analyses before they're scrolled to.
+    /// </summary>
+    public void LookUp(IEnumerable<Song> songs)
+    {
+        lock (_lock)
+        {
+            foreach (var song in songs)
+                LookUp(song);
         }
     }
 
