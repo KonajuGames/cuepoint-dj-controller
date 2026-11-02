@@ -28,6 +28,8 @@ Each song is analysed in the background as it comes into view in the list. The a
 - its key, shown as a Camelot code
 - its loudness, for automatic gain
 
+**Analysing a whole list:** right-click a song and choose **Analyse All** to queue every song in the list that isn't analysed yet. A bar above the list shows how far it's got, and the cross beside it stops it. Songs scrolled into view still go first.
+
 **Fixing a beat grid by hand:** in a deck's **GRID** mode, the pads become tools.
 
 - **Pinning beats:** pin a beat to the music, set the downbeat, nudge, halve or double the tempo, make it steady, or reset it.

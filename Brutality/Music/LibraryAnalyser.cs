@@ -39,6 +39,19 @@ sealed class LibraryAnalyser : IDisposable
         }
     }
 
+    /// <summary>
+    /// Whether songs queued with <see cref="QueueAll"/> are still waiting or being analysed.
+    /// </summary>
+    public bool IsBulkActive => _bulk.Count > 0;
+
+    /// <summary>
+    /// How many songs the current <see cref="QueueAll"/> run has to analyse, and how many of them are done; both 0
+    /// when none is running.
+    /// </summary>
+    public int BulkTotal { get; private set; }
+
+    public int BulkDone { get; private set; }
+
     sealed class Job
     {
         public volatile float Progress;
@@ -65,6 +78,11 @@ sealed class LibraryAnalyser : IDisposable
     /// Songs already looked up in the database, so each is looked up once. UI thread only.
     /// </summary>
     readonly HashSet<Song> _lookedUp = [];
+
+    /// <summary>
+    /// Songs from <see cref="QueueAll"/> not yet analysed. UI thread only.
+    /// </summary>
+    readonly HashSet<Song> _bulk = [];
 
     readonly ConcurrentDictionary<Song, Job> _active = new();
     readonly ConcurrentQueue<(Song Song, TrackAnalysis? Analysis, string? Error)> _finished = new();
@@ -130,6 +148,60 @@ sealed class LibraryAnalyser : IDisposable
     }
 
     /// <summary>
+    /// Queues every one of <paramref name="songs"/> that needs analysing, in order, behind everything already waiting,
+    /// so songs scrolled into view still go first. Its progress is <see cref="BulkDone"/> of <see cref="BulkTotal"/>;
+    /// queued again while one's running, the songs join it. Returns how many songs were added.
+    /// </summary>
+    public int QueueAll(IReadOnlyList<Song> songs)
+    {
+        lock (_lock)
+        {
+            var queueing = new List<Song>();
+            var added = 0;
+            foreach (var song in songs)
+            {
+                LookUp(song);
+                if (song.Analysis is not null || song.AnalysisError is not null || !_bulk.Add(song))
+                    continue;
+                added++;
+                // Already asked for means it's waiting, being analysed, or just finished; it counts either way.
+                if (_requested.Add(song))
+                    queueing.Add(song);
+            }
+
+            // The next to go is at the end, so the first of these goes last into the front.
+            queueing.Reverse();
+            _queue.InsertRange(0, queueing);
+            BulkTotal += added;
+            if (queueing.Count > 0)
+                Monitor.PulseAll(_lock);
+            return added;
+        }
+    }
+
+    /// <summary>
+    /// Stops the <see cref="QueueAll"/> run: its songs still waiting are taken out of the queue, though any being
+    /// analysed now finish. Songs on screen are asked for again as usual. Returns how many were left unanalysed.
+    /// </summary>
+    public int CancelBulk()
+    {
+        lock (_lock)
+        {
+            var left = _bulk.Count;
+            _queue.RemoveAll(song =>
+            {
+                if (!_bulk.Contains(song))
+                    return false;
+                _requested.Remove(song);
+                return true;
+            });
+            _bulk.Clear();
+            BulkTotal = BulkDone = 0;
+            return left;
+        }
+    }
+
+    /// <summary>
     /// Puts what the database already knows onto <paramref name="songs"/>, such as a new library folder's, so the
     /// filters see their analyses before they're scrolled to.
     /// </summary>
@@ -191,6 +263,12 @@ sealed class LibraryAnalyser : IDisposable
                 Database.SetFailed(song, song.AnalysisError);
             }
             updated++;
+            if (_bulk.Remove(song))
+            {
+                BulkDone++;
+                if (_bulk.Count == 0)
+                    BulkTotal = BulkDone = 0;
+            }
             Analysed?.Invoke(song);
         }
 

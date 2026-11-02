@@ -26,6 +26,8 @@ sealed class SongBrowser : Panel
     readonly Label _count;
     readonly TextBox _search;
     readonly Button _clearSearch;
+    readonly BulkProgress _bulkProgress;
+    readonly Button _cancelBulk;
     readonly List<Button> _loadButtons = [];
     readonly ListHeader<Song> _header;
     readonly ScrollPanel _scroll;
@@ -73,6 +75,11 @@ sealed class SongBrowser : Panel
     public event Action<IReadOnlyList<Song>, float2>? SongsSecondaryClicked;
 
     /// <summary>
+    /// Analyse All was stopped with the cross by its progress bar: how many songs were left unanalysed.
+    /// </summary>
+    public event Action<int>? AnalyseAllCancelled;
+
+    /// <summary>
     /// The column headings were right-clicked, where, for a menu of <see cref="ColumnMenu"/>.
     /// </summary>
     public event Action<float2>? ColumnMenuRequested;
@@ -118,6 +125,22 @@ sealed class SongBrowser : Panel
             _search.Text = "";
             Filter();
         };
+
+        // While Analyse All runs, how far through it is, with a cross at the end to stop it.
+        _bulkProgress = Add(new BulkProgress(body) { Visible = false });
+        _cancelBulk = Add(
+            new Button(body, "")
+            {
+                Icon = images.Cross,
+                Padding = 0,
+                Background = Colors.Transparent,
+                HoverBackground = Colors.Hex(0xFFFFFF, 0.1f),
+                PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
+                TextColor = Theme.Muted,
+                Visible = false,
+            }
+        );
+        _cancelBulk.Clicked += _ => AnalyseAllCancelled?.Invoke(_analyser.CancelBulk());
 
         List = new ListView<Song>(body)
         {
@@ -257,6 +280,10 @@ sealed class SongBrowser : Panel
         var (first, count) = List.VisibleRows.GetOffsetAndLength(List.Items.Count);
         if (count > 0)
             _analyser.Request(List.Items.Skip(first).Take(count).ToList());
+
+        _bulkProgress.Visible = _cancelBulk.Visible = _analyser.IsBulkActive;
+        _bulkProgress.Done = _analyser.BulkDone;
+        _bulkProgress.Total = _analyser.BulkTotal;
 
         var songs = List.Items.Count == _sourceSongs.Count ? $"{_sourceSongs.Count} songs" : $"{List.Items.Count} of {_sourceSongs.Count} songs";
 
@@ -418,7 +445,8 @@ sealed class SongBrowser : Panel
         _scroll.MaxWidth = inner.X;
         _scroll.MaxHeight = listHeight;
         _scroll.Measure();
-        _heading.MaxWidth = MathF.Max(60, inner.X - _search.Size.X - _loadButtons.Sum(button => button.Size.X + 6) - 24 - _count.Size.X);
+        var bulk = _bulkProgress.Visible ? _bulkProgress.Size.X + 4 + _search.Size.Y - 6 + 12 : 0;
+        _heading.MaxWidth = MathF.Max(60, inner.X - _search.Size.X - _loadButtons.Sum(button => button.Size.X + 6) - 24 - _count.Size.X - bulk);
         return Size = FixedSize;
     }
 
@@ -444,6 +472,16 @@ sealed class SongBrowser : Panel
         _clearSearch.MinSize = new float2(_search.Size.Y - 6, _search.Size.Y - 6);
         _clearSearch.Measure();
         Place(_clearSearch, x - 6 - _clearSearch.Size.X - 3, y + 3);
+
+        // The progress bar and its cross just before the search box, as tall as the cross.
+        var square = _search.Size.Y - 6;
+        _cancelBulk.MinSize = new float2(square, square);
+        _cancelBulk.Measure();
+        _bulkProgress.Height = square;
+        _bulkProgress.Measure();
+        var cancelLeft = x - 6 - _search.Size.X - 12 - square;
+        Place(_cancelBulk, cancelLeft, y + 3);
+        Place(_bulkProgress, cancelLeft - 4 - _bulkProgress.Size.X, y + 3);
 
         y += rowHeight + 6;
         Place(_header, left, y);
@@ -481,4 +519,32 @@ sealed class SongBrowser : Panel
 
     static float4? KeyColor(Song song) =>
         song.Analysis is { } analysis ? Theme.CamelotColor(analysis.Key.CamelotNumber) : null;
+}
+
+/// <summary>
+/// How far through an Analyse All run the song list is: a bar filling as songs are done, with how many over it.
+/// </summary>
+sealed class BulkProgress(Font font) : Element
+{
+    public float Width { get; set; } = 220;
+    public float Height { get; set; } = 20;
+    public int Done { get; set; }
+    public int Total { get; set; }
+
+    public override float2 Measure() => Size = new float2(Width, Height);
+
+    public override void Draw(Batch batch)
+    {
+        batch.AddRect(ScreenPosition, Size, Theme.Well);
+        var fraction = Total > 0 ? Math.Clamp((float)Done / Total, 0, 1) : 0;
+        if (fraction > 0)
+            batch.AddRect(ScreenPosition, new float2(MathF.Round(Size.X * fraction), Size.Y), Theme.Fade(Theme.Accent, 0.55f));
+        batch.AddBorder(ScreenPosition, Size, 1, Theme.PanelBorder);
+
+        // The count centred, by its capitals, so it sits in the middle of the bar.
+        var text = $"Analysing {Done} of {Total}";
+        var x = MathF.Round(ScreenPosition.X + (Size.X - font.Measure(text).X) / 2);
+        var y = MathF.Round(ScreenPosition.Y + Size.Y / 2 + BeatTrackers.CapHeight(font) / 2 - font.Ascender);
+        batch.AddText(font, text, new float2(x, y), Theme.Text);
+    }
 }

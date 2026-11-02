@@ -700,9 +700,23 @@ static void Run()
     browser.SongsSecondaryClicked += (songs, at) =>
     {
         var played = songs.Where(song => plays.Contains(song.Path)).ToList();
+        var listed = browser.List.Items;
         menu.Show(
             at,
             [
+                // Every song in the list that hasn't been analysed yet, with a bar across the top while it goes.
+                new MenuItem(
+                    "Analyse All",
+                    () =>
+                    {
+                        var added = analyser.QueueAll(listed);
+                        screen.Log(
+                            added == 0 ? "Every song in the list is analysed already"
+                            : $"Analysing {added} {(added == 1 ? "song" : "songs")}{(analyser.BulkTotal > added ? $", {analyser.BulkTotal - analyser.BulkDone} in all" : "")}"
+                        );
+                    },
+                    Enabled: listed.Any(song => song.Analysis is null && song.AnalysisError is null)
+                ),
                 new MenuItem(
                     played.Count > 1 ? $"Mark {played.Count} songs as not played" : "Mark as not played",
                     () =>
@@ -715,6 +729,8 @@ static void Run()
             ]
         );
     };
+
+    browser.AnalyseAllCancelled += left => screen.Log($"Stopped analysing all; {left} {(left == 1 ? "song was" : "songs were")} left unanalysed");
 
     browser.RemoveRequested += (folder, songs) =>
     {
