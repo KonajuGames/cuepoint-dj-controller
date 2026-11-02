@@ -1,20 +1,34 @@
 using Brutal.Numerics;
 using Brutality.Audio;
+using Brutality.Input;
 
 namespace Brutality.UI;
 
 /// <summary>
 /// The options, over the screen dimmed behind them: automatic gain, how much of the song the scrolling waveforms
 /// show, where the library and its analysis live, and the keyboard shortcuts. Clicking outside it, Close, or Escape
-/// closes it. Sized to the screen by whoever lays it out, with <see cref="ScreenSize"/>.
+/// closes it. Sized to the screen by whoever lays it out, with <see cref="ScreenSize"/>; on a screen too short for it
+/// all, it scrolls.
 /// </summary>
 sealed class OptionsDialog : Panel
 {
     public const float MIN_WAVEFORM_SECONDS = 4;
     public const float MAX_WAVEFORM_SECONDS = 30;
 
+    /// <summary>
+    /// The least room left between the box and the window's edges.
+    /// </summary>
+    const float MARGIN = 16;
+
     readonly AudioEngine _engine;
-    readonly Panel _box;
+    readonly ScrollPanel _box;
+    readonly Panel _content;
+
+    /// <summary>
+    /// What had focus at the last layout, so the box scrolls to a control only as focus moves to it, and doesn't fight
+    /// the wheel after.
+    /// </summary>
+    Element? _lastFocused;
     readonly Button _autoGain;
 
     public float2 ScreenSize { get; set; }
@@ -103,22 +117,22 @@ sealed class OptionsDialog : Panel
         Background = Colors.Hex(0x000000, 0.75f);
 
         _box = Add(
-            new Panel
+            new ScrollPanel
             {
                 Padding = 20,
-                Spacing = 14,
                 Background = Theme.PanelRaised,
                 BorderColor = Theme.PanelBorder,
                 BorderWidth = 1,
                 MinSize = new float2(520, 0),
             }
         );
-        _box.Add(new Label(heading, "Options") { Color = Theme.Text });
+        _content = _box.Add(new Panel { Spacing = 14 });
+        _content.Add(new Label(heading, "Options") { Color = Theme.Text });
 
         var gainRow = Row("Automatic gain", body);
         _autoGain = gainRow.Add(new Button(bold, "On") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
         _autoGain.Clicked += _ => engine.AutoGain = !engine.AutoGain;
-        _box.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
+        _content.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
 
         // Each click moves the main mix on to the next playback device, and after the last, back to the default.
         var outputRow = Row("Main output", body);
@@ -156,7 +170,7 @@ sealed class OptionsDialog : Panel
                 engine.UseHeadphoneDevice(null);
             HeadphonesChanged?.Invoke(engine.HeadphoneDevice);
         };
-        _box.Add(
+        _content.Add(
             new Label(body, "A second sound card, or a controller's own channels 3 and 4, to hear decks with PFL on before the room does.")
             {
                 Color = Theme.Muted,
@@ -184,7 +198,7 @@ sealed class OptionsDialog : Panel
         var textRow = Row("Large list text", body);
         _largeListText = textRow.Add(new Button(bold, "Off") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
         _largeListText.Clicked += _ => LargeListTextToggled?.Invoke();
-        _box.Add(new Label(body, "Bigger text in the folder list and song list, to read in the dark or without glasses.") { Color = Theme.Muted });
+        _content.Add(new Label(body, "Bigger text in the folder list and song list, to read in the dark or without glasses.") { Color = Theme.Muted });
 
         var controllerRow = Row("Controller", body);
         _controller = controllerRow.Add(new Label(body) { Color = Theme.Text, MaxWidth = 200 });
@@ -198,16 +212,16 @@ sealed class OptionsDialog : Panel
         var addressRow = Row("Lighting address", body);
         LightingAddress = addressRow.Add(new TextBox(body) { Width = 220, Placeholder = "Found by itself; or host:port", FocusColor = Theme.Focus });
         LightingAddress.Submitted += box => LightingAddressChanged?.Invoke(box.Text.Trim());
-        _box.Add(
+        _content.Add(
             new Label(body, "Sends beats and each deck's play state to lighting software such as SoundSwitch, QLC+ or sLight.") { Color = Theme.Muted }
         );
 
         _musicFolder = Row("Music library", body).Add(new Label(body, musicFolder) { Color = Theme.Text, MaxWidth = 340 });
-        _box.Add(new Label(body, "Right-click a folder in the folder list to make it the music library.") { Color = Theme.Muted });
+        _content.Add(new Label(body, "Right-click a folder in the folder list to make it the music library.") { Color = Theme.Muted });
         Row("Analysis saved in", body).Add(new Label(body, databasePath) { Color = Theme.Text, MaxWidth = 340 });
 
-        _box.Add(new Label(bold, "Keyboard") { Color = Theme.Text });
-        var keys = _box.Add(new Panel { Spacing = 3 });
+        _content.Add(new Label(bold, "Keyboard") { Color = Theme.Text });
+        var keys = _content.Add(new Panel { Spacing = 3 });
         foreach (var (key, action) in new[]
         {
             ("1 / 2", "Load the selected song to deck A / B"),
@@ -235,19 +249,27 @@ sealed class OptionsDialog : Panel
             row.Add(new Label(body, action) { Color = Theme.Muted });
         }
 
-        var close = _box.Add(new Button(bold, "Close") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
+        var close = _content.Add(new Button(bold, "Close") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
         close.Clicked += _ => Close();
 
-        // A click on the dimmed screen around it closes it too.
-        Clicked += _ => Close();
+        // A click on the dimmed screen around it closes it too; one on the box's own empty space doesn't.
+        Clicked += _ =>
+        {
+            if (!_pressedInBox)
+                Close();
+        };
     }
+
+    bool _pressedInBox;
+
+    public override void PointerDown(float2 point, Modifiers modifiers) => _pressedInBox = _box.Contains(point);
 
     /// <summary>
     /// A row with <paramref name="name"/> in a column wide enough that every row's controls line up.
     /// </summary>
     Panel Row(string name, Font font)
     {
-        var row = _box.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
+        var row = _content.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
         row.Add(new Panel { MinSize = new float2(140, 0) }).Add(new Label(font, name) { Color = Theme.Muted });
         return row;
     }
@@ -280,6 +302,9 @@ sealed class OptionsDialog : Panel
         _largeListText.Text = large ? "On" : "Off";
         _largeListText.Background = large ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
 
+        // Never past the window's edges, scrolling instead.
+        _box.MaxWidth = MathF.Max(0, ScreenSize.X - 2 * MARGIN);
+        _box.MaxHeight = MathF.Max(0, ScreenSize.Y - 2 * MARGIN);
         _box.Measure();
         return Size = ScreenSize;
     }
@@ -288,5 +313,26 @@ sealed class OptionsDialog : Panel
     {
         ArrangeSelf(position);
         _box.Arrange(new float2(MathF.Round(position.X + (ScreenSize.X - _box.Size.X) / 2), MathF.Round(position.Y + (ScreenSize.Y - _box.Size.Y) / 2)));
+
+        // A control tabbed to out of view is scrolled to, with a little of what's around it.
+        var focused = FocusedIn(_content);
+        if (focused is not null && focused != _lastFocused)
+        {
+            var top = focused.ScreenPosition.Y - _content.ScreenPosition.Y;
+            _box.ScrollToShow(top - MARGIN, top + focused.Size.Y + MARGIN);
+        }
+        _lastFocused = focused;
+    }
+
+    static Element? FocusedIn(Element element)
+    {
+        if (element.IsFocused)
+            return element;
+        foreach (var child in element.VisibleChildren)
+        {
+            if (FocusedIn(child) is { } focused)
+                return focused;
+        }
+        return null;
     }
 }
