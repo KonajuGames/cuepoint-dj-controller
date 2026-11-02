@@ -303,10 +303,19 @@ sealed class TitleBar : Panel
 
         // "MASTER" centred by its capitals rather than its line box, which has room for descenders below, so it
         // lines up with the meter beside it.
-        var meterMiddle = _master.ScreenPosition.Y + _master.Size.Y / 2;
-        var font = _masterLabel.Font;
-        _masterLabel.Arrange(new float2(_masterLabel.ScreenPosition.X, MathF.Round(meterMiddle + BeatTrackers.CapHeight(font) / 2 - font.Ascender)));
+        CentreCapitals(_masterLabel, _master.ScreenPosition.Y + _master.Size.Y / 2);
+
+        // The CPU and the time likewise, so they line up with the OS2L indicator's text.
+        var rightMiddle = _right.ScreenPosition.Y + _right.Size.Y / 2;
+        CentreCapitals(_cpu, rightMiddle);
+        CentreCapitals(_clock, rightMiddle);
     }
+
+    /// <summary>
+    /// Puts <paramref name="label"/>'s capitals, rather than its line box, centred on <paramref name="middle"/>.
+    /// </summary>
+    static void CentreCapitals(Label label, float middle) =>
+        label.Arrange(new float2(label.ScreenPosition.X, MathF.Round(middle + BeatTrackers.CapHeight(label.Font) / 2 - label.Font.Ascender)));
 
     /// <summary>
     /// Centres a row's children on its middle, since a row lines them up along the top.
