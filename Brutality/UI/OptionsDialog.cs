@@ -29,7 +29,7 @@ sealed class OptionsDialog : Panel
     /// the wheel after.
     /// </summary>
     Element? _lastFocused;
-    readonly Button _autoGain;
+    readonly Checkbox _autoGain;
 
     public float2 ScreenSize { get; set; }
 
@@ -50,12 +50,21 @@ sealed class OptionsDialog : Panel
     /// </summary>
     public event Action<string?>? OutputChanged;
 
-    readonly Button _output;
+    readonly Dropdown<string?> _output;
 
-    readonly Button _headphones;
+    readonly Dropdown<string?> _headphones;
     readonly Label _controller;
-    readonly Button _lighting;
-    readonly Button _largeListText;
+    readonly Checkbox _lighting;
+    readonly Checkbox _largeListText;
+
+    /// <summary>
+    /// Where the output and headphone lists open, over everything.
+    /// </summary>
+    public ContextMenu? Menu
+    {
+        get => _output.Menu;
+        set => _output.Menu = _headphones.Menu = value;
+    }
     readonly Label _lightingStatus;
     readonly Label _musicFolder;
 
@@ -130,44 +139,40 @@ sealed class OptionsDialog : Panel
         _content.Add(new Label(heading, "Options") { Color = Theme.Text });
 
         var gainRow = Row("Automatic gain", body);
-        _autoGain = gainRow.Add(new Button(bold, "On") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
-        _autoGain.Clicked += _ => engine.AutoGain = !engine.AutoGain;
+        _autoGain = gainRow.Add(new Checkbox(body));
+        _autoGain.Changed += box => engine.AutoGain = box.Checked;
         _content.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
 
-        // Each click moves the main mix on to the next playback device, and after the last, back to the default.
+        // Every playback device there is now, to choose the main mix's from; the system's default first.
         var outputRow = Row("Main output", body);
-        _output = outputRow.Add(new Button(bold, "") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
-        _output.Clicked += _ =>
+        _output = outputRow.Add(
+            new Dropdown<string?>(body)
+            {
+                Width = 300,
+                Items = () => [null, .. AudioEngine.PlaybackDevices().Select(device => device.Name)],
+                Text = name => name ?? "System default",
+            }
+        );
+        _output.Chosen += name =>
         {
-            var names = AudioEngine.PlaybackDevices().Select(device => device.Name).ToList();
-            var at = engine.OutputDevice is { } current ? names.IndexOf(current) : -1;
-            var moved = false;
-            for (var i = at + 1; i < names.Count && !moved; i++)
-                moved = engine.UseOutputDevice(names[i]);
-            if (!moved)
-                engine.UseOutputDevice(null);
+            engine.UseOutputDevice(name);
             OutputChanged?.Invoke(engine.OutputDevice);
         };
 
-        // Each click moves the headphones on to the next playback device, and after the last, off. The main output's
-        // own device is offered too if it has channels 3 and 4 to put them on, as a DJ controller's sound card does.
+        // And the headphones', or none. The main output's own device puts them on its channels 3 and 4, if it has
+        // them, as a DJ controller's sound card does.
         var phonesRow = Row("Headphones", body);
-        _headphones = phonesRow.Add(new Button(bold, "Off") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
-        _headphones.Clicked += _ =>
-        {
-            var names = AudioEngine.PlaybackDevices().Select(device => device.Name).ToList();
-            var at = engine.HeadphoneDevice is { } current ? names.IndexOf(current) : -1;
-            string? next = null;
-            for (var i = at + 1; i < names.Count; i++)
+        _headphones = phonesRow.Add(
+            new Dropdown<string?>(body)
             {
-                if (engine.UseHeadphoneDevice(names[i]))
-                {
-                    next = names[i];
-                    break;
-                }
+                Width = 300,
+                Items = () => [null, .. AudioEngine.PlaybackDevices().Select(device => device.Name)],
+                Text = name => name is null ? "Off" : name == engine.OutputDevice ? $"{name} (channels 3-4)" : name,
             }
-            if (next is null)
-                engine.UseHeadphoneDevice(null);
+        );
+        _headphones.Chosen += name =>
+        {
+            engine.UseHeadphoneDevice(name);
             HeadphonesChanged?.Invoke(engine.HeadphoneDevice);
         };
         _content.Add(
@@ -196,8 +201,8 @@ sealed class OptionsDialog : Panel
         seconds.Text = $"{WaveformSeconds.Value:F0} seconds";
 
         var textRow = Row("Large list text", body);
-        _largeListText = textRow.Add(new Button(bold, "Off") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
-        _largeListText.Clicked += _ => LargeListTextToggled?.Invoke();
+        _largeListText = textRow.Add(new Checkbox(body));
+        _largeListText.Changed += _ => LargeListTextToggled?.Invoke();
         _content.Add(new Label(body, "Bigger text in the folder list and song list, to read in the dark or without glasses.") { Color = Theme.Muted });
 
         var controllerRow = Row("Controller", body);
@@ -206,8 +211,8 @@ sealed class OptionsDialog : Panel
         map.Clicked += _ => MapControllerClicked?.Invoke();
 
         var lightingRow = Row("Lighting (OS2L)", body);
-        _lighting = lightingRow.Add(new Button(bold, "On") { MinSize = new float2(64, 0), FocusColor = Theme.Focus });
-        _lighting.Clicked += _ => LightingToggled?.Invoke();
+        _lighting = lightingRow.Add(new Checkbox(body));
+        _lighting.Changed += _ => LightingToggled?.Invoke();
         _lightingStatus = lightingRow.Add(new Label(body) { Color = Theme.Text, MaxWidth = 280 });
         var addressRow = Row("Lighting address", body);
         LightingAddress = addressRow.Add(new TextBox(body) { Width = 220, Placeholder = "Found by itself; or host:port", FocusColor = Theme.Focus });
@@ -289,18 +294,14 @@ sealed class OptionsDialog : Panel
 
     public override float2 Measure()
     {
-        _autoGain.Text = _engine.AutoGain ? "On" : "Off";
-        _output.Text = _engine.OutputDevice ?? "System default";
-        _headphones.Text = _engine.HeadphoneDevice is { } phones ? _engine.HeadphonesOnOutput ? $"{phones} (channels 3-4)" : phones : "Off";
+        _autoGain.Checked = _engine.AutoGain;
+        _output.Selected = _engine.OutputDevice;
+        _headphones.Selected = _engine.HeadphoneDevice;
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";
         var lighting = LightingEnabled?.Invoke() ?? false;
-        _lighting.Text = lighting ? "On" : "Off";
-        _lighting.Background = lighting ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
+        _lighting.Checked = lighting;
         _lightingStatus.Text = lighting ? LightingStatus?.Invoke() ?? "" : "";
-        _autoGain.Background = _engine.AutoGain ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
-        var large = LargeListText?.Invoke() ?? false;
-        _largeListText.Text = large ? "On" : "Off";
-        _largeListText.Background = large ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
+        _largeListText.Checked = LargeListText?.Invoke() ?? false;
 
         // Never past the window's edges, scrolling instead.
         _box.MaxWidth = MathF.Max(0, ScreenSize.X - 2 * MARGIN);

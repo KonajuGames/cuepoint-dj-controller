@@ -406,6 +406,7 @@ static void Run()
     };
 
     var menu = new ContextMenu(fonts.Body);
+    screen.Options.Menu = menu;
     browser.ColumnMenuRequested += at => menu.Show(at, browser.ColumnMenu());
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);

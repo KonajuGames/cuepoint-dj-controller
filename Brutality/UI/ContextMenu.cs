@@ -33,6 +33,9 @@ sealed class ContextMenu : Panel
     // The item whose submenu is open in _subBox, if any.
     Button? _openItem;
 
+    // The least width the menu's items take, so a dropdown's list is at least as wide as it.
+    float _minWidth;
+
     public float2 ScreenSize { get; set; }
 
     public ContextMenu(Font font)
@@ -73,10 +76,11 @@ sealed class ContextMenu : Panel
 
     /// <summary>
     /// Shows <paramref name="items"/> with the menu's top-left corner at <paramref name="at"/>, moved in to stay on
-    /// the screen.
+    /// the screen, at least <paramref name="minWidth"/> wide.
     /// </summary>
-    public void Show(float2 at, IEnumerable<MenuItem> items)
+    public void Show(float2 at, IEnumerable<MenuItem> items, float minWidth = 0)
     {
+        _minWidth = minWidth;
         _items.Clear();
         CloseSubmenu();
         Fill(_box, items);
@@ -161,13 +165,13 @@ sealed class ContextMenu : Panel
             else
                 CloseSubmenu();
         }
-        MeasureBox(_box);
+        MeasureBox(_box, _minWidth);
         if (_subBox.Visible)
-            MeasureBox(_subBox);
+            MeasureBox(_subBox, 0);
         return Size = ScreenSize;
     }
 
-    static void MeasureBox(Panel box)
+    static void MeasureBox(Panel box, float minWidth)
     {
         // Every item as wide as the widest, so the highlight runs the full width, with room for a submenu's arrow.
         foreach (var button in box.Children.OfType<Button>())
@@ -175,7 +179,7 @@ sealed class ContextMenu : Panel
         box.Measure();
         var width = box.Children.Count > 0 ? box.Children.Max(child => child.Size.X) + 4 * ARROW : 0;
         foreach (var button in box.Children.OfType<Button>())
-            button.MinSize = new float2(MathF.Max(width, 160), 0);
+            button.MinSize = new float2(MathF.Max(width, MathF.Max(160, minWidth - 2 * (box.Padding + box.BorderWidth))), 0);
         box.Measure();
     }
 
