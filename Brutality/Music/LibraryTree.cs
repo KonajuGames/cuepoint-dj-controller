@@ -109,6 +109,11 @@ sealed class LibraryNode
     public void Refresh() => _loadedChildren = null;
 
     /// <summary>
+    /// Forgets a folder's or drive's songs, to be read again next time, after how it's listed has changed.
+    /// </summary>
+    public void RefreshSongs() => _folderSongs = null;
+
+    /// <summary>
     /// Whether choosing it shows songs; a heading doesn't.
     /// </summary>
     public bool HasSongs => _songs is not null;
@@ -143,7 +148,14 @@ static class LibraryTree
 
     const int RECENTLY_ADDED = 100;
 
-    public static List<LibraryNode> Build(MusicLibrary library, IReadOnlyList<Deck> decks, IReadOnlyList<Song> history, VirtualFolders virtualFolders)
+    /// <param name="isRecursive">Whether a folder lists the songs in its subfolders too, by its path.</param>
+    public static List<LibraryNode> Build(
+        MusicLibrary library,
+        IReadOnlyList<Deck> decks,
+        IReadOnlyList<Song> history,
+        VirtualFolders virtualFolders,
+        Func<string, bool> isRecursive
+    )
     {
         // The library's songs as they are when asked for, since its folder can be changed.
         IReadOnlyList<Song> Where(Func<Song, bool> test) => library.Songs.Where(test).ToList();
@@ -168,7 +180,7 @@ static class LibraryTree
         var nodes = new List<LibraryNode>
         {
             new("Music library", LibraryNodeKind.Library, () => library.Songs),
-            new("Local drives", LibraryNodeKind.Group, children: () => Drives(library)),
+            new("Local drives", LibraryNodeKind.Group, children: () => Drives(library, isRecursive)),
             new("Virtual folders", LibraryNodeKind.VirtualFolders, children: VirtualFolderNodes) { Path = virtualFolders.Directory },
             new(
                 "Lists",
@@ -272,7 +284,7 @@ static class LibraryTree
         return found;
     }
 
-    static IEnumerable<LibraryNode> Drives(MusicLibrary library)
+    static IEnumerable<LibraryNode> Drives(MusicLibrary library, Func<string, bool> isRecursive)
     {
         foreach (var drive in DriveInfo.GetDrives())
         {
@@ -289,17 +301,17 @@ static class LibraryTree
             }
             if (!ready)
                 continue;
-            yield return Folder(library, drive.RootDirectory.FullName, label, LibraryNodeKind.Drive);
+            yield return Folder(library, isRecursive, drive.RootDirectory.FullName, label, LibraryNodeKind.Drive);
         }
     }
 
-    static LibraryNode Folder(MusicLibrary library, string path, string name, LibraryNodeKind kind) =>
-        new(name, kind, () => library.SongsIn(path), () => Subfolders(library, path)) { Path = path };
+    static LibraryNode Folder(MusicLibrary library, Func<string, bool> isRecursive, string path, string name, LibraryNodeKind kind) =>
+        new(name, kind, () => library.SongsIn(path, isRecursive(path)), () => Subfolders(library, isRecursive, path)) { Path = path };
 
     /// <summary>
     /// The folders in <paramref name="path"/> that can be opened, leaving out hidden and system ones.
     /// </summary>
-    static IEnumerable<LibraryNode> Subfolders(MusicLibrary library, string path)
+    static IEnumerable<LibraryNode> Subfolders(MusicLibrary library, Func<string, bool> isRecursive, string path)
     {
         List<DirectoryInfo> folders;
         try
@@ -313,6 +325,6 @@ static class LibraryTree
         {
             return [];
         }
-        return folders.Select(folder => Folder(library, folder.FullName, folder.Name, LibraryNodeKind.Folder));
+        return folders.Select(folder => Folder(library, isRecursive, folder.FullName, folder.Name, LibraryNodeKind.Folder));
     }
 }

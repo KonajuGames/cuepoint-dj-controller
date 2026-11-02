@@ -43,6 +43,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 ### Library
 
 - **Folder list:** the music library, every drive's folders, virtual folders, History, Recently added, and live filters such as songs compatible in key and tempo with each deck.
+- **Recursive folders:** a folder, drive or the music library lists only the songs directly in it. Right-click it and choose **Recursive** to list every song in its subfolders too, until another folder is chosen.
 - **Song list:**
   - searchable
   - sortable by any column

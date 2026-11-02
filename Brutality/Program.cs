@@ -102,6 +102,13 @@ static void Run()
         settings.Save(settingsPath);
     }
 
+    static string FolderKey(string path) => Path.TrimEndingDirectorySeparator(path);
+
+    // A folder lists only the songs directly in it. The one chosen can be made recursive, to list every song under it,
+    // for as long as it stays chosen.
+    LibraryNode? recursiveNode = null;
+    bool IsRecursive(string path) => recursiveNode?.Path == path;
+
     // The library scans now and reads tags in the background; songs load onto decks in the background too. It's the
     // folder last chosen as the library, or Windows' own Music folder to begin with.
     using var library = new MusicLibrary(settings.MusicFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic));
@@ -126,7 +133,7 @@ static void Run()
     if (OperatingSystem.IsWindows())
         virtualFolders.RemoveFile = WindowsShell.MoveToRecycleBin;
 
-    var folders = LibraryTree.Build(library, decks, history, virtualFolders);
+    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive);
     var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
 
     // Each deck's beat grid can be fixed by hand, with its pads in GRID mode.
@@ -180,6 +187,8 @@ static void Run()
     }
     screen.FolderTree.SelectionChanged += node =>
     {
+        if (recursiveNode is { } recursive && recursive != node)
+            SetRecursive(recursive, false);
         if (node.HasSongs)
             RememberFolder();
     };
@@ -195,6 +204,29 @@ static void Run()
         if (browser.Source?.Kind is LibraryNodeKind.Library or LibraryNodeKind.List or LibraryNodeKind.Filter)
             browser.Reload();
         LogLibrary();
+    }
+
+    // Making a folder recursive lists every song under it, until another is chosen. For the library, it rescans, and
+    // its lists and filters follow.
+    void SetRecursive(LibraryNode node, bool recursive)
+    {
+        recursiveNode = recursive ? node : null;
+        if (node.Kind == LibraryNodeKind.Library)
+        {
+            library.Scan(library.Root, recursive);
+            analyser.LookUp(library.Songs);
+        }
+        else
+            node.RefreshSongs();
+        if (browser.Source == node || node.Kind == LibraryNodeKind.Library && browser.Source?.Kind is LibraryNodeKind.List or LibraryNodeKind.Filter)
+            browser.Reload();
+    }
+
+    void ToggleRecursive(LibraryNode node)
+    {
+        SetRecursive(node, recursiveNode != node);
+        var where = node.Kind == LibraryNodeKind.Library ? library.Root : node.Path;
+        screen.Log(recursiveNode == node ? $"Listing every song under {where}" : $"Listing only the songs directly in {where}");
     }
 
     // The window's own buttons, and dragging it by the title bar, which Windows does once told where it is.
@@ -588,6 +620,8 @@ static void Run()
     {
         if (node.Kind == LibraryNodeKind.VirtualFolders)
             menu.Show(point, [new MenuItem("New virtual folder...", NewVirtualFolder)]);
+        else if (node.Kind == LibraryNodeKind.Library)
+            menu.Show(point, [new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node)]);
         else if (node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive, Path: { } path })
             menu.Show(
                 point,
@@ -595,8 +629,9 @@ static void Run()
                     new MenuItem(
                         "Use as music library",
                         () => UseAsMusicLibrary(path),
-                        Checked: string.Equals(Path.TrimEndingDirectorySeparator(path), Path.TrimEndingDirectorySeparator(library.Root), StringComparison.OrdinalIgnoreCase)
+                        Checked: string.Equals(FolderKey(path), FolderKey(library.Root), StringComparison.OrdinalIgnoreCase)
                     ),
+                    new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node),
                 ]
             );
         else if (node.Folder is { } folder)

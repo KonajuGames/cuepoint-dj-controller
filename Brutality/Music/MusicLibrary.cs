@@ -75,7 +75,7 @@ sealed class Song
 }
 
 /// <summary>
-/// The audio files under a folder. Scanning the folder is quick, so it happens up front; reading every file's tags
+/// The audio files in a folder, and in its subfolders too if asked. Scanning the folder is quick, so it happens up front; reading every file's tags
 /// takes a while, so that happens on a worker thread, and <see cref="ApplyReadTags"/> brings the results onto the UI
 /// thread a frame at a time. Songs in other folders can be had too, with <see cref="SongsIn"/>, for browsing; their
 /// tags are read ahead of the library's.
@@ -91,6 +91,12 @@ sealed partial class MusicLibrary : IDisposable
     );
 
     public string Root { get; private set; } = "";
+
+    /// <summary>
+    /// Whether the library takes in the songs in <see cref="Root"/>'s subfolders too, rather than only those directly
+    /// in it.
+    /// </summary>
+    public bool Recursive { get; private set; }
 
     /// <summary>
     /// Every song, in folder order: by artist folder, then album, then track.
@@ -123,29 +129,31 @@ sealed partial class MusicLibrary : IDisposable
     readonly CancellationTokenSource _stop = new();
     readonly Task? _reader;
 
-    public MusicLibrary(string root)
+    public MusicLibrary(string root, bool recursive = false)
     {
         if (OperatingSystem.IsWindows())
             _reader = StartReadingTags(_stop.Token);
-        Scan(root);
+        Scan(root, recursive);
     }
 
     /// <summary>
-    /// Makes <paramref name="root"/> the library's folder, scanning it now. Songs already known keep their tags; the
-    /// old folder's songs are still there to browse to, just no longer in the library. UI thread only.
+    /// Makes <paramref name="root"/> the library's folder, scanning it now, and its subfolders too if
+    /// <paramref name="recursive"/>. Songs already known keep their tags; the old folder's songs are still there to
+    /// browse to, just no longer in the library. UI thread only.
     /// </summary>
-    public void Scan(string root)
+    public void Scan(string root, bool recursive = false)
     {
         foreach (var song in Songs)
             song.InLibrary = false;
         _libraryToTag.Clear();
 
         Root = root;
+        Recursive = recursive;
         Error = null;
         List<Song> songs;
         try
         {
-            var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
+            var options = new EnumerationOptions { RecurseSubdirectories = recursive, IgnoreInaccessible = true };
             // FileInfos from enumerating already carry the size and time, so this costs no more than listing names.
             songs = new DirectoryInfo(root)
                 .EnumerateFiles("*", options)
@@ -204,19 +212,19 @@ sealed partial class MusicLibrary : IDisposable
     }
 
     /// <summary>
-    /// The audio files directly in <paramref name="folder"/>, in name order: the library's own songs where they're
-    /// in it, and new ones (named from the file until their tags arrive) where they aren't. Empty if the folder can't
-    /// be read. UI thread only.
+    /// The audio files directly in <paramref name="folder"/>, or anywhere under it if <paramref name="recursive"/>, in
+    /// path order: the library's own songs where they're in it, and new ones (named from the file until their tags
+    /// arrive) where they aren't. Empty if the folder can't be read. UI thread only.
     /// </summary>
-    public IReadOnlyList<Song> SongsIn(string folder)
+    public IReadOnlyList<Song> SongsIn(string folder, bool recursive = false)
     {
         List<FileInfo> files;
         try
         {
             files = new DirectoryInfo(folder)
-                .EnumerateFiles("*", new EnumerationOptions { IgnoreInaccessible = true })
+                .EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = recursive, IgnoreInaccessible = true })
                 .Where(file => Extensions.Contains(file.Extension))
-                .OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
@@ -229,7 +237,8 @@ sealed partial class MusicLibrary : IDisposable
         {
             if (!_byPath.TryGetValue(file.FullName, out var song))
             {
-                song = Guess(file.DirectoryName ?? folder, file);
+                // Found from further up, the folders on the way down name the artist and album, as in the library.
+                song = Guess(recursive ? folder : file.DirectoryName ?? folder, file);
                 _byPath[song.Path] = song;
                 if (OperatingSystem.IsWindows())
                 {
