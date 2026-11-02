@@ -20,6 +20,12 @@ sealed class SongBrowser : Panel
     /// </summary>
     static readonly TimeSpan LiveRefresh = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// What columns started at before they were widened to fit the large text. A layout kept with one of these was
+    /// never resized by hand, since every width used to be kept, so it takes the column's default now instead.
+    /// </summary>
+    static readonly Dictionary<string, float> FormerDefaultWidths = new() { ["Key"] = 84, ["Length"] = 66, ["BPM"] = 70 };
+
     readonly MusicLibrary _library;
     readonly LibraryAnalyser _analyser;
     readonly Label _heading;
@@ -173,9 +179,10 @@ sealed class SongBrowser : Panel
         _columns.Add(_titleColumn);
         _columns.Add(new ListColumn<Song>("Artist", 220, song => song.Artist) { SortKey = song => Text(song.Artist) });
         _columns.Add(new ListColumn<Song>("Album", 200, song => song.Album) { Color = _ => Theme.Muted, SortKey = song => Text(song.Album) });
-        _columns.Add(new ListColumn<Song>("Key", 84, FormatKey) { Color = KeyColor, SortKey = KeyOrder });
-        _columns.Add(new ListColumn<Song>("Length", 66, song => Format(song.Duration)) { AlignRight = true, SortKey = song => song.Duration });
-        _columns.Add(new ListColumn<Song>("BPM", 70, FormatBpm) { AlignRight = true, SortKey = song => song.Analysis?.Bpm });
+        // Wide enough for the large list text, too.
+        _columns.Add(new ListColumn<Song>("Key", 112, FormatKey) { Color = KeyColor, SortKey = KeyOrder });
+        _columns.Add(new ListColumn<Song>("Length", 80, song => Format(song.Duration)) { AlignRight = true, SortKey = song => song.Duration });
+        _columns.Add(new ListColumn<Song>("BPM", 86, FormatBpm) { AlignRight = true, SortKey = song => song.Analysis?.Bpm });
         foreach (var column in _columns)
             _defaultWidths[column] = column.Width;
         ShowColumns();
@@ -380,8 +387,9 @@ sealed class SongBrowser : Panel
     }
 
     /// <summary>
-    /// What the songs are sorted by, the columns' widths and which are hidden, to keep between runs. Set, anything
-    /// it doesn't know (a column since gone) is passed over, and any column it doesn't mention is as it began.
+    /// What the songs are sorted by, the columns' widths and which are hidden, to keep between runs. Only widths
+    /// changed by hand are kept, so the rest follow their defaults if those change. Set, anything it doesn't know (a
+    /// column since gone) is passed over, and any column it doesn't mention is as it began.
     /// </summary>
     public BrowserLayout Layout
     {
@@ -390,7 +398,9 @@ sealed class SongBrowser : Panel
             {
                 SortColumn = _sortColumn?.Id,
                 SortDescending = _sortDescending,
-                ColumnWidths = _columns.Where(column => column.Resizable).ToDictionary(column => column.Id, column => column.Width),
+                ColumnWidths = _columns
+                    .Where(column => column.Resizable && column.Width != _defaultWidths[column])
+                    .ToDictionary(column => column.Id, column => column.Width),
                 HiddenColumns = _columns.Where(_hidden.Contains).Select(column => column.Id).ToList(),
             };
         set
@@ -398,9 +408,13 @@ sealed class SongBrowser : Panel
             _hidden.Clear();
             foreach (var column in _columns)
             {
-                column.Width = column.Resizable && value.ColumnWidths.TryGetValue(column.Id, out var width) && width > 0
-                    ? MathF.Max(column.MinWidth, width)
-                    : _defaultWidths[column];
+                column.Width =
+                    column.Resizable
+                    && value.ColumnWidths.TryGetValue(column.Id, out var width)
+                    && width > 0
+                    && FormerDefaultWidths.GetValueOrDefault(column.Id) != width
+                        ? MathF.Max(column.MinWidth, width)
+                        : _defaultWidths[column];
                 if (column != _titleColumn && value.HiddenColumns.Contains(column.Id))
                     _hidden.Add(column);
             }
