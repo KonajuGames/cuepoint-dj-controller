@@ -143,12 +143,21 @@ sealed class LibraryAnalyser : IDisposable
     }
 
     /// <summary>
-    /// Puts what the database knows about <paramref name="song"/> on it, the first time it's seen.
+    /// Puts what the database knows about <paramref name="song"/> on it, the first time it's seen: its analysis, and
+    /// the names from its tags until they're read again.
     /// </summary>
     void LookUp(Song song)
     {
-        if (_lookedUp.Add(song) && Database.TryGet(song, out var analysis, out var error))
+        if (!_lookedUp.Add(song))
+            return;
+        if (Database.TryGet(song, out var analysis, out var error))
             (song.Analysis, song.AnalysisError) = (analysis, error);
+        if (!song.HasTags && Database.TryGetNames(song, out var title, out var artist, out var album))
+        {
+            song.Title = title ?? song.Title;
+            song.Artist = artist ?? song.Artist;
+            song.Album = album ?? song.Album;
+        }
     }
 
     /// <summary>

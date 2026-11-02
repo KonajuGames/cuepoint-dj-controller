@@ -120,6 +120,9 @@ static void Run()
     );
     using var analyser = new LibraryAnalyser(library.Songs, database);
 
+    // Each song's title, artist and album go into the library with its analysis, as its tags are read.
+    library.Tagged += database.SetNames;
+
     // What's been loaded onto a deck this run, oldest first, for the History folder.
     var history = new List<Song>();
 

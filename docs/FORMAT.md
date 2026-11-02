@@ -54,6 +54,9 @@ A successful analysis:
 
 ```json
 "Music\\5 Seconds of Summer\\Teeth - Single\\01 Teeth.m4a": {
+  "title": "Teeth",
+  "artist": "5 Seconds of Summer",
+  "album": "Teeth - Single",
   "size": 8723391,
   "modified": "2019-10-02T13:16:10Z",
   "analysisVersion": 4,
@@ -85,6 +88,9 @@ A song that couldn't be analysed:
 
 | Property | Type | Meaning |
 |---|---|---|
+| `title` | string | The song's title from its tags. **Missing** where the tags don't give one, or haven't been read yet. |
+| `artist` | string | The song's artist from its tags, likewise. |
+| `album` | string | The song's album from its tags, likewise. |
 | `size` | integer | The audio file's size in bytes when it was analysed. |
 | `modified` | string | The file's last-write time **in UTC** when it was analysed. ISO 8601 with a `Z` suffix and up to 7 fractional-second digits (`2019-10-19T13:46:00Z`, `2021-03-04T05:06:07.1234567Z`). |
 | `analysisVersion` | integer | The version of the analysis that produced it. Currently **`4`**. |
@@ -104,6 +110,8 @@ A song that couldn't be analysed:
 - `analysisVersion` equals `4`
 
 Otherwise it analyses the song again. A reader that only wants to show what's there can skip these checks.
+
+**Title, artist and album** are written as the app reads each song's tags, so a record can gain them after its analysis, and a record written before they were kept has none. Names the app only guessed from the file's path are never written. The app uses them, while `size` and `modified` still match, to name songs before it has read their tags again, whatever the `analysisVersion`; they're never used to decide whether the analysis is valid.
 
 **Is it usable?** The app needs `key` to parse and `grid` to have at least one marker, with marker times strictly increasing. Records that fail this are treated as not analysed.
 

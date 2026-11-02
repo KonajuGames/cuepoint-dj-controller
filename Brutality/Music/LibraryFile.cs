@@ -8,7 +8,8 @@ namespace Brutality.Music;
 /// <summary>
 /// One library.json: what's been learnt about some of the library's songs (see <see cref="LibraryDatabase"/>, which
 /// keeps one for each drive). Each song's analysis, or why it couldn't be analysed, with the file size and time it was
-/// made from so a changed file gets analysed again. A beat grid is stored as its markers, each a beat time and the
+/// made from so a changed file gets analysed again, and its title, artist and album from its tags, so they're known
+/// before the tags are read again. A beat grid is stored as its markers, each a beat time and the
 /// tempo from there on. Hotcues, and beat grids fixed by hand, are kept apart from the analysis, since they're the
 /// DJ's own work: analysing again, or a newer analysis, leaves them be, and a song's fixed grid is given in place of
 /// the analysed one wherever its analysis is.
@@ -219,11 +220,53 @@ sealed class LibraryFile
         }
     }
 
+    /// <summary>
+    /// The title, artist and album saved for <paramref name="song"/> from its tags, if the file hasn't changed since;
+    /// any of them can be null where the tags didn't say.
+    /// </summary>
+    public bool TryGetNames(Song song, out string? title, out string? artist, out string? album)
+    {
+        (title, artist, album) = (null, null, null);
+        if (!_tracks.TryGetValue(song.Path, out var record) || record.Size != song.Size || record.Modified != song.Modified)
+            return false;
+        (title, artist, album) = (record.Title, record.Artist, record.Album);
+        return title is not null || artist is not null || album is not null;
+    }
+
+    /// <summary>
+    /// Keeps <paramref name="song"/>'s title, artist and album, just read from its tags, with its analysis, if it has
+    /// one for the file as it is.
+    /// </summary>
+    public void SetNames(Song song)
+    {
+        if (!_tracks.TryGetValue(song.Path, out var record) || record.Size != song.Size || record.Modified != song.Modified)
+            return;
+        var names = Names(song, record);
+        if (names == (record.Title, record.Artist, record.Album))
+            return;
+        (record.Title, record.Artist, record.Album) = names;
+        Dirty = true;
+    }
+
+    /// <summary>
+    /// What to keep of <paramref name="song"/>'s title, artist and album: its own once its tags are read, otherwise
+    /// whatever <paramref name="kept"/> had, rather than names guessed from the file's path.
+    /// </summary>
+    static (string? Title, string? Artist, string? Album) Names(Song song, TrackRecord? kept)
+    {
+        static string? OrNull(string text) => text.Length > 0 ? text : null;
+        return song.HasTags ? (OrNull(song.Title), OrNull(song.Artist), OrNull(song.Album)) : (kept?.Title, kept?.Artist, kept?.Album);
+    }
+
     public void Set(Song song, TrackAnalysis analysis)
     {
         Dirty = true;
+        var (title, artist, album) = Names(song, _tracks.GetValueOrDefault(song.Path));
         _tracks[song.Path] = new TrackRecord
         {
+            Title = title,
+            Artist = artist,
+            Album = album,
             Size = song.Size,
             Modified = song.Modified,
             AnalysisVersion = ANALYSIS_VERSION,
@@ -312,8 +355,12 @@ sealed class LibraryFile
     public void SetFailed(Song song, string error)
     {
         Dirty = true;
+        var (title, artist, album) = Names(song, _tracks.GetValueOrDefault(song.Path));
         _tracks[song.Path] = new TrackRecord
         {
+            Title = title,
+            Artist = artist,
+            Album = album,
             Size = song.Size,
             Modified = song.Modified,
             AnalysisVersion = ANALYSIS_VERSION,
@@ -375,6 +422,13 @@ sealed class LibraryFile
 
     sealed class TrackRecord
     {
+        /// <summary>
+        /// The song's title, artist and album from its tags; missing where they don't say, or haven't been read.
+        /// </summary>
+        public string? Title { get; set; }
+        public string? Artist { get; set; }
+        public string? Album { get; set; }
+
         public long Size { get; set; }
         public DateTime Modified { get; set; }
         public int AnalysisVersion { get; set; }

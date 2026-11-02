@@ -116,6 +116,11 @@ sealed partial class MusicLibrary : IDisposable
     public bool IsReadingTags => TaggedCount < Songs.Count && _reader is { IsCompleted: false };
 
     /// <summary>
+    /// A song's tags were read, and are on it now; raised from <see cref="ApplyReadTags"/>.
+    /// </summary>
+    public event Action<Song>? Tagged;
+
+    /// <summary>
     /// Every song known, in the library or not, by path. UI thread only.
     /// </summary>
     readonly Dictionary<string, Song> _byPath = new(StringComparer.OrdinalIgnoreCase);
@@ -272,6 +277,7 @@ sealed partial class MusicLibrary : IDisposable
             applied++;
             if (song.InLibrary)
                 TaggedCount++;
+            Tagged?.Invoke(song);
         }
         return applied;
     }

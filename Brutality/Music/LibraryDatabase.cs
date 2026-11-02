@@ -150,6 +150,11 @@ sealed class LibraryDatabase
 
     public void SetFailed(Song song, string error) => FileFor(song.Path).SetFailed(song, error);
 
+    public bool TryGetNames(Song song, out string? title, out string? artist, out string? album) =>
+        FileFor(song.Path).TryGetNames(song, out title, out artist, out album);
+
+    public void SetNames(Song song) => FileFor(song.Path).SetNames(song);
+
     public IReadOnlyList<TimeSpan?> GetHotcues(string path) => FileFor(path).GetHotcues(path);
 
     public void SetHotcues(string path, IReadOnlyList<TimeSpan?> hotcues) => FileFor(path).SetHotcues(path, hotcues);
