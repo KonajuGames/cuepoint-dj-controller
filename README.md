@@ -71,6 +71,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 ### While a set is running
 
 - **Keeps going when something goes wrong:** an error in the app's own code is written to `errors.log` and mentioned on the status line, and the app carries on. The decks play on their own regardless, and the keyboard, a controller and the lighting keep working even if the screen can't be drawn.
+- **Copes with a sound card coming unplugged:** if the main output's sound card goes, or stops working, the mix moves to the system's default output within a second or two, so the music plays on, and the title bar says what's missing. When it's plugged back in, the mix goes back to it, with the headphones on its channels 3 and 4 if they were there. Headphones on a sound card of their own come back the same way. A card that wasn't plugged in when the app started is picked up as soon as it is.
 - **Picks up after a crash:** where each deck is gets written down every couple of seconds. If the app didn't close properly, the next start puts each deck's song back with its tempo and key lock. A deck that was playing moments before carries on from where it would have got to.
 - **Keeps the computer awake:** while the window is visible, the computer won't sleep and the screen won't switch off.
 - **Remembered between runs:** the audio devices, the music library's folder, the song list's layout and the last folder or virtual folder chosen.
@@ -116,7 +117,7 @@ The app's images are drawn by [Assets/draw_assets.py](Brutality/Assets/draw_asse
 
 The tests in [Brutality.Tests](Brutality.Tests) cover what can go wrong without a sound card or a window:
 
-- **Audio:** the master limiter, mix recording, automatic gain and the headphone mix
+- **Audio:** the master limiter, mix recording, automatic gain, the headphone mix, and what to do as sound cards come and go
 - **Analysis:** beat grids, fixing them by hand, and keys
 - **Library:** the library files on each drive, scanning folders, virtual folders, the folder list, the analysis queue and the settings
 - **Crash recovery:** what's written down to pick up after a crash, and the error log

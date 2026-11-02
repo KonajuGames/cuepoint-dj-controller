@@ -110,10 +110,13 @@ static void Run()
     audio.Limiter.Enabled = settings.MasterLimiter;
     var outputFound = audio.UseOutputDevice(settings.OutputDevice);
     var headphonesFound = audio.UseHeadphoneDevice(settings.HeadphoneDevice);
+    // Those not plugged in are still the ones chosen, gone to as soon as they are.
+    audio.Choose(settings.OutputDevice, settings.HeadphoneDevice);
     void SaveSettings()
     {
-        settings.OutputDevice = audio.OutputDevice;
-        settings.HeadphoneDevice = audio.HeadphoneDevice;
+        // The devices chosen, even while one's missing and the mix is on the default instead.
+        settings.OutputDevice = audio.ChosenOutputDevice;
+        settings.HeadphoneDevice = audio.ChosenHeadphoneDevice;
         settings.CueMix = audio.CueMix;
         settings.HeadphoneVolume = audio.HeadphoneVolume;
         settings.Save(settingsPath);
@@ -347,9 +350,10 @@ static void Run()
         screen.Log($"Main output on {device ?? "the system default"}{(settings.HeadphoneDevice is null && audio.OutputCanCarryHeadphones ? "; headphones can go on its channels 3 and 4" : "")}");
     };
     if (!outputFound)
-        screen.Log($"Couldn't find {settings.OutputDevice} for the main output, so it's on the system default; choose it again in the options");
+        screen.Log($"Couldn't find {settings.OutputDevice} for the main output, so it's on the system default until it's plugged in");
     if (!headphonesFound)
-        screen.Log($"Couldn't find {settings.HeadphoneDevice} for the headphones; choose them again in the options");
+        screen.Log($"Couldn't find {settings.HeadphoneDevice} for the headphones; they'll go on it when it's plugged in");
+    screen.TitleBar.AudioWarning = () => audio.Missing;
     if (OperatingSystem.IsWindows())
         WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
 
@@ -890,6 +894,11 @@ static void Run()
     }
     var nextSessionSave = 0.0;
 
+    // Sound cards come and go, a controller's unplugged by mistake, say: they're looked at every second, so the music
+    // carries on somewhere within a second or two, and goes back as soon as they're back.
+    const double DEVICE_CHECK_SECONDS = 1;
+    var nextDeviceCheck = 0.0;
+
     // Each part of a frame is kept apart from the rest, so one going wrong doesn't stop the others: drawing failing
     // still leaves the decks, the keyboard, a controller and the lighting working.
     void Guarded(string doing, Action step)
@@ -987,6 +996,18 @@ static void Run()
             nextSessionSave = now + SESSION_SAVE_SECONDS;
             Guarded("writing down where the decks are", () => SessionState.Of(decks).Save(sessionPath));
         }
+        if (now >= nextDeviceCheck)
+        {
+            nextDeviceCheck = now + DEVICE_CHECK_SECONDS;
+            Guarded(
+                "looking after the sound cards",
+                () =>
+                {
+                    foreach (var news in audio.CheckDevices())
+                        screen.Log(news);
+                }
+            );
+        }
         if (minimised)
             continue;
 
@@ -1029,14 +1050,10 @@ static void Run()
     }
 
     // The headphone blend and volume are set on the mixer as it plays, so they're kept as the app closes, with how
-    // the browser was left. (Not the devices, if one chosen before wasn't found, so it's still chosen once it's
-    // plugged in again.)
+    // the browser was left, and the devices chosen, whether or not they're plugged in.
     settings.Browser = browser.Layout;
     settings.BrowserFolder = browser.Source is { } shown && shown != folders[0] ? [.. LibraryTree.PathOf(shown)] : null;
-    if (headphonesFound && outputFound)
-        SaveSettings();
-    else
-        settings.Save(settingsPath);
+    SaveSettings();
 
     WindowsShell.KeepAwake(false);
     if (OperatingSystem.IsWindows())

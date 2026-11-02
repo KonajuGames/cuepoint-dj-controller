@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 
@@ -24,6 +25,21 @@ sealed unsafe class AudioOutput : IDisposable
     GCHandle _self;
     float[] _mix = [];
     float[] _out = [];
+
+    /// <summary>
+    /// How long the device can go without asking for audio before it counts as stopped: far longer than any device
+    /// waits between asking, but soon enough to get the music going again elsewhere.
+    /// </summary>
+    static readonly TimeSpan StallTime = TimeSpan.FromSeconds(1.5);
+
+    // When the device last asked for audio, from Stopwatch; from when it was opened, until it first does.
+    long _lastFill = Stopwatch.GetTimestamp();
+
+    /// <summary>
+    /// Whether the device has stopped asking for audio, as one unplugged or whose driver has failed does. The decks
+    /// only move on as it asks, so they've stopped too.
+    /// </summary>
+    public bool IsStalled => Stopwatch.GetElapsedTime(Volatile.Read(ref _lastFill)) > StallTime;
 
     /// <summary>
     /// The device's name, or null for the system's default.
@@ -97,6 +113,7 @@ sealed unsafe class AudioOutput : IDisposable
 
     void Fill(SdlAudioStream stream, int needed)
     {
+        Volatile.Write(ref _lastFill, Stopwatch.GetTimestamp());
         var outChannels = SplitHeadphones is null ? CHANNELS : 4;
         var frames = (needed + outChannels * sizeof(float) - 1) / (outChannels * sizeof(float));
         var samples = frames * CHANNELS;

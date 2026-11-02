@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.SdlApi.Mixer;
@@ -240,6 +241,133 @@ sealed unsafe class AudioEngine : IDisposable
     /// </summary>
     public string? OutputDevice => _output?.DeviceName;
 
+    // The devices chosen, which the main mix and headphones go back to whenever they're there; and when each may
+    // next be tried again, from Stopwatch, after going or failing to open, so a flaky one isn't opened every second.
+    string? _chosenOutput;
+    string? _chosenHeadphones;
+    long _retryOutputAt;
+    long _retryHeadphonesAt;
+
+    /// <summary>
+    /// How long a device that's just gone, or wouldn't open, is left before it's tried again.
+    /// </summary>
+    static readonly TimeSpan RetryTime = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// The device chosen for the main mix, or null for the system's default. <see cref="OutputDevice"/> is the
+    /// default instead while this one's missing.
+    /// </summary>
+    public string? ChosenOutputDevice => _chosenOutput;
+
+    /// <summary>
+    /// The device chosen for the headphones, or null for none: the output device's own name for its channels 3 and 4.
+    /// <see cref="HeadphoneDevice"/> is null instead while it's missing.
+    /// </summary>
+    public string? ChosenHeadphoneDevice => _chosenHeadphones;
+
+    /// <summary>
+    /// Remembers devices to go to as soon as they're there, as those in the settings that weren't plugged in at
+    /// startup.
+    /// </summary>
+    public void Choose(string? output, string? headphones) => (_chosenOutput, _chosenHeadphones) = (output, headphones);
+
+    /// <summary>
+    /// What's missing of the devices chosen, as "DDJ-SB3 missing", for a warning; null if nothing is.
+    /// </summary>
+    public string? Missing
+    {
+        get
+        {
+            var missing = new List<string>();
+            if (_chosenOutput is { } output && OutputDevice != output)
+                missing.Add(output);
+            if (_chosenHeadphones is { } phones && phones != _chosenOutput && HeadphoneDevice != phones)
+                missing.Add(phones);
+            return missing.Count == 0 ? null : string.Join(" and ", missing) + " missing";
+        }
+    }
+
+    /// <summary>
+    /// Looks after the sound cards as they come and go, and returns what it did, to tell the DJ. Call every second or
+    /// so. A chosen output that's been unplugged, or has stopped asking for audio (the decks only move as it does),
+    /// leaves the main mix on the system's default, so the music plays on somewhere; when it's back, the main mix
+    /// goes back to it, with headphones on its channels 3 and 4 if they were. Headphones on a sound card of their own
+    /// close when it goes and open again when it's back.
+    /// </summary>
+    public IReadOnlyList<string> CheckDevices()
+    {
+        var news = new List<string>();
+        var present = PlaybackDevices().Select(device => device.Name).ToHashSet();
+        var now = Stopwatch.GetTimestamp();
+        var retryLater = now + (long)(RetryTime.TotalSeconds * Stopwatch.Frequency);
+
+        var outputStep = DeviceRecovery.ForOutput(
+            _chosenOutput,
+            _output is not null,
+            _output?.DeviceName,
+            _output?.IsStalled ?? false,
+            _chosenOutput is null || present.Contains(_chosenOutput),
+            now >= _retryOutputAt
+        );
+        switch (outputStep)
+        {
+            case OutputStep.FallBack:
+                // Headphones on its channels 3 and 4 go with it.
+                if (_headphones is ChannelHeadphones)
+                    Headphones = null;
+                _retryOutputAt = retryLater;
+                news.Add(
+                    Reopen(DEFAULT_PLAYBACK_DEVICE, null, false)
+                        ? $"Lost {_chosenOutput}, so the main mix is on the system's default output until it's back"
+                        : $"Lost {_chosenOutput}, and the system's default output won't open either"
+                );
+                break;
+
+            case OutputStep.Return when Find(_chosenOutput) is { } id:
+                var split = _chosenHeadphones == _chosenOutput && AudioOutput.ChannelsOf(id) >= 4;
+                if (split)
+                    Headphones = new ChannelHeadphones();
+                if (Reopen(id, _chosenOutput, split))
+                {
+                    news.Add(split ? $"{_chosenOutput} is back, with the main mix and the headphones on it again" : $"{_chosenOutput} is back, so the main mix is on it again");
+                    break;
+                }
+                if (split)
+                    Headphones = null;
+                _retryOutputAt = retryLater;
+                break;
+
+            case OutputStep.ReopenDefault:
+                var wasOpen = _output is not null;
+                if (Reopen(DEFAULT_PLAYBACK_DEVICE, null, false))
+                    news.Add(wasOpen ? "The system's default output stopped, so it's been opened again" : "The main mix is on the system's default output");
+                break;
+        }
+
+        var headphoneStep = DeviceRecovery.ForHeadphones(
+            _chosenHeadphones,
+            _chosenOutput,
+            (_headphones as SdlHeadphones)?.DeviceName,
+            _chosenHeadphones is not null && present.Contains(_chosenHeadphones),
+            now >= _retryHeadphonesAt
+        );
+        switch (headphoneStep)
+        {
+            case HeadphoneStep.Drop:
+                Headphones = null;
+                news.Add($"Lost {_chosenHeadphones}, the headphones' sound card; they'll be back on it when it is");
+                break;
+
+            case HeadphoneStep.Return:
+                if (OpenOwnHeadphones(_chosenHeadphones!))
+                    news.Add($"{_chosenHeadphones} is back, so the headphones are on it again");
+                else
+                    _retryHeadphonesAt = retryLater;
+                break;
+        }
+        return news;
+    }
+
     /// <summary>
     /// Whether the output device (one chosen, not the default) can carry the headphones too, on channels 3 and 4.
     /// </summary>
@@ -255,11 +383,18 @@ sealed unsafe class AudioEngine : IDisposable
         if (Find(deviceName) is not { } id)
             return false;
         var split = _headphones is ChannelHeadphones && deviceName is not null && AudioOutput.ChannelsOf(id) >= 4;
-        var (oldName, oldSplit) = (_output?.DeviceName, _output?.SplitHeadphones is not null);
+        var oldSplit = _output?.SplitHeadphones is not null;
         if (!Reopen(id, deviceName, split))
             return false;
         if (oldSplit && !split)
+        {
             Headphones = null;
+            _chosenHeadphones = null;
+        }
+        // Chosen now, so it's what the main mix goes back to if it's ever lost.
+        _chosenOutput = deviceName;
+        if (split)
+            _chosenHeadphones = deviceName;
         return true;
     }
 
@@ -345,6 +480,14 @@ sealed unsafe class AudioEngine : IDisposable
     /// </summary>
     public bool UseHeadphoneDevice(string? deviceName)
     {
+        var used = PutHeadphonesOn(deviceName);
+        // Chosen, so they go back there if the device is ever lost; or none, as there are none now.
+        _chosenHeadphones = used ? deviceName : null;
+        return used;
+    }
+
+    bool PutHeadphonesOn(string? deviceName)
+    {
         // Off the output's channels 3 and 4, if they were there, before going anywhere else.
         if (_headphones is ChannelHeadphones && deviceName != _output?.DeviceName)
         {
@@ -381,11 +524,25 @@ sealed unsafe class AudioEngine : IDisposable
             return false;
         }
 
+        return OpenOwnHeadphones(found.Name, found.Id);
+    }
+
+    /// <summary>
+    /// Puts the headphones on a sound card of their own, by name; returns false, with them off, if it isn't there or
+    /// won't open.
+    /// </summary>
+    bool OpenOwnHeadphones(string deviceName, uint? deviceId = null)
+    {
+        if ((deviceId ?? Find(deviceName)) is not { } id)
+        {
+            Headphones = null;
+            return false;
+        }
         SdlAudioSpec format;
         Mixer.GetFormat(&format);
         try
         {
-            Headphones = new SdlHeadphones(found.Id, found.Name, format);
+            Headphones = new SdlHeadphones(id, deviceName, format);
             return true;
         }
         catch (SdlException)

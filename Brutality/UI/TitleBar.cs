@@ -262,6 +262,8 @@ sealed class TitleBar : Panel
     double _limitedAt = double.NegativeInfinity;
     readonly Os2lIndicator _os2l;
     readonly RecordButton _record;
+    readonly Label _audioWarning;
+    readonly Spacer _audioWarningGap;
     readonly Spacer _os2lGap;
     readonly Label _cpu;
     readonly Label _clock;
@@ -292,6 +294,11 @@ sealed class TitleBar : Panel
     /// </summary>
     public event Action? RecordClicked;
 
+    /// <summary>
+    /// A sound card chosen that's gone missing, as "DDJ-SB3 missing", to warn of in red; null while all's well.
+    /// </summary>
+    public Func<string?> AudioWarning { get; set; } = () => null;
+
     public event Action? OptionsClicked;
     public event Action? MinimizeClicked;
     public event Action? MaximizeClicked;
@@ -316,6 +323,8 @@ sealed class TitleBar : Panel
         _limit = _centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
 
         _right = Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
+        _audioWarning = _right.Add(new Label(bold) { Color = Theme.Warning, Visible = false });
+        _audioWarningGap = _right.Add(new Spacer(16) { Visible = false });
         _record = _right.Add(new RecordButton(body));
         _record.Clicked += _ => RecordClicked?.Invoke();
         _right.Add(new Spacer(12));
@@ -350,6 +359,9 @@ sealed class TitleBar : Panel
         _clock.Text = DateTime.Now.ToString("HH:mm:ss");
         _maximize.Icon = IsMaximized() ? TitleIcon.Restore : TitleIcon.Maximize;
         _record.Recording = Recording();
+        var warning = AudioWarning();
+        _audioWarning.Visible = _audioWarningGap.Visible = warning is not null;
+        _audioWarning.Text = warning?.ToUpperInvariant() ?? "";
         _record.Tooltip = _record.Recording is null ? "Record the mix" : "Stop recording the mix";
         var os2l = Os2lConnected();
         _os2l.Visible = _os2lGap.Visible = os2l is not null;
