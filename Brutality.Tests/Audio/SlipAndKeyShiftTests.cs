@@ -222,6 +222,50 @@ public sealed class SlipAndKeyShiftTests : IDisposable
         Assert.False(_deck.KeyLocked);
     }
 
+    /// <summary>
+    /// The other deck, with a song in <paramref name="key"/> on it.
+    /// </summary>
+    Deck Other(MusicalKey key)
+    {
+        var other = _engine.CreateDeck("B");
+        other.Load(_folder["song.wav"]);
+        other.Analysis = new TrackAnalysis(BeatGrid.Constant(124, 0, 30), -14, 0.5f, key);
+        return other;
+    }
+
+    [Theory]
+    // A minor (8A) to E minor (9A): five down rather than seven up.
+    [InlineData(4, true, -5)]
+    // To D minor (7A): five up.
+    [InlineData(2, true, 5)]
+    // To C major (8B), A minor's relative major: already matched, so no shift.
+    [InlineData(0, false, 0)]
+    // To G major (9B), E minor's relative: as for E minor.
+    [InlineData(7, false, -5)]
+    public void Key_match_shifts_the_key_as_little_as_it_takes_to_mix_with_the_other_deck(int tonic, bool minor, int shift)
+    {
+        using var other = Other(new MusicalKey(tonic, minor));
+        _deck.TempoRange = 0.16;
+        _deck.Tempo = 0.1225;
+        Assert.True(_deck.CanKeyMatch);
+
+        Assert.True(_deck.KeyMatch());
+
+        Assert.Equal(shift, _deck.KeyShift);
+        Assert.True(_deck.KeyLocked);
+        Assert.True(_deck.IsKeyMatched);
+        Assert.Equal(other.Key!.Value.CamelotNumber, _deck.Key!.Value.CamelotNumber);
+    }
+
+    [Fact]
+    public void Key_match_does_nothing_without_a_key_on_the_other_deck()
+    {
+        Assert.False(_deck.CanKeyMatch);
+        Assert.False(_deck.KeyMatch());
+        Assert.Equal(0, _deck.KeyShift);
+        Assert.False(_deck.KeyLocked);
+    }
+
     [Fact]
     public void Key_shift_adds_to_what_the_tempo_fader_does_to_the_key_unless_it_s_locked()
     {

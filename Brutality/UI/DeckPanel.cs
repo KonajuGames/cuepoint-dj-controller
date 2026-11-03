@@ -58,6 +58,7 @@ sealed class DeckPanel : Panel
     readonly Button _tempoRange;
     readonly Button _keyLock;
     readonly Button _keyDown;
+    readonly Button _keyMatch;
     readonly Button _keyUp;
     readonly Button _slip;
 
@@ -104,7 +105,7 @@ sealed class DeckPanel : Panel
     const float TEMPO_COLUMN = 48;
 
     // SLIP, and the key shift's buttons below it, beside the tempo and key.
-    const float KEY_SHIFT_WIDTH = 46;
+    const float KEY_SHIFT_WIDTH = 66;
     const float TEMPO_GAP = 10;
 
     const float PAD_GAP = 4;
@@ -431,7 +432,7 @@ sealed class DeckPanel : Panel
         _keyDown = Add(
             new Button(small, "-")
             {
-                MinSize = new float2((KEY_SHIFT_WIDTH - 4) / 2, 20),
+                MinSize = new float2(KEY_BUTTON_WIDTH, 20),
                 Padding = 2,
                 FocusColor = Theme.Focus,
                 Tooltip = "Key shift: down a semitone, the tempo left alone. Right-click to put the key back",
@@ -440,7 +441,7 @@ sealed class DeckPanel : Panel
         _keyUp = Add(
             new Button(small, "+")
             {
-                MinSize = new float2((KEY_SHIFT_WIDTH - 4) / 2, 20),
+                MinSize = new float2(KEY_BUTTON_WIDTH, 20),
                 Padding = 2,
                 FocusColor = Theme.Focus,
                 Tooltip = "Key shift: up a semitone, the tempo left alone. Right-click to put the key back",
@@ -450,6 +451,19 @@ sealed class DeckPanel : Panel
         _keyUp.Clicked += _ => _deck.KeyShift++;
         _keyDown.SecondaryClicked += _ => _deck.KeyShift = 0;
         _keyUp.SecondaryClicked += _ => _deck.KeyShift = 0;
+
+        // Key match, between them: the key moved to the other deck's, lit while the two match.
+        _keyMatch = Add(
+            new Button(small, "=")
+            {
+                MinSize = new float2(KEY_BUTTON_WIDTH, 20),
+                Padding = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "Key match: shift the key as little as it takes to mix with the other deck's (its key, or its relative major or minor), with key lock on. Lit while they match",
+            }
+        );
+        _keyMatch.Clicked += _ => _deck.KeyMatch();
+        _keyMatch.SecondaryClicked += _ => _deck.KeyShift = 0;
         _tempoRange.Clicked += _ =>
         {
             var ranges = Deck.TempoRanges;
@@ -762,6 +776,12 @@ sealed class DeckPanel : Panel
         }
         _keyDown.Enabled = _deck.KeyShift > -Deck.MAX_KEY_SHIFT;
         _keyUp.Enabled = _deck.KeyShift < Deck.MAX_KEY_SHIFT;
+        var canMatch = _deck.CanKeyMatch;
+        var matched = canMatch && _deck.IsKeyMatched;
+        _keyMatch.Enabled = canMatch;
+        _keyMatch.Background = matched ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+        _keyMatch.HoverBackground = matched ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+        _keyMatch.TextColor = matched ? Colors.White : Theme.Muted;
     }
 
     void RefreshLoop()
@@ -799,6 +819,11 @@ sealed class DeckPanel : Panel
     const float FX_LEVEL_LENGTH = 48;
 
     const float FX_BEATS_WIDTH = 28;
+
+    /// <summary>
+    /// The key shift's buttons, three across under SLIP.
+    /// </summary>
+    const float KEY_BUTTON_WIDTH = (KEY_SHIFT_WIDTH - 6) / 3;
 
     /// <summary>
     /// A loop's length as DJs say it: "4", or "1/2" for half a beat.
@@ -918,6 +943,7 @@ sealed class DeckPanel : Panel
         var shiftLeft = Mirrored ? contentLeft + right + 8 : contentRight - right - 8 - KEY_SHIFT_WIDTH;
         Place(_slip, shiftLeft, top);
         Place(_keyDown, shiftLeft, top + _slip.Size.Y + 4);
+        Place(_keyMatch, shiftLeft + (KEY_SHIFT_WIDTH - _keyMatch.Size.X) / 2, top + _slip.Size.Y + 4);
         Place(_keyUp, shiftLeft + KEY_SHIFT_WIDTH - _keyUp.Size.X, top + _slip.Size.Y + 4);
 
         var timesY = top + 52;

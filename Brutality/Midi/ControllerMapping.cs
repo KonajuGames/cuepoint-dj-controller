@@ -53,6 +53,7 @@ static class ControlCatalog
                     new($"{deck}.key.down", $"Deck {deck} key shift down a semitone", ControlKind.Button),
                     new($"{deck}.key.up", $"Deck {deck} key shift up a semitone", ControlKind.Button),
                     new($"{deck}.key.reset", $"Deck {deck} key shift back to the song's key", ControlKind.Button),
+                    new($"{deck}.key.match", $"Deck {deck} key match (to mix with the other deck's key)", ControlKind.Button, HasLight: true),
                     new($"{deck}.fx.on", $"Deck {deck} effect on or off", ControlKind.Button, HasLight: true),
                     new($"{deck}.fx.next", $"Deck {deck} next effect (echo, reverb, flanger)", ControlKind.Button),
                     new($"{deck}.fx.shorter", $"Deck {deck} effect fewer beats", ControlKind.Button),

@@ -506,6 +506,39 @@ sealed partial class Deck : IDisposable
     public MusicalKey? Key => _analysis?.Key.Transposed(KeyChange);
 
     /// <summary>
+    /// Whether there's a key to match to: this song's and the other deck's (the one sync follows) are both known.
+    /// </summary>
+    public bool CanKeyMatch => _analysis is not null && SyncMaster?.Key is not null;
+
+    /// <summary>
+    /// Whether the key coming out is the other deck's, or its relative major or minor: the same number on the
+    /// Camelot wheel, so the two mix.
+    /// </summary>
+    public bool IsKeyMatched => Key is { } key && SyncMaster?.Key is { } other && key.CamelotNumber == other.CamelotNumber;
+
+    /// <summary>
+    /// Shifts the key by as few semitones as it takes to be the other deck's key, or its relative major or minor where
+    /// the modes differ, as it's heard coming out of that deck. Key lock goes on, so the tempo fader doesn't move it
+    /// again. Returns false, doing nothing, without a key on both decks.
+    /// </summary>
+    public bool KeyMatch()
+    {
+        if (_analysis is not { } analysis || SyncMaster?.Key is not { } target)
+            return false;
+        KeyLocked = true;
+        // Every shift in an octave lands on another Camelot number, so one of these does it; the nearest first.
+        foreach (var shift in (int[])[0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6])
+        {
+            if (analysis.Key.Transposed(shift).CamelotNumber == target.CamelotNumber)
+            {
+                KeyShift = shift;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// How close two decks' tempos have to be to count as in sync, in BPM.
     /// </summary>
     public const double SYNC_TOLERANCE_BPM = 0.05;

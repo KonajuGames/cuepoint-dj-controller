@@ -407,6 +407,9 @@ sealed class MidiControls : IDisposable
             case "key.reset":
                 deck.KeyShift = 0;
                 break;
+            case "key.match":
+                deck.KeyMatch();
+                break;
             case "fx.on":
                 deck.Effects.On = !deck.Effects.On;
                 break;
@@ -612,6 +615,7 @@ sealed class MidiControls : IDisposable
             "keylock" => deck.KeyLocked,
             "slip" => deck.Slip,
             "fx.on" => deck.Effects.On,
+            "key.match" => deck.CanKeyMatch && deck.IsKeyMatched,
             "loop" => deck.IsLooping,
             "grid" => IsGridMode?.Invoke(deck) == true,
             "roll" => IsRollMode?.Invoke(deck) == true,

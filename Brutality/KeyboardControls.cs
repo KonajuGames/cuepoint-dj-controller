@@ -7,8 +7,8 @@ namespace Brutality;
 /// <summary>
 /// One deck's keys, besides its hotcues (see <see cref="HotcueKeys"/>). Shift with the tempo keys moves the volume
 /// fader instead, and Alt with them shifts the key a semitone; Shift with halve and double loop marks loop in and out,
-/// as on a Pioneer controller, and with the loop key, reloops. Shift with key lock turns slip on and off, and Alt with
-/// it puts the key back.
+/// as on a Pioneer controller, and with the loop key, reloops. Shift with key lock turns slip on and off, Ctrl with it
+/// matches the key to the other deck's, and Alt with it puts the key back.
 /// </summary>
 sealed record DeckKeys(
     GlfwKey Cue,
@@ -218,6 +218,8 @@ sealed class KeyboardControls
             deck.Headphones = !deck.Headphones;
         else if (key == keys.KeyLock && shifted)
             deck.Slip = !deck.Slip;
+        else if (key == keys.KeyLock && (mods & GlfwModifier.Control) != 0)
+            deck.KeyMatch();
         else if (key == keys.KeyLock)
             deck.KeyLocked = !deck.KeyLocked;
         else if (key == keys.KillLow)
