@@ -246,13 +246,24 @@ sealed class SongBrowser : Panel
         get => _source;
         set
         {
+            if (_source is not null)
+                _source.SongsLoaded -= SourceSongsLoaded;
             _source = value;
+            if (value is not null)
+                value.SongsLoaded += SourceSongsLoaded;
             _sourceSongs = value?.Songs ?? [];
             _refreshedAt = DateTime.UtcNow;
             _heading.Text = value?.Name ?? "";
             Filter();
             _scroll.ScrollTo(float2.Zero);
         }
+    }
+
+    // A folder's songs, looked for in the background, have come in.
+    void SourceSongsLoaded(LibraryNode node)
+    {
+        if (node == _source)
+            Reload();
     }
 
     /// <summary>
@@ -304,7 +315,14 @@ sealed class SongBrowser : Panel
             total += song.Duration ?? TimeSpan.Zero;
         if (total > TimeSpan.Zero)
             songs += ", " + FormatTotal(total);
-        var tags = _library.IsReadingTags ? $", reading tags {_library.TaggedCount}/{_library.Songs.Count}" : "";
+        // Nothing listed yet while a folder's being looked through; it says so rather than that there's nothing there.
+        var loading = _source is { IsLoadingSongs: true };
+        List.EmptyText = loading ? "Looking through the folder..." : "No songs here";
+        var tags =
+            loading ? ", looking through the folder"
+            : _library.IsScanning ? ", looking through the library"
+            : _library.IsReadingTags ? $", reading tags {_library.TaggedCount}/{_library.Songs.Count}"
+            : "";
         var analysing =
             _analyser.ActiveCount == 0 ? ""
             : _analyser.QueuedCount == 0 ? $", analysing {_analyser.ActiveCount}"

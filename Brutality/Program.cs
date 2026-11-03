@@ -133,7 +133,8 @@ static void Run()
 
     // The library scans now and reads tags in the background; songs load onto decks in the background too. It's the
     // folder last chosen as the library, or Windows' own Music folder to begin with.
-    using var library = new MusicLibrary(settings.MusicFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic));
+    // It's looked through in the background once the screen's up, so a big one doesn't keep the window waiting.
+    using var library = new MusicLibrary(settings.MusicFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), scan: false);
 
     // The library's folder is watched, so songs added, changed or taken away show up without starting again; watched
     // afresh whenever the library moves or goes recursive. Paths notWatched says are passed over (recordings being
@@ -280,17 +281,29 @@ static void Run()
     else
         screen.FolderTree.Select(folders[0]);
 
-    void LogLibrary() =>
+    // How many songs the library has, or why it couldn't be read, with anything else to say after it.
+    void LogLibrary(string? also = null) =>
         screen.Log(
-            library.Error is { } error ? $"Couldn't read {library.Root}: {error}"
-            : $"{library.Songs.Count} songs in {library.Root}, {library.Songs.Count(song => song.Analysis is not null)} analysed"
+            (
+                library.Error is { } error ? $"Couldn't read {library.Root}: {error}"
+                : $"{library.Songs.Count} songs in {library.Root}, {library.Songs.Count(song => song.Analysis is not null)} analysed"
+            ) + (also is null ? "" : $"; {also}")
         );
-    if (library.Error is null && database.LoadError is { } loadError)
-        screen.Log($"Couldn't read {loadError}; it starts afresh");
-    else
-        LogLibrary();
 
-    // What other DJ software there was, and what came in from it, in one line, as the status line shows only the last.
+    // Once the library's been looked through: what the database knows put on its songs, and its lists, the folders in
+    // it already looked in, and the songs listed, all as they are now.
+    void AfterLibraryScan()
+    {
+        analyser.LookUp(library.Songs);
+        foreach (var node in folders)
+            node.RefreshSongsUnder(LibraryFile.WithSeparator(library.Root));
+        if (browser.Source?.Kind is LibraryNodeKind.Library or LibraryNodeKind.List or LibraryNodeKind.Filter or LibraryNodeKind.Folder or LibraryNodeKind.Drive or LibraryNodeKind.VirtualFolder)
+            browser.Reload();
+    }
+
+    // What other DJ software there was, and what came in from it, said with the library's songs, as the status line
+    // shows only the last thing said.
+    string? importSummary = null;
     if (!imports.IsEmpty)
     {
         var found = new List<string>();
@@ -299,8 +312,23 @@ static void Run()
         var crates = imports.Serato.Sum(drive => drive.Crates.Count);
         if (crates > 0)
             found.Add(crates == 1 ? "a Serato crate" : $"{crates} Serato crates");
-        screen.Log(string.Join("; ", [$"Found {string.Join(" and ", found)}, in the folder list", .. importNews]));
+        importSummary = string.Join("; ", [$"found {string.Join(" and ", found)}, in the folder list", .. importNews]);
     }
+
+    // The library's looked through in the background, its songs coming in once it's done.
+    screen.Log($"Looking through {library.Root}" + (importSummary is null ? "" : $"; {importSummary}"));
+    library.BeginScan(
+        library.Root,
+        library.Recursive,
+        () =>
+        {
+            AfterLibraryScan();
+            if (library.Error is null && database.LoadError is { } loadError)
+                screen.Log($"Couldn't read {loadError}; it starts afresh");
+            else
+                LogLibrary(importSummary);
+        }
+    );
 
     // What's chosen in the folder list is kept as it's chosen, not only as the app closes, so it's back next time
     // even if the app doesn't close properly.
@@ -374,15 +402,19 @@ static void Run()
     // Any folder can be made the music library. The library's own lists and filters follow it straight away.
     void UseAsMusicLibrary(string path)
     {
-        library.Scan(path);
+        library.BeginScan(
+            path,
+            scanned: () =>
+            {
+                AfterLibraryScan();
+                LogLibrary();
+            }
+        );
         WatchLibrary();
-        analyser.LookUp(library.Songs);
         settings.MusicFolder = library.Root;
         settings.Save(settingsPath);
         screen.Options.MusicFolder = library.Root;
-        if (browser.Source?.Kind is LibraryNodeKind.Library or LibraryNodeKind.List or LibraryNodeKind.Filter)
-            browser.Reload();
-        LogLibrary();
+        screen.Log($"Looking through {path}");
     }
 
     // Making a folder recursive lists every song under it, until another is chosen. For the library, it rescans, and
@@ -392,9 +424,8 @@ static void Run()
         recursiveNode = recursive ? node : null;
         if (node.Kind == LibraryNodeKind.Library)
         {
-            library.Scan(library.Root, recursive);
+            library.BeginScan(library.Root, recursive, AfterLibraryScan);
             WatchLibrary();
-            analyser.LookUp(library.Songs);
         }
         else
             node.RefreshSongs();
@@ -1150,28 +1181,27 @@ static void Run()
     void TakeInLibraryChanges()
     {
         var before = library.Songs.ToDictionary(song => song.Path, StringComparer.OrdinalIgnoreCase);
-        library.Scan(library.Root, library.Recursive);
-        analyser.LookUp(library.Songs);
-
-        var added = library.Songs.Count(song => !before.ContainsKey(song.Path));
-        var changed = library.Songs.Count(song => before.TryGetValue(song.Path, out var was) && was != song);
-        var gone = before.Count - (library.Songs.Count - added);
-        if (added + changed + gone == 0)
-            return;
-
-        // Folders in the library already looked in list their songs afresh, the one shown straight away.
-        foreach (var node in folders)
-            node.RefreshSongsUnder(LibraryFile.WithSeparator(library.Root));
-        if (browser.Source?.Kind is LibraryNodeKind.Library or LibraryNodeKind.List or LibraryNodeKind.Filter or LibraryNodeKind.Folder or LibraryNodeKind.Drive or LibraryNodeKind.VirtualFolder)
-            browser.Reload();
-        var news = new List<string>();
-        if (added > 0)
-            news.Add($"{added} added");
-        if (changed > 0)
-            news.Add($"{changed} changed");
-        if (gone > 0)
-            news.Add($"{gone} gone");
-        screen.Log($"Music library: {string.Join(", ", news)}; {library.Songs.Count} songs now");
+        library.BeginScan(
+            library.Root,
+            library.Recursive,
+            () =>
+            {
+                var added = library.Songs.Count(song => !before.ContainsKey(song.Path));
+                var changed = library.Songs.Count(song => before.TryGetValue(song.Path, out var was) && was != song);
+                var gone = before.Count - (library.Songs.Count - added);
+                AfterLibraryScan();
+                if (added + changed + gone == 0)
+                    return;
+                var news = new List<string>();
+                if (added > 0)
+                    news.Add($"{added} added");
+                if (changed > 0)
+                    news.Add($"{changed} changed");
+                if (gone > 0)
+                    news.Add($"{gone} gone");
+                screen.Log($"Music library: {string.Join(", ", news)}; {library.Songs.Count} songs now");
+            }
+        );
     }
     WatchLibrary();
 
@@ -1245,6 +1275,18 @@ static void Run()
         );
 
         // New tags can change what matches a search.
+        // Takes in the library's songs once it's been looked through in the background, and the folders the folder
+        // list's looking through, laying the list out afresh to show what's come in.
+        Guarded("taking in the library's songs", () => library.ApplyScan());
+        Guarded(
+            "taking in a folder",
+            () =>
+            {
+                if (library.Background.Apply() > 0)
+                    screen.FolderTree.Refresh();
+            }
+        );
+
         Guarded(
             "reading tags",
             () =>

@@ -48,7 +48,9 @@ enum LibraryNodeKind
 
 /// <summary>
 /// One entry in the browser's folder list: what it's called, what's under it (worked out when first asked, since a
-/// drive has a great many folders), and the songs it shows when chosen. UI thread only.
+/// drive has a great many folders), and the songs it shows when chosen. A folder's or a drive's songs, and what's
+/// under it, can be looked for in the background, so a big folder or a slow drive never holds the screen up (see
+/// <see cref="LoadSongs"/> and <see cref="LoadChildren"/>). UI thread only.
 /// </summary>
 sealed class LibraryNode
 {
@@ -56,6 +58,10 @@ sealed class LibraryNode
     readonly Func<IReadOnlyList<Song>>? _songs;
     List<LibraryNode>? _loadedChildren;
     IReadOnlyList<Song>? _folderSongs;
+
+    // How many times each has been asked for in the background, so a look begun before a refresh is passed over.
+    int _songLoads;
+    int _childLoads;
 
     readonly string _name;
 
@@ -78,6 +84,33 @@ sealed class LibraryNode
 
     public LibraryNode? Parent { get; private set; }
 
+    /// <summary>
+    /// Looks for a folder's or drive's songs in the background, then hands them on, on the UI thread; without it,
+    /// they're looked for there and then.
+    /// </summary>
+    public Action<Action<IReadOnlyList<Song>>>? LoadSongs { get; init; }
+
+    /// <summary>
+    /// Looks for what's under it in the background, then hands it on, on the UI thread, for
+    /// <see cref="ChildrenInBackground"/>.
+    /// </summary>
+    public Action<Action<IReadOnlyList<LibraryNode>>>? LoadChildren { get; init; }
+
+    /// <summary>
+    /// Whether its songs are being looked for in the background, so there are none to show yet.
+    /// </summary>
+    public bool IsLoadingSongs { get; private set; }
+
+    /// <summary>
+    /// Whether what's under it is being looked for in the background.
+    /// </summary>
+    public bool IsLoadingChildren { get; private set; }
+
+    /// <summary>
+    /// Its songs have come in from the background, to list.
+    /// </summary>
+    public event Action<LibraryNode>? SongsLoaded;
+
     public LibraryNode(
         string name,
         LibraryNodeKind kind,
@@ -96,29 +129,73 @@ sealed class LibraryNode
     /// </summary>
     public bool CanExpand => _children is not null && (_loadedChildren is null || _loadedChildren.Count > 0);
 
+    /// <summary>
+    /// What's under it, looked for there and then if it hasn't been, as finding a folder by its path wants.
+    /// </summary>
     public IReadOnlyList<LibraryNode> Children
     {
         get
         {
             if (_loadedChildren is null)
-            {
-                _loadedChildren = _children?.Invoke().ToList() ?? [];
-                foreach (var child in _loadedChildren)
-                    child.Parent = this;
-            }
-            return _loadedChildren;
+                TakeChildren(_children?.Invoke().ToList() ?? []);
+            return _loadedChildren!;
         }
+    }
+
+    /// <summary>
+    /// What's under it, as the folder list shows it: looked for in the background the first time, and none meanwhile
+    /// (see <see cref="IsLoadingChildren"/>).
+    /// </summary>
+    public IReadOnlyList<LibraryNode> ChildrenInBackground
+    {
+        get
+        {
+            if (_loadedChildren is not null || LoadChildren is not { } load)
+                return Children;
+            if (!IsLoadingChildren)
+            {
+                IsLoadingChildren = true;
+                var asked = ++_childLoads;
+                load(children =>
+                {
+                    // Passed over if it's been refreshed since, or looked for there and then meanwhile.
+                    if (asked != _childLoads || _loadedChildren is not null)
+                        return;
+                    IsLoadingChildren = false;
+                    TakeChildren([.. children]);
+                });
+            }
+            return [];
+        }
+    }
+
+    void TakeChildren(List<LibraryNode> children)
+    {
+        _loadedChildren = children;
+        IsLoadingChildren = false;
+        foreach (var child in children)
+            child.Parent = this;
     }
 
     /// <summary>
     /// Forgets its children, to be asked for again next time, after some have been added or taken away.
     /// </summary>
-    public void Refresh() => _loadedChildren = null;
+    public void Refresh()
+    {
+        _loadedChildren = null;
+        IsLoadingChildren = false;
+        _childLoads++;
+    }
 
     /// <summary>
     /// Forgets a folder's or drive's songs, to be read again next time, after how it's listed has changed.
     /// </summary>
-    public void RefreshSongs() => _folderSongs = null;
+    public void RefreshSongs()
+    {
+        _folderSongs = null;
+        IsLoadingSongs = false;
+        _songLoads++;
+    }
 
     /// <summary>
     /// Forgets the songs of this folder and every folder below it already looked in that's under
@@ -127,7 +204,7 @@ sealed class LibraryNode
     public void RefreshSongsUnder(string folder)
     {
         if (Path is { } path && LibraryFile.WithSeparator(path).StartsWith(folder, StringComparison.OrdinalIgnoreCase))
-            _folderSongs = null;
+            RefreshSongs();
         foreach (var child in _loadedChildren ?? [])
             child.RefreshSongsUnder(folder);
     }
@@ -144,13 +221,37 @@ sealed class LibraryNode
     public bool IsLive => Kind is LibraryNodeKind.Filter or LibraryNodeKind.List;
 
     /// <summary>
-    /// The songs to list when it's chosen. A folder's or drive's are read once; the rest are asked for each time,
-    /// since they change (a virtual folder edited, say).
+    /// The songs to list when it's chosen. A folder's or drive's are read once, in the background where it can be
+    /// (none meanwhile, and <see cref="SongsLoaded"/> once they're in); the rest are asked for each time, since they
+    /// change (a virtual folder edited, say).
     /// </summary>
-    public IReadOnlyList<Song> Songs =>
-        _songs is null ? []
-        : Kind is LibraryNodeKind.Folder or LibraryNodeKind.Drive ? _folderSongs ??= _songs()
-        : _songs();
+    public IReadOnlyList<Song> Songs
+    {
+        get
+        {
+            if (_songs is null)
+                return [];
+            if (Kind is not (LibraryNodeKind.Folder or LibraryNodeKind.Drive))
+                return _songs();
+            if (_folderSongs is not null)
+                return _folderSongs;
+            if (LoadSongs is not { } load)
+                return _folderSongs = _songs();
+            if (!IsLoadingSongs)
+            {
+                IsLoadingSongs = true;
+                var asked = ++_songLoads;
+                load(songs =>
+                {
+                    if (asked != _songLoads)
+                        return;
+                    (_folderSongs, IsLoadingSongs) = (songs, false);
+                    SongsLoaded?.Invoke(this);
+                });
+            }
+            return [];
+        }
+    }
 }
 
 /// <summary>
@@ -201,7 +302,11 @@ static class LibraryTree
         var nodes = new List<LibraryNode>
         {
             new("Music library", LibraryNodeKind.Library, () => library.Songs),
-            new("Local drives", LibraryNodeKind.Group, children: () => Drives(library, isRecursive)),
+            // The drives are asked whether they're ready in the background: a network drive gone quiet can take a while.
+            new("Local drives", LibraryNodeKind.Group, children: () => Drives(library, isRecursive))
+            {
+                LoadChildren = done => library.Background.Start(() => Drives(library, isRecursive).ToList(), done),
+            },
             new("Virtual folders", LibraryNodeKind.VirtualFolders, children: VirtualFolderNodes) { Path = virtualFolders.Directory },
             new(
                 "Lists",
@@ -416,8 +521,22 @@ static class LibraryTree
         }
     }
 
-    static LibraryNode Folder(MusicLibrary library, Func<string, bool> isRecursive, string path, string name, LibraryNodeKind kind) =>
-        new(name, kind, () => library.SongsIn(path, isRecursive(path)), () => Subfolders(library, isRecursive, path)) { Path = path };
+    /// <summary>
+    /// A folder or drive, its songs and its folders looked for in the background, so a big one, a recursive one or a
+    /// slow drive doesn't hold the screen up.
+    /// </summary>
+    public static LibraryNode Folder(MusicLibrary library, Func<string, bool> isRecursive, string path, string name, LibraryNodeKind kind) =>
+        new(name, kind, () => library.SongsIn(path, isRecursive(path)), () => Subfolders(library, isRecursive, path))
+        {
+            Path = path,
+            LoadSongs = done =>
+            {
+                // Whether it's recursive is asked now, on the UI thread; the files are listed in the background.
+                var recursive = isRecursive(path);
+                library.Background.Start(() => MusicLibrary.ListFolder(path, recursive), files => done(library.SongsIn(path, files, recursive)));
+            },
+            LoadChildren = done => library.Background.Start(() => Subfolders(library, isRecursive, path).ToList(), done),
+        };
 
     /// <summary>
     /// The folders in <paramref name="path"/> that can be opened, leaving out hidden and system ones.

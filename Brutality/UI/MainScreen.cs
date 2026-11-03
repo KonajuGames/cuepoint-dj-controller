@@ -128,7 +128,7 @@ sealed class MainScreen : Panel
             new TreeView<LibraryNode>(fonts.Body)
             {
                 Text = node => node.Name,
-                Children = node => node.Children,
+                Children = node => node.ChildrenInBackground,
                 CanExpand = node => node.CanExpand,
                 Icon = node => IconFor(node, _largeListText ? images.LargeFolders : images.Folders),
                 Arrows = (images.TriangleRight, images.TriangleDown),

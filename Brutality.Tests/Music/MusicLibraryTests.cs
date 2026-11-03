@@ -105,4 +105,87 @@ public class MusicLibraryTests
 
         Assert.Equal(matches, song.Matches(query));
     }
+
+    /// <summary>
+    /// Takes in a background scan once it's done, as the app does a frame at a time; false if it didn't finish in time.
+    /// </summary>
+    static bool ApplyWithin(MusicLibrary library, double seconds = 5)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (watch.Elapsed.TotalSeconds < seconds)
+        {
+            if (library.ApplyScan())
+                return true;
+            Thread.Sleep(10);
+        }
+        return false;
+    }
+
+    [Fact]
+    public void A_library_made_without_scanning_is_empty_until_scanned_in_the_background()
+    {
+        using var folder = Library();
+        using var library = new MusicLibrary(folder.Path, recursive: true, scan: false);
+        var scanned = 0;
+
+        Assert.Empty(library.Songs);
+        Assert.Equal(folder.Path, library.Root);
+        library.BeginScan(library.Root, library.Recursive, () => scanned++);
+        Assert.True(library.IsScanning);
+
+        Assert.True(ApplyWithin(library));
+        Assert.Equal(4, library.Songs.Count);
+        Assert.All(library.Songs, song => Assert.True(song.InLibrary));
+        Assert.Equal(1, scanned);
+        Assert.False(library.IsScanning);
+        Assert.False(library.ApplyScan());
+    }
+
+    [Fact]
+    public void A_newer_scan_overtakes_one_still_going()
+    {
+        using var folder = Library();
+        using var library = new MusicLibrary(folder.Path, scan: false);
+        var done = new List<string>();
+
+        library.BeginScan(folder.Path, recursive: true, () => done.Add("everything"));
+        library.BeginScan(folder["Daft Punk", "Discovery"], recursive: false, () => done.Add("the album"));
+
+        Assert.True(ApplyWithin(library));
+        Assert.Equal(new[] { "the album" }, done);
+        Assert.Equal(2, library.Songs.Count);
+        Assert.Equal(folder["Daft Punk", "Discovery"], library.Root);
+    }
+
+    [Fact]
+    public void Scanning_straight_away_overtakes_a_scan_in_the_background()
+    {
+        using var folder = Library();
+        using var library = new MusicLibrary(folder.Path, scan: false);
+        var scanned = false;
+        library.BeginScan(folder.Path, recursive: true, () => scanned = true);
+
+        library.Scan(folder.Path, recursive: false);
+
+        Assert.False(library.IsScanning);
+        Assert.Equal(new[] { "Top" }, library.Songs.Select(song => song.Title));
+        Thread.Sleep(200);
+        Assert.False(library.ApplyScan());
+        Assert.False(scanned);
+    }
+
+    [Fact]
+    public void A_scan_in_the_background_keeps_the_songs_it_knew_and_forgets_those_gone()
+    {
+        using var folder = Library();
+        using var library = new MusicLibrary(folder.Path);
+        folder.File("New.mp3");
+        File.Delete(folder["Top.mp3"]);
+
+        library.BeginScan(folder.Path);
+        Assert.True(ApplyWithin(library));
+
+        Assert.Equal(new[] { "New" }, library.Songs.Select(song => song.Title));
+        Assert.Null(library.Find(folder["Top.mp3"]));
+    }
 }
