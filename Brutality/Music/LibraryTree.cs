@@ -1,5 +1,6 @@
 using Brutality.Audio;
 using Brutality.Audio.Analysis;
+using Brutality.Music.Imports;
 
 namespace Brutality.Music;
 
@@ -37,6 +38,12 @@ enum LibraryNodeKind
     /// The library's songs that match a test, worked out afresh as songs are analysed and decks change.
     /// </summary>
     Filter,
+
+    /// <summary>
+    /// A playlist from other DJ software, a Rekordbox playlist or a Serato crate: its songs, in its order, those whose
+    /// files are here.
+    /// </summary>
+    Imported,
 }
 
 /// <summary>
@@ -161,12 +168,14 @@ static class LibraryTree
     const int RECENTLY_ADDED = 100;
 
     /// <param name="isRecursive">Whether a folder lists the songs in its subfolders too, by its path.</param>
+    /// <param name="imports">Other DJ software's playlists, under a node of their own for each that has any.</param>
     public static List<LibraryNode> Build(
         MusicLibrary library,
         IReadOnlyList<Deck> decks,
         IReadOnlyList<Song> history,
         VirtualFolders virtualFolders,
-        Func<string, bool> isRecursive
+        Func<string, bool> isRecursive,
+        ImportedLibraries? imports = null
     )
     {
         // The library's songs as they are when asked for, since its folder can be changed.
@@ -238,11 +247,101 @@ static class LibraryTree
                 ]
             ),
         };
+        // Other DJ software's playlists, after Cuepoint's own.
+        nodes.InsertRange(nodes.FindIndex(node => node.Kind == LibraryNodeKind.VirtualFolders) + 1, ImportedNodes(library, imports));
         return nodes;
 
         LibraryNode TempoFilter(string name, double from, double to) =>
             new(name, LibraryNodeKind.Filter, () => Where(song => song.Analysis is { } a && a.Bpm >= from && a.Bpm < to));
     }
+
+    /// <summary>
+    /// A "Rekordbox" node, with each collection under it and its playlists under that, and a "Serato" node, with its
+    /// crates, for each that has anything.
+    /// </summary>
+    static IEnumerable<LibraryNode> ImportedNodes(MusicLibrary library, ImportedLibraries? imports)
+    {
+        if (imports is null)
+            yield break;
+
+        if (imports.Rekordbox.Count > 0)
+            yield return RekordboxRoot(library, imports);
+
+        if (imports.Serato.Count > 0)
+        {
+            // The crates straight under "Serato", or under each drive's name if there's more than one drive's.
+            var drives = imports.Serato;
+            yield return new(
+                "Serato",
+                LibraryNodeKind.Group,
+                children: () =>
+                    drives.Count == 1
+                        ? CrateNodes(library, drives[0].Crates, [])
+                        : drives.Select(drive => new LibraryNode(drive.Drive, LibraryNodeKind.Group, children: () => CrateNodes(library, drive.Crates, [])))
+            );
+        }
+    }
+
+    /// <summary>
+    /// The "Rekordbox" node, with each collection under it as it is when it's opened (or refreshed, after one's
+    /// imported or changed), and its playlists under that.
+    /// </summary>
+    public static LibraryNode RekordboxRoot(MusicLibrary library, ImportedLibraries imports)
+    {
+        // Each collection by its file's name, and its folder's too where two share a name.
+        string Name(RekordboxCollection collection)
+        {
+            var name = Path.GetFileName(collection.FilePath);
+            var shared = imports.Rekordbox.Count(other => string.Equals(Path.GetFileName(other.FilePath), name, StringComparison.OrdinalIgnoreCase)) > 1;
+            return shared ? $"{name} ({Path.GetFileName(Path.GetDirectoryName(collection.FilePath))})" : name;
+        }
+        return new(
+            "Rekordbox",
+            LibraryNodeKind.Group,
+            children: () =>
+                imports.Rekordbox.Select(collection => new LibraryNode(
+                    Name(collection),
+                    LibraryNodeKind.Group,
+                    children: () => collection.Playlists.Select(node => RekordboxNode(library, node))
+                )).ToList()
+        );
+    }
+
+    static LibraryNode RekordboxNode(MusicLibrary library, RekordboxNode node) =>
+        node.IsFolder
+            ? new(node.Name, LibraryNodeKind.Group, children: () => node.Children.Select(child => RekordboxNode(library, child)))
+            : new(node.Name, LibraryNodeKind.Imported, () => SongsAt(library, node.Paths));
+
+    /// <summary>
+    /// The crates directly inside the crate at <paramref name="parents"/> (the top, for none), in order. One with
+    /// crates inside it opens to them; one known only by the crates inside it has no songs of its own.
+    /// </summary>
+    static IEnumerable<LibraryNode> CrateNodes(MusicLibrary library, IReadOnlyList<SeratoCrate> crates, string[] parents)
+    {
+        bool Under(SeratoCrate crate, string[] path) => crate.Parents.Count >= path.Length && crate.Parents.Take(path.Length).SequenceEqual(path);
+        var names = crates
+            .Where(crate => Under(crate, parents))
+            .Select(crate => crate.Parents.Count == parents.Length ? crate.Name : crate.Parents[parents.Length])
+            .Distinct()
+            .ToList();
+        foreach (var name in names)
+        {
+            string[] path = [.. parents, name];
+            var own = crates.FirstOrDefault(crate => crate.Parents.Count == parents.Length && Under(crate, parents) && crate.Name == name);
+            var inside = crates.Any(crate => Under(crate, path));
+            yield return new LibraryNode(
+                name,
+                own is null ? LibraryNodeKind.Group : LibraryNodeKind.Imported,
+                own is null ? null : () => SongsAt(library, own.Paths),
+                inside ? () => CrateNodes(library, crates, path) : null
+            );
+        }
+    }
+
+    /// <summary>
+    /// The songs at <paramref name="paths"/>, in order, those whose files are here.
+    /// </summary>
+    static IReadOnlyList<Song> SongsAt(MusicLibrary library, IEnumerable<string> paths) => paths.Select(library.SongAt).OfType<Song>().ToList();
 
     /// <summary>
     /// Whether <paramref name="song"/> mixes with what's coming out of <paramref name="deck"/>: a key that mixes in

@@ -56,6 +56,11 @@ sealed class AppSettings
     public bool TallWaveforms { get; set; }
 
     /// <summary>
+    /// Rekordbox collections chosen to import, by path, as well as any found where exports usually go.
+    /// </summary>
+    public List<string>? RekordboxXmlFiles { get; set; }
+
+    /// <summary>
     /// Whether the master limiter keeps the mix from clipping.
     /// </summary>
     public bool MasterLimiter { get; set; } = true;

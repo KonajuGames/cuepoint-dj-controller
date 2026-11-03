@@ -6,7 +6,7 @@ namespace Brutality;
 /// What a windowed (WinExe) app loses on Windows, put back: console output when started from a terminal, and a
 /// visible error when it crashes. Elsewhere there is no WinExe distinction, so both fall back to the console. Also
 /// the Recycle Bin, for deleting files the user can get back, keeping the computer awake mid-set, and telling a
-/// read-only drive.
+/// read-only drive, and asking for a file to open.
 /// </summary>
 static unsafe partial class WindowsShell
 {
@@ -96,6 +96,79 @@ static unsafe partial class WindowsShell
         Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
         Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
     }
+
+    const uint OFN_NOCHANGEDIR = 0x8, OFN_PATHMUSTEXIST = 0x800, OFN_FILEMUSTEXIST = 0x1000, OFN_EXPLORER = 0x80000;
+
+    /// <summary>
+    /// What Windows' Open dialog is told and tells back; the Unicode OPENFILENAMEW.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    struct OpenFileName
+    {
+        public int Size;
+        public nint Owner;
+        public nint Instance;
+        public char* Filter;
+        public char* CustomFilter;
+        public int MaxCustomFilter;
+        public int FilterIndex;
+        public char* File;
+        public int MaxFile;
+        public char* FileTitle;
+        public int MaxFileTitle;
+        public char* InitialFolder;
+        public char* Title;
+        public uint Flags;
+        public ushort FileOffset;
+        public ushort FileExtension;
+        public char* DefaultExtension;
+        public nint CustomData;
+        public nint Hook;
+        public char* Template;
+        public nint Reserved;
+        public uint Reserved2;
+        public uint FlagsEx;
+    }
+
+    /// <summary>
+    /// Asks for a file to open with Windows' own Open dialog, over <paramref name="owner"/> (a window's handle, or 0):
+    /// <paramref name="filter"/> pairs a description with its patterns, as ("Rekordbox XML", "*.xml"). Returns the
+    /// file's path, or null if none was chosen. It waits for the answer; the decks play on meanwhile, on their own
+    /// thread. Null away from Windows.
+    /// </summary>
+    public static string? AskForFile(nint owner, string title, (string Description, string Patterns) filter, string? folder = null)
+    {
+        if (!OperatingSystem.IsWindows())
+            return null;
+        // Each description and its patterns end in a nul, and the list in another.
+        var filters = $"{filter.Description} ({filter.Patterns})\0{filter.Patterns}\0All files (*.*)\0*.*\0\0";
+        var file = new char[4096];
+        fixed (char* filterText = filters)
+        fixed (char* titleText = title)
+        fixed (char* folderText = folder)
+        fixed (char* fileText = file)
+        {
+            var dialog = new OpenFileName
+            {
+                Size = sizeof(OpenFileName),
+                Owner = owner,
+                Filter = filterText,
+                FilterIndex = 1,
+                File = fileText,
+                MaxFile = file.Length,
+                InitialFolder = folderText,
+                Title = titleText,
+                Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
+            };
+            if (GetOpenFileNameW(&dialog) == 0)
+                return null;
+        }
+        var length = Array.IndexOf(file, '\0');
+        return length > 0 ? new string(file, 0, length) : null;
+    }
+
+    [LibraryImport("comdlg32.dll")]
+    private static partial int GetOpenFileNameW(OpenFileName* dialog);
 
     /// <summary>
     /// Reports a fatal error: to the console, and on Windows also in a message box, since a windowed app usually

@@ -6,6 +6,7 @@ using Brutality.Audio;
 using Brutality.Input;
 using Brutality.Midi;
 using Brutality.Music;
+using Brutality.Music.Imports;
 using Brutality.Os2l;
 using Brutality.Rendering;
 using Brutality.UI;
@@ -168,7 +169,51 @@ static void Run()
     if (OperatingSystem.IsWindows())
         virtualFolders.RemoveFile = WindowsShell.MoveToRecycleBin;
 
-    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive);
+    // Other DJ software's playlists and hot cues: Rekordbox collections exported as XML, and Serato's crates. Each
+    // collection's hot cues come into the library once (and again when it's exported afresh), for songs with none
+    // of their own here; a record of what's come in keeps hot cues cleared here from coming back.
+    var imports = ImportedLibraries.Find(library.Root, VirtualFolders.ReadyDrives().Select(drive => drive.Root), settings.RekordboxXmlFiles);
+    var importRecordPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "imports.json");
+    var importRecord = ImportRecord.Load(importRecordPath);
+    // A collection's hot cues, for each of its songs here with none of their own; how many songs got them, and why
+    // they couldn't be saved, if they couldn't.
+    (int Songs, string? Error) ImportHotcues(RekordboxCollection collection)
+    {
+        var songs = 0;
+        foreach (var (path, cues) in collection.Hotcues)
+        {
+            if (!File.Exists(path) || database.GetHotcues(path).Any(cue => cue is not null))
+                continue;
+            database.SetHotcues(path, cues);
+            songs++;
+        }
+        if (songs == 0)
+            return (0, null);
+        try
+        {
+            database.Save();
+            return (songs, null);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return (songs, e.Message);
+        }
+    }
+
+    var importNews = new List<string>();
+    foreach (var collection in imports.Rekordbox)
+    {
+        if (!ImportRecord.IsNew(importRecord.Rekordbox, collection.FilePath))
+            continue;
+        var (songs, error) = ImportHotcues(collection);
+        if (songs > 0)
+            importNews.Add($"Brought in hot cues for {songs} {(songs == 1 ? "song" : "songs")} from {collection.FilePath}");
+        if (error is not null)
+            importNews.Add($"Couldn't save them: {error}");
+    }
+    importRecord.Save(importRecordPath);
+
+    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports);
     var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
 
     // Each deck's beat grid can be fixed by hand, with its pads in GRID mode.
@@ -245,6 +290,18 @@ static void Run()
     else
         LogLibrary();
 
+    // What other DJ software there was, and what came in from it, in one line, as the status line shows only the last.
+    if (!imports.IsEmpty)
+    {
+        var found = new List<string>();
+        if (imports.Rekordbox.Count > 0)
+            found.Add(imports.Rekordbox.Count == 1 ? "a Rekordbox collection" : $"{imports.Rekordbox.Count} Rekordbox collections");
+        var crates = imports.Serato.Sum(drive => drive.Crates.Count);
+        if (crates > 0)
+            found.Add(crates == 1 ? "a Serato crate" : $"{crates} Serato crates");
+        screen.Log(string.Join("; ", [$"Found {string.Join(" and ", found)}, in the folder list", .. importNews]));
+    }
+
     // What's chosen in the folder list is kept as it's chosen, not only as the app closes, so it's back next time
     // even if the app doesn't close properly.
     void RememberFolder()
@@ -259,6 +316,60 @@ static void Run()
         if (node.HasSongs)
             RememberFolder();
     };
+
+    // The folder list's "Rekordbox" node, made if there wasn't one, after the virtual folders; or opened afresh to
+    // show what's changed.
+    void ShowRekordbox()
+    {
+        if (folders.FirstOrDefault(node => node.Name == "Rekordbox" && node.Parent is null) is { } existing)
+        {
+            existing.Refresh();
+            screen.FolderTree.Roots = folders;
+            return;
+        }
+        folders.Insert(folders.IndexOf(virtualFoldersNode) + 1, LibraryTree.RekordboxRoot(library, imports));
+        screen.FolderTree.Roots = folders;
+    }
+
+    // What's to be done once the window's events have been handled, rather than in the middle of one: a dialog of
+    // Windows' own, say, which runs its own events while it's open.
+    var afterEvents = new Queue<Action>();
+
+    // A Rekordbox collection chosen to import: its playlists in the folder list, and hot cues for its songs with none
+    // here. It's remembered, so it's found again next time, and read again whenever it changes.
+    void ImportRekordbox()
+    {
+        var owner = OperatingSystem.IsWindows() ? WindowChrome.Handle : 0;
+        if (WindowsShell.AskForFile(owner, "Import a Rekordbox collection", ("Rekordbox XML", "*.xml"), Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)) is not { } path)
+            return;
+        if (RekordboxXml.Load(path) is not { } collection)
+        {
+            screen.Log($"{Path.GetFileName(path)} isn't a Rekordbox collection: export one from Rekordbox with File > Export Collection in xml format");
+            return;
+        }
+        path = collection.FilePath;
+        if (settings.RekordboxXmlFiles?.Contains(path, StringComparer.OrdinalIgnoreCase) != true)
+        {
+            settings.RekordboxXmlFiles = [.. settings.RekordboxXmlFiles ?? [], path];
+            settings.Save(settingsPath);
+        }
+        imports.Put(collection);
+        ImportRecord.IsNew(importRecord.Rekordbox, path);
+        importRecord.Save(importRecordPath);
+        ShowRekordbox();
+        if (folders.FirstOrDefault(node => node.Name == "Rekordbox" && node.Parent is null) is { } rekordbox)
+            screen.FolderTree.SetExpanded(rekordbox, true);
+
+        var (songs, error) = ImportHotcues(collection);
+        var playlists = Count(collection.Playlists);
+        screen.Log(
+            $"Imported {Path.GetFileName(path)}: {playlists} {(playlists == 1 ? "playlist" : "playlists")} under Rekordbox, "
+                + (songs > 0 ? $"hot cues for {songs} {(songs == 1 ? "song" : "songs")}" : "no hot cues needed")
+                + (error is null ? "" : $"; couldn't save them: {error}")
+        );
+
+        static int Count(IEnumerable<RekordboxNode> nodes) => nodes.Sum(node => node.IsFolder ? Count(node.Children) : 1);
+    }
 
     // Any folder can be made the music library. The library's own lists and filters follow it straight away.
     void UseAsMusicLibrary(string path)
@@ -400,6 +511,27 @@ static void Run()
             }
             plays.Restart(loaded);
             screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
+
+            // Hot cues Serato kept in the file come in the first time it's loaded (and again if it changes), if it
+            // has none here.
+            if (loaded.FilePath is { } loadedPath && ImportRecord.IsNew(importRecord.Serato, loadedPath))
+            {
+                if (database.GetHotcues(loadedPath).All(cue => cue is null) && SeratoMarkers.ReadHotcues(loadedPath) is { } serato)
+                {
+                    database.SetHotcues(loadedPath, serato);
+                    var count = serato.Count(cue => cue is not null);
+                    screen.Log($"Deck {loaded.Name}: brought in {count} {(count == 1 ? "hot cue" : "hot cues")} from Serato");
+                    try
+                    {
+                        database.Save();
+                    }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                    {
+                        screen.Log($"Couldn't save hot cues to {database.FilePath}: {e.Message}");
+                    }
+                }
+                importRecord.Save(importRecordPath);
+            }
             loaded.Analysis = loaded.FilePath is { } path ? library.Find(path)?.Analysis : null;
             if (loaded.FilePath is { } file)
                 loaded.SetHotcues(database.GetHotcues(file));
@@ -801,7 +933,14 @@ static void Run()
         if (node.Kind == LibraryNodeKind.VirtualFolders)
             menu.Show(point, [new MenuItem("New virtual folder...", NewVirtualFolder)]);
         else if (node.Kind == LibraryNodeKind.Library)
-            menu.Show(point, [new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node)]);
+            menu.Show(
+                point,
+                [
+                    new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node),
+                    // Other DJ software's libraries, one format to a line, more to come.
+                    new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox))]),
+                ]
+            );
         else if (node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive, Path: { } path })
             menu.Show(
                 point,
@@ -957,6 +1096,30 @@ static void Run()
     const double DEVICE_CHECK_SECONDS = 1;
     var nextDeviceCheck = 0.0;
 
+    // The Rekordbox collections are looked at every few seconds, and one that's been exported afresh is read again:
+    // its playlists, and hot cues for songs with none here.
+    const double REKORDBOX_CHECK_SECONDS = 5;
+    var nextRekordboxCheck = REKORDBOX_CHECK_SECONDS;
+    void CheckRekordbox()
+    {
+        foreach (var known in imports.Rekordbox.ToList())
+        {
+            if (!File.Exists(known.FilePath) || !ImportRecord.IsNew(importRecord.Rekordbox, known.FilePath))
+                continue;
+            importRecord.Save(importRecordPath);
+            if (RekordboxXml.Load(known.FilePath) is not { } changed)
+                continue;
+            imports.Put(changed);
+            ShowRekordbox();
+            var (songs, error) = ImportHotcues(changed);
+            screen.Log(
+                error is not null ? $"{Path.GetFileName(changed.FilePath)} changed; couldn't save its hot cues: {error}"
+                : songs > 0 ? $"{Path.GetFileName(changed.FilePath)} changed, so it's read again; hot cues for {songs} {(songs == 1 ? "song" : "songs")} brought in"
+                : $"{Path.GetFileName(changed.FilePath)} changed, so its playlists are read again"
+            );
+        }
+    }
+
     // What's changed in the library's folder is scanned in once it's been still for a second, so an album copied in
     // is taken in one go. The library's own lists follow, and the folder being shown if it's in the library.
     var libraryQuiet = TimeSpan.FromSeconds(1);
@@ -1018,6 +1181,8 @@ static void Run()
             Glfw.PollEvents();
         var size = window.FramebufferSize;
         var minimised = window.IsIconified || size.X == 0 || size.Y == 0;
+        while (afterEvents.TryDequeue(out var afterward))
+            Guarded("doing what was asked", afterward);
 
         // A set mustn't stop for a screen saver or sleep, so the computer stays awake while the window can be seen,
         // and is let go while it's minimised.
@@ -1093,6 +1258,11 @@ static void Run()
                     TakeInLibraryChanges();
             }
         );
+        if (now >= nextRekordboxCheck)
+        {
+            nextRekordboxCheck = now + REKORDBOX_CHECK_SECONDS;
+            Guarded("looking at the Rekordbox collections", CheckRekordbox);
+        }
         if (now >= nextDeviceCheck)
         {
             nextDeviceCheck = now + DEVICE_CHECK_SECONDS;

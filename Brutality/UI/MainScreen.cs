@@ -183,6 +183,16 @@ sealed class MainScreen : Panel
     /// A node's icon in the folder list, in a colour for its kind: the headings over the drives, virtual folders,
     /// lists and filters have their kind's icon, dimmer.
     /// </summary>
+    /// <summary>
+    /// The node at the top of the folder list that <paramref name="node"/> is under, or is.
+    /// </summary>
+    static LibraryNode Top(LibraryNode node)
+    {
+        while (node.Parent is { } parent)
+            node = parent;
+        return node;
+    }
+
     static (Image, float4)? IconFor(LibraryNode node, FolderIcons icons) =>
         node.Kind switch
         {
@@ -193,10 +203,13 @@ sealed class MainScreen : Panel
             LibraryNodeKind.VirtualFolders => (icons.Playlist, Theme.Muted),
             LibraryNodeKind.VirtualFolder => (icons.Playlist, Colors.Hex(0x6CCB7A)),
             LibraryNodeKind.Filter => (icons.Filter, Colors.Hex(0xB57BE0)),
+            LibraryNodeKind.Imported => (icons.Playlist, Colors.Hex(0xE0A35A)),
             LibraryNodeKind.Group => node.Name switch
             {
                 "Local drives" => (icons.Drive, Theme.Muted),
                 "Lists" => (icons.List, Theme.Muted),
+                // Other DJ software's, and the collections and folders in them.
+                _ when Top(node).Name is "Rekordbox" or "Serato" => (icons.Playlist, Theme.Muted),
                 _ => (icons.Filter, Theme.Muted),
             },
             _ => null,

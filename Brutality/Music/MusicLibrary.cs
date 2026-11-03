@@ -296,6 +296,20 @@ sealed partial class MusicLibrary : IDisposable
     public Song? Find(string path) => _byPath.GetValueOrDefault(System.IO.Path.GetFullPath(path));
 
     /// <summary>
+    /// The song at <paramref name="path"/>, wherever it is: one known already, or else found by looking in its folder,
+    /// as browsing there would. Null if there's no such file, or it isn't one a deck can play. UI thread only.
+    /// </summary>
+    public Song? SongAt(string path)
+    {
+        if (Find(path) is { } known)
+            return known;
+        if (!File.Exists(path) || System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)) is not { } folder)
+            return null;
+        SongsIn(folder);
+        return Find(path);
+    }
+
+    /// <summary>
     /// A first guess from where the file is, for the list to show before its tags arrive. Assumes the common
     /// "Artist/Album/01 Title.ext" layout, skipping folders like "_CDs" that group rather than name an artist.
     /// </summary>

@@ -34,6 +34,11 @@ static unsafe partial class WindowChrome
     const int RESIZE_BORDER = 6;
 
     static nint _window;
+
+    /// <summary>
+    /// The window's own Windows handle, for dialogs to sit over it; 0 until <see cref="Install"/>.
+    /// </summary>
+    public static nint Handle => _window;
     static nint _previousProcedure;
     static Func<int2, bool> _isCaption = _ => false;
 
