@@ -22,7 +22,7 @@ namespace Brutality.UI;
 /// </summary>
 sealed class DeckPanel : Panel
 {
-    public const float HEIGHT = 200;
+    public const float HEIGHT = 184;
     const float PAD = 10;
 
     readonly Deck _deck;
@@ -127,6 +127,14 @@ sealed class DeckPanel : Panel
     public float Height => _twoRows ? HEIGHT + EXTRA_ROW : HEIGHT;
 
     /// <summary>
+    /// The overview's colours: the deck's, or three bands, as the scrolling waveforms are.
+    /// </summary>
+    public WaveformColours WaveformColours
+    {
+        set => _overview.Colours = value;
+    }
+
+    /// <summary>
     /// Where the pad mode list opens.
     /// </summary>
     public ContextMenu? Menu
@@ -205,7 +213,7 @@ sealed class DeckPanel : Panel
         _overview = Add(
             new WaveformBar
             {
-                Thickness = 36,
+                Thickness = 20,
                 TrackThickness = 6,
                 HandleLength = 2,
                 ShowFill = true,
@@ -541,6 +549,7 @@ sealed class DeckPanel : Panel
             _overview.Value = 0;
             _overview.Marks.Clear();
             _overview.Waveform = null;
+            _overview.Detail = null;
             _overview.Grid = null;
             _overview.Flags = [];
             _overview.Region = null;
@@ -584,6 +593,7 @@ sealed class DeckPanel : Panel
 
         _overview.Enabled = true;
         _overview.Waveform = _deck.Waveform;
+        _overview.Detail = _deck.Detail;
         _overview.Grid = _deck.Analysis?.Grid;
         _overview.Pins = _grid?.Pins ?? [];
         _overview.Max = (float)_deck.Duration.TotalSeconds;

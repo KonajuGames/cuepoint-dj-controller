@@ -246,10 +246,12 @@ sealed class ScrollingWaveform : Element
     /// falling away sharply as they're weaker, so a kick shows a strong red, a vocal green and hi-hats blue, and only
     /// everything at once, evenly, shows white.
     /// </summary>
-    internal static float4 ThreeBand(float bass, float mid, float high)
+    /// <param name="contrast">How sharply the weaker bands fade; more for a long stretch, such as an overview's
+    /// column, where the bands even out.</param>
+    internal static float4 ThreeBand(float bass, float mid, float high, float contrast = THREE_BAND_CONTRAST)
     {
         var most = MathF.Max(1e-6f, MathF.Max(bass, MathF.Max(mid, high)));
-        float Share(float band) => MathF.Pow(band / most, THREE_BAND_CONTRAST);
+        float Share(float band) => MathF.Pow(band / most, contrast);
         return new float4(Share(bass), Share(mid), Share(high), 1);
     }
 

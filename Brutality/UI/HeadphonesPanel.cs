@@ -50,7 +50,7 @@ sealed class HeadphonesPanel : Panel
         _heading = Add(new Label(bold, "HEADPHONES") { Color = Theme.Text });
         _mixLabel = Add(new Label(small, "CUE / MAIN") { Color = Theme.Muted });
         _mix = Add(
-            new Knob(images.Knob, images.Dot)
+            new Knob(images.LargeKnob, images.Dot)
             {
                 Diameter = KNOB,
                 DefaultValue = 0,
@@ -64,7 +64,7 @@ sealed class HeadphonesPanel : Panel
         _mainEnd = Add(new Label(small, "MAIN") { Color = Theme.Faint });
         _volumeLabel = Add(new Label(small, "VOLUME") { Color = Theme.Muted });
         _volume = Add(
-            new Knob(images.Knob, images.Dot)
+            new Knob(images.LargeKnob, images.Dot)
             {
                 Diameter = KNOB,
                 DefaultValue = 0.8f,

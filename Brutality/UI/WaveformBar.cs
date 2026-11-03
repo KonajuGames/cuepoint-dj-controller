@@ -5,8 +5,12 @@ using Brutality.Audio.Analysis;
 namespace Brutality.UI;
 
 /// <summary>
-/// A song's progress bar drawn as its waveform: loud passages stand tall and breaks and drops show as gaps, so you can
-/// see what's coming. The part already played is coloured; seeking works as on any <see cref="Slider"/>. With no
+/// A song's progress bar drawn as its waveform, standing up from the bottom (the top half of the waveform, which is
+/// all an overview needs): loud passages stand tall and breaks and drops show as gaps, so you can see what's coming.
+/// The part already played is coloured in the deck's colour; or, with <see cref="Colours"/> three bands and a
+/// <see cref="Detail"/> to colour it by, the song's in bass, mids and treble, the part to come at full colour and
+/// the part played much darker. Seeking works as on any
+/// <see cref="Slider"/>. With no
 /// <see cref="Waveform"/> it draws a plain track. With a <see cref="Grid"/>, its beats are drawn over the waveform,
 /// as many as fit: every beat, or every bar, or every few bars, with every fourth line brighter. <see cref="Slider.Min"/>
 /// and <see cref="Slider.Max"/> are taken to be seconds into the song, for placing them. <see cref="Flags"/>, such as
@@ -22,6 +26,37 @@ sealed class WaveformBar : Slider
     public const float MIN_GRID_SPACING = 10;
 
     public Waveform? Waveform { get; set; }
+
+    /// <summary>
+    /// The song's waveform in detail, for its bass, mids and treble, to colour it by in three bands.
+    /// </summary>
+    public DetailWaveform? Detail { get; set; }
+
+    /// <summary>
+    /// The deck's colour, or three bands, as the scrolling waveforms are.
+    /// </summary>
+    public WaveformColours Colours { get; set; }
+
+    /// <summary>
+    /// How bright the part of the song already played is, in three bands, against the part to come at full colour: in
+    /// linear light, so about a third as bright to the eye.
+    /// </summary>
+    const float PLAYED_THREE_BAND = 0.1f;
+
+    /// <summary>
+    /// How much of their strength the beat grid's lines keep over the part played, darkened in three bands.
+    /// </summary>
+    const float PLAYED_GRID = 0.3f;
+
+    // Whether the part played is drawn darker, as it is in three bands, for the grid's lines over it to be too.
+    bool _darkenPlayed;
+
+    /// <summary>
+    /// How sharply the weaker bands fade beside the strongest in three bands: more than the scrolling waveforms'
+    /// (see <see cref="ScrollingWaveform.ThreeBand"/>), since a column here covers a long stretch, where the bands
+    /// even out and would come out nearly white.
+    /// </summary>
+    const float OVERVIEW_CONTRAST = 6;
 
     public BeatGrid? Grid { get; set; }
 
@@ -81,24 +116,32 @@ sealed class WaveformBar : Slider
 
         batch.AddRect(ScreenPosition, Size, Faded(BackgroundColor));
 
-        // One column per pixel of the handle's travel, centred on the handle's middle at each point, mirrored about
-        // the bar's centre line. Quiet stretches keep a pixel of height so the song's extent still shows.
+        // One column per pixel of the handle's travel, centred on the handle's middle at each point, standing up
+        // from the bottom. Quiet stretches keep a pixel of height so the song's extent still shows.
         var left = ScreenPosition.X + HandleLength / 2;
-        var middle = ScreenPosition.Y + Size.Y / 2;
-        var halfHeight = Size.Y / 2 - 1;
+        var bottom = ScreenPosition.Y + Size.Y;
+        var tallest = Size.Y - 1;
         var columns = (int)MathF.Ceiling(Travel);
         var playhead = OffsetOf(Fraction);
         var played = Faded(PlayedColor);
         var unplayed = Faded(UnplayedColor);
+        var bands = Colours == WaveformColours.ThreeBand && Detail is not null && Max > Min ? Detail : null;
+        _darkenPlayed = bands is not null;
         for (var column = 0; column < columns; column++)
         {
             var peak = waveform.PeakBetween(column / Travel, (column + 1) / Travel);
-            var height = MathF.Max(1, MathF.Round(peak * halfHeight));
-            batch.AddRect(
-                new float2(left + column, middle - height),
-                new float2(1, height * 2),
-                column + 0.5f < playhead ? played : unplayed
-            );
+            var height = MathF.Max(1, MathF.Round(peak * tallest));
+            var isPlayed = column + 0.5f < playhead;
+            var color = isPlayed ? played : unplayed;
+            if (bands is not null)
+            {
+                // The column's stretch of the song, in seconds, and its bands weighted as the scrolling waveforms
+                // weight them, treble being far quieter than bass in energy for how much it's heard.
+                var (_, bass, mids, treble) = bands.Between(Min + column / Travel * (Max - Min), Min + (column + 1) / Travel * (Max - Min));
+                var band = ScrollingWaveform.ThreeBand(bass, mids * 1.5f, treble * 2.5f, OVERVIEW_CONTRAST);
+                color = Faded(isPlayed ? band * new float4(PLAYED_THREE_BAND, PLAYED_THREE_BAND, PLAYED_THREE_BAND, 1) : band);
+            }
+            batch.AddRect(new float2(left + column, bottom - height), new float2(1, height), color);
         }
 
         DrawRegion(batch, left);
@@ -221,11 +264,17 @@ sealed class WaveformBar : Slider
 
         var normal = Faded(GridColor);
         var strong = Faded(StrongGridColor);
+        // Over the part played, darkened, they're dimmer too, so the bars and phrases don't stand out of it.
+        var dim = new float4(1, 1, 1, PLAYED_GRID);
+        var playhead = left + OffsetOf(Fraction);
         foreach (var (beat, isStrong) in GridLines())
         {
             var fraction = (float)((grid.TimeOfBeat(beat) - Min) / (Max - Min));
             var x = MathF.Round(left + OffsetOf(fraction));
-            batch.AddRect(new float2(x, ScreenPosition.Y), new float2(1, Size.Y), isStrong ? strong : normal);
+            var color = isStrong ? strong : normal;
+            if (_darkenPlayed && x + 0.5f < playhead)
+                color *= dim;
+            batch.AddRect(new float2(x, ScreenPosition.Y), new float2(1, Size.Y), color);
         }
     }
 }

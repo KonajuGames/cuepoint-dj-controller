@@ -24,6 +24,7 @@ sealed record Images(
     FolderIcons LargeFolders,
     Image Headphones,
     Image Knob,
+    Image LargeKnob,
     Image Dot
 )
 {
@@ -44,7 +45,8 @@ sealed record Images(
             LargeTriangleDown: atlas.AddImage(Read("triangle-down-14.png")),
             LargeFolders: FolderIcons.Load(atlas, 20),
             Headphones: atlas.AddImage(Read("headphones-18.png")),
-            Knob: atlas.AddImage(Read("knob-20.png")),
+            Knob: atlas.AddImage(Read("knob-18.png")),
+            LargeKnob: atlas.AddImage(Read("knob-32.png")),
             Dot: atlas.AddImage(Read("dot-8.png"))
         );
 

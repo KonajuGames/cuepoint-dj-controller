@@ -17,10 +17,10 @@ sealed class MixerPanel : Panel
 {
     public const float WIDTH = 216;
     const float PAD = 10;
-    const float KNOB = 26;
-    const float ROW = 26;
+    const float KNOB = 24;
+    const float ROW = 24;
     const float LABEL_COLUMN = 44;
-    const float FADER_LENGTH = 128;
+    const float FADER_LENGTH = 120;
 
     /// <summary>
     /// A channel's controls: its trim, EQ and filter, top to bottom as they're labelled, then its meter and fader.
@@ -220,11 +220,11 @@ sealed class MixerPanel : Panel
 
         // The EQ's names down the middle, each deck's knobs either side of them, its meter and fader out at the edge
         // with its letter over them, and its PFL at the top beside the middle; the left deck's on the left.
-        var eqTop = top + 18;
+        var eqTop = top + 16;
         for (var row = 0; row < _eqLabels.Length; row++)
             Place(_eqLabels[row], centre - _eqLabels[row].Size.X / 2, eqTop + row * ROW + (KNOB - _eqLabels[row].Size.Y) / 2);
 
-        var stripsY = top + 16;
+        var stripsY = top + 14;
         for (var i = 0; i < _channels.Count; i++)
         {
             var channel = _channels[i];

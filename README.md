@@ -22,7 +22,7 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 - **Beat jumps:** on the pads in JUMP mode (Shift + HOT CUE on the DDJ-SB3), back or on by 1, 4, 16 or 32 beats, staying in time. A loop moves with the jump.
 - **Quantise:** with a deck's **Q** lit, hotcues and the cue point go on the nearest beat, and jumping to a hotcue while playing lands in time. It's on to begin with.
 - **Scratching and backspins:** from a controller's jog wheel. The record follows the wheel, backwards too.
-- **Waveforms:** a scrolling waveform for each deck, coloured by bass, mids and treble. When synced, both decks scroll at the same rate. There's also an overview of the whole song with its hotcues, loop and beat grid.
+- **Waveforms:** a scrolling waveform for each deck, coloured by bass, mids and treble. When synced, both decks scroll at the same rate. There's also an overview of the whole song with its hotcues, loop and beat grid, drawn as the top half of its waveform to save room, in three bands too when the scrolling waveforms are.
 - **Waveform options:** the mouse wheel over the scrolling waveforms zooms both together, as the options' slider does. In the options, they can be coloured in the deck's colour or in three bands (bass red, mids green, treble blue), shown without the beat grid, or made taller to read from further away. All of it is kept between runs.
 - **Narrow windows:** when a deck is too narrow for its buttons, they get shorter ("4" for "LOOP 4") and lose their key letters. On a window narrower still, IN, OUT and Q move to a row of their own above, and the decks get a little taller.
 - **End-of-song warning:** in a song's last 30 seconds, the remaining time and the end of its overview flash red.

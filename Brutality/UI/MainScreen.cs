@@ -233,7 +233,10 @@ sealed class MainScreen : Panel
 
         var deckWidth = (width - 2 * GAP - MixerPanel.WIDTH - GAP * (_decks.Count)) / Math.Max(1, _decks.Count);
         foreach (var deck in _decks)
+        {
             deck.Width = MathF.Floor(deckWidth);
+            deck.WaveformColours = Options.WaveformColours.Selected;
+        }
         _mixer.Height = DecksHeight;
 
         var browserTop = BrowserTop;
