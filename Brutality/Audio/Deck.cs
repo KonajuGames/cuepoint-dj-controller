@@ -468,15 +468,36 @@ sealed partial class Deck : IDisposable
     public double? Bpm => _analysis?.Grid.BpmAt(Position.TotalSeconds) * TempoRatio;
 
     /// <summary>
-    /// How many semitones the tempo fader has moved the key, to the nearest: a semitone takes about 6% faster. None
-    /// with <see cref="KeyLocked"/> on.
+    /// How far the key's been moved up (or, below zero, down) by hand, in semitones, from -<see cref="MAX_KEY_SHIFT"/>
+    /// to <see cref="MAX_KEY_SHIFT"/>, without changing the tempo: to bring a song into a key that mixes with the
+    /// other deck's. It's on top of what the tempo fader does to the key, so with <see cref="KeyLocked"/> on it's the
+    /// song's own key moved by just this. Back to 0 when another song loads.
     /// </summary>
-    public int KeyShift => KeyLocked ? 0 : (int)Math.Round(12 * Math.Log2(TempoRatio));
+    public int KeyShift
+    {
+        get => _keyShift;
+        set
+        {
+            _keyShift = Math.Clamp(value, -MAX_KEY_SHIFT, MAX_KEY_SHIFT);
+            _keyLock.Shift = MathF.Pow(2, _keyShift / 12f);
+        }
+    }
+
+    int _keyShift;
+
+    public const int MAX_KEY_SHIFT = 12;
 
     /// <summary>
-    /// The key coming out of the deck: the song's, moved by the tempo fader. Null until the song is analysed.
+    /// How many semitones the key coming out has moved from the song's, to the nearest: the tempo fader's doing (a
+    /// semitone takes about 6% faster; none with <see cref="KeyLocked"/> on) and <see cref="KeyShift"/>.
     /// </summary>
-    public MusicalKey? Key => _analysis?.Key.Transposed(KeyShift);
+    public int KeyChange => (KeyLocked ? 0 : (int)Math.Round(12 * Math.Log2(TempoRatio))) + _keyShift;
+
+    /// <summary>
+    /// The key coming out of the deck: the song's, moved by the tempo fader and the key shift. Null until the song is
+    /// analysed.
+    /// </summary>
+    public MusicalKey? Key => _analysis?.Key.Transposed(KeyChange);
 
     /// <summary>
     /// How close two decks' tempos have to be to count as in sync, in BPM.
@@ -583,7 +604,7 @@ sealed partial class Deck : IDisposable
 
     /// <summary>
     /// Where playback is, as heard, from SDL_mixer's audio thread, so it moves on between calls while playing. With
-    /// <see cref="KeyLocked"/> on, that's a little behind the track, by the key lock's delay.
+    /// <see cref="KeyLocked"/> on or the key shifted, that's a little behind the track, by the key lock's delay.
     /// </summary>
     public TimeSpan Position =>
         !IsLoaded || _pcm is null ? TimeSpan.Zero
@@ -638,6 +659,8 @@ sealed partial class Deck : IDisposable
     {
         UpdatePlatter();
         UpdateRoll();
+        if (IsSlipping)
+            AdvanceSlip();
         if (_pending is not { Task.IsCompleted: true } done)
             return;
         _pending = null;
@@ -700,6 +723,8 @@ sealed partial class Deck : IDisposable
     void Apply(DecodedSong song)
     {
         _rolls.Clear();
+        _slipCauses = SlipCause.None;
+        KeyShift = 0;
         (_platterMode, _touched) = ((int)PlatterMode.Off, false);
         _track.Stop(0);
         _track.SetAudio(song.Audio);
@@ -730,6 +755,11 @@ sealed partial class Deck : IDisposable
     {
         // Play during a cue preview keeps it playing once Cue is let go, as on a CDJ.
         _previewing = false;
+        if (IsSlipping)
+        {
+            AdvanceSlip();
+            _slipMotor = IsLoaded;
+        }
         if (IsPlatterActive)
         {
             // Under a scratch, it plays on once the record's let go.
@@ -750,6 +780,11 @@ sealed partial class Deck : IDisposable
     public void Pause()
     {
         _previewing = false;
+        if (IsSlipping)
+        {
+            AdvanceSlip();
+            _slipMotor = false;
+        }
         if (IsPlatterActive)
         {
             _motor = false;
@@ -786,10 +821,12 @@ sealed partial class Deck : IDisposable
     {
         if (!IsLoaded || _previewing)
             return;
+        // Cueing goes where it's told, not back to where a slip would have been.
+        _slipCauses = SlipCause.None;
         ReleasePlatter();
 
         // Cueing works on the whole song, so it leaves a loop first.
-        ExitLoop();
+        LeaveLoop();
 
         if (IsPlaying)
         {
@@ -863,7 +900,8 @@ sealed partial class Deck : IDisposable
     /// <summary>
     /// Hotcue <paramref name="index"/>'s pad was pressed: an empty one is set where the deck is (on the nearest beat,
     /// with <see cref="Quantize"/>); a set one jumps there, playing on if it was playing, or staying paused if it was
-    /// paused.
+    /// paused. With <see cref="Slip"/> on, a jump while playing lasts as long as the pad's held
+    /// (<see cref="HotcueUp"/>).
     /// </summary>
     public void HotcueDown(int index)
     {
@@ -874,6 +912,8 @@ sealed partial class Deck : IDisposable
         {
             if (IsPlaying && QuantizeGrid is { } grid)
                 at = TimeSpan.FromSeconds(Quantizing.InPhase(grid, ToTime(SongFrame).TotalSeconds, at.TotalSeconds));
+            if (BeginSlip(SlipCause.Hotcue))
+                _slipHotcue = index;
             Seek(at);
             return;
         }
@@ -912,6 +952,16 @@ sealed partial class Deck : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Hotcue <paramref name="index"/>'s pad was let go: with <see cref="Slip"/> on, back to where the song would
+    /// have got to had it not jumped. Otherwise nothing.
+    /// </summary>
+    public void HotcueUp(int index)
+    {
+        if (_slipCauses.HasFlag(SlipCause.Hotcue) && _slipHotcue == index)
+            EndSlip(SlipCause.Hotcue);
+    }
+
     public void DeleteHotcue(int index)
     {
         if (index < 0 || index >= HOTCUE_COUNT || _hotcues[index] is null)
@@ -937,7 +987,7 @@ sealed partial class Deck : IDisposable
         {
             EndRollHere();
             if (IsLooping)
-                ExitLoop();
+                LeaveLoop();
         }
 
         // Inside the loop it stays looping; anywhere else, it leaves the loop to get there.
@@ -948,7 +998,7 @@ sealed partial class Deck : IDisposable
                 _track.SetPlaybackPosition(frames - _loopStart);
                 return;
             }
-            ExitLoop();
+            LeaveLoop();
         }
 
         // A song that played to the end has stopped and needs restarting (paused) before it has a position to set.
@@ -1185,6 +1235,9 @@ sealed partial class Deck : IDisposable
             var length = end - start;
             var into = (((from ?? SongFrame) - start) % length + length) % length;
             var playing = IsPlaying;
+            // A loop that's not a roll's (which keeps its own place), started under slip, lasts until it's left.
+            if (!IsLooping && !IsRolling)
+                BeginSlip(SlipCause.Loop);
             var loop = pcm.Play(_engine.Mixer, start, length);
 
             _track.SetAudio(loop);
@@ -1207,15 +1260,29 @@ sealed partial class Deck : IDisposable
     }
 
     /// <summary>
-    /// Leaves the loop, carrying on through the song from wherever it was in the loop. Playing or paused stays as it
-    /// was. Does nothing if not looping.
+    /// Leaves the loop, carrying on through the song from wherever it was in the loop; or, with <see cref="Slip"/>
+    /// on when it started, from where the song would have got to without it. Playing or paused stays as it was. Does
+    /// nothing if not looping.
     /// </summary>
     public void ExitLoop()
+    {
+        // Back from the slip first, which leaves the loop; or, with something else still holding it, from in the loop.
+        if (IsLooping && _slipCauses.HasFlag(SlipCause.Loop))
+            EndSlip(SlipCause.Loop);
+        LeaveLoop();
+    }
+
+    /// <summary>
+    /// Leaves the loop from wherever it was in it, as on the way to somewhere else: a slip the loop started is
+    /// forgotten (another's, such as a held hotcue's, carries on).
+    /// </summary>
+    void LeaveLoop()
     {
         if (IsRolling)
             EndRollHere();
         if (!IsLooping)
             return;
+        _slipCauses &= ~SlipCause.Loop;
 
         _engine.Mixer.Lock();
         try
@@ -1270,7 +1337,7 @@ sealed partial class Deck : IDisposable
         {
             var song = ToTime(SongFrame).TotalSeconds;
             if (IsLooping)
-                ExitLoop();
+                LeaveLoop();
             (_rollShadow, _rollClock, _loopBeatsBeforeRoll) = (song, Stopwatch.GetTimestamp(), _loopBeats);
         }
         _rolls.Remove(beats);
@@ -1333,12 +1400,130 @@ sealed partial class Deck : IDisposable
     /// <summary>
     /// Moves where the song would be on by the time since it was last worked out, at the speed it's playing.
     /// </summary>
-    void AdvanceShadow()
+    void AdvanceShadow() => _rollShadow += Elapsed(ref _rollClock, IsPlaying);
+
+    /// <summary>
+    /// How far, in seconds of the song, the deck's played since <paramref name="clock"/> if it's been
+    /// <paramref name="moving"/>, at the speed it's going; and the clock moved on to now.
+    /// </summary>
+    double Elapsed(ref long clock, bool moving)
     {
         var now = Stopwatch.GetTimestamp();
-        if (IsPlaying)
-            _rollShadow += Stopwatch.GetElapsedTime(_rollClock, now).TotalSeconds * Volatile.Read(ref _speed);
-        _rollClock = now;
+        var seconds = moving ? Stopwatch.GetElapsedTime(clock, now).TotalSeconds * Volatile.Read(ref _speed) : 0;
+        clock = now;
+        return seconds;
+    }
+
+    /// <summary>
+    /// What's going on that the deck will come back from, under slip.
+    /// </summary>
+    [Flags]
+    enum SlipCause
+    {
+        None = 0,
+        Platter = 1,
+        Hotcue = 2,
+        Loop = 4,
+    }
+
+    bool _slip;
+    SlipCause _slipCauses;
+
+    // Where the song would be, in seconds, had it not been scratched, jumped or looped; when that was last worked out;
+    // whether it's playing on underneath; and the hotcue whose pad's held.
+    double _slipShadow;
+    long _slipClock;
+    bool _slipMotor;
+    int _slipHotcue;
+
+    /// <summary>
+    /// Slip mode: a scratch, a hotcue held down, or a loop only lasts as long as it's held or looping, while the song
+    /// carries on underneath unheard; then the deck drops back in where the song would have got to, so the mix keeps
+    /// going as if nothing had happened. Turning it off midway stays where the deck is.
+    /// </summary>
+    public bool Slip
+    {
+        get => _slip;
+        set
+        {
+            _slip = value;
+            if (!value)
+                _slipCauses = SlipCause.None;
+        }
+    }
+
+    /// <summary>
+    /// Whether the deck's away from where the song's carrying on underneath, under slip.
+    /// </summary>
+    public bool IsSlipping => _slipCauses != SlipCause.None;
+
+    /// <summary>
+    /// Where the song's got to underneath while slipping, to show; null otherwise.
+    /// </summary>
+    public TimeSpan? SlipPosition
+    {
+        get
+        {
+            if (!IsSlipping)
+                return null;
+            var clock = _slipClock;
+            return TimeSpan.FromSeconds(Math.Clamp(_slipShadow + Elapsed(ref clock, _slipMotor), 0, Duration.TotalSeconds));
+        }
+    }
+
+    /// <summary>
+    /// Starts a slip for <paramref name="cause"/>, from where the deck is, if slip's on and it's playing; one already
+    /// going keeps its place. Returns whether there's a slip for it.
+    /// </summary>
+    bool BeginSlip(SlipCause cause)
+    {
+        if (!_slip || !IsLoaded || _pcm is null)
+            return false;
+        if (!IsSlipping)
+        {
+            if (!IsPlaying)
+                return false;
+            (_slipShadow, _slipClock, _slipMotor) = (ToTime(SongFrame).TotalSeconds, Stopwatch.GetTimestamp(), true);
+        }
+        _slipCauses |= cause;
+        return true;
+    }
+
+    void AdvanceSlip() => _slipShadow += Elapsed(ref _slipClock, _slipMotor);
+
+    /// <summary>
+    /// <paramref name="cause"/> is over: once nothing else is holding the slip, back to where the song would have got
+    /// to, playing or paused as it is underneath.
+    /// </summary>
+    void EndSlip(SlipCause cause)
+    {
+        if (!_slipCauses.HasFlag(cause))
+            return;
+        _slipCauses &= ~cause;
+        if (IsSlipping || _pcm is not { } pcm)
+            return;
+
+        AdvanceSlip();
+        var frames = Math.Clamp(ToFrames(TimeSpan.FromSeconds(_slipShadow)), 0, pcm.Frames - 1);
+        if (IsPlatterActive)
+            Volatile.Write(ref _platterMode, (int)PlatterMode.Off);
+        LeaveLoop();
+        _previewing = false;
+        _engine.Mixer.Lock();
+        try
+        {
+            if (!_track.Playing() && !_track.Paused())
+                _track.Play(0);
+            _track.SetPlaybackPosition(frames);
+            if (_slipMotor)
+                _track.Resume();
+            else
+                _track.Pause();
+        }
+        finally
+        {
+            _engine.Mixer.Unlock();
+        }
     }
 
     /// <summary>

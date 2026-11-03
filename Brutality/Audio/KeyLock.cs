@@ -3,7 +3,8 @@ namespace Brutality.Audio;
 /// <summary>
 /// Keeps a deck's key while its tempo fader changes its speed. SDL_mixer plays the song faster or slower by
 /// resampling it, which moves the key like a record; this moves it back, on the audio thread, by reading the sound
-/// through a short delay line at the speed that cancels the change.
+/// through a short delay line at the speed that cancels the change. The same reading moves the key on purpose, by
+/// <see cref="Shift"/>, without touching the tempo.
 /// </summary>
 /// <remarks>
 /// Reading slower than the sound arrives (to bring a sped-up song back down) lets the delay grow; reading faster
@@ -34,6 +35,7 @@ sealed unsafe class KeyLock
     const int MASK = RING_FRAMES - 1;
 
     bool _enabled;
+    float _shift = 1;
     float _latency;
 
     /// <summary>
@@ -43,6 +45,16 @@ sealed unsafe class KeyLock
     {
         get => Volatile.Read(ref _enabled);
         set => Volatile.Write(ref _enabled, value);
+    }
+
+    /// <summary>
+    /// How much higher to play than the key it's keeping (or, without <see cref="Enabled"/>, than the speed puts it),
+    /// as a ratio of frequencies: 2^(1/12) a semitone up. 1 leaves the key alone. Set from the UI thread.
+    /// </summary>
+    public float Shift
+    {
+        get => Volatile.Read(ref _shift);
+        set => Volatile.Write(ref _shift, value);
     }
 
     /// <summary>
@@ -76,8 +88,10 @@ sealed unsafe class KeyLock
         if (channels != _channels || rate != _rate)
             Prepare(channels, rate);
 
-        var wet = Enabled ? 1f : 0f;
-        var pitch = 1 / speed;
+        // Reading at the shift alone moves the key from where the speed puts it; dividing by the speed too keeps it.
+        var shift = Shift;
+        var wet = Enabled || shift != 1 ? 1f : 0f;
+        var pitch = (Enabled ? 1 / speed : 1) * shift;
         var frames = count / channels;
         var middle = (_minDelay + _maxDelay) / 2.0;
 

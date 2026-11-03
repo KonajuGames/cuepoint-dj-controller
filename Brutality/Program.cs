@@ -550,7 +550,7 @@ static void Run()
     browser.IsPlayed = song => plays.Contains(song.Path);
 
     // Decks being put back after the app didn't close properly, and where each goes once its song is in.
-    var restoring = new Dictionary<Deck, (double Position, bool Play)>();
+    var restoring = new Dictionary<Deck, (double Position, bool Play, int KeyShift)>();
 
     foreach (var deck in decks)
     {
@@ -559,6 +559,7 @@ static void Run()
             if (restoring.Remove(loaded, out var restore))
             {
                 loaded.Seek(TimeSpan.FromSeconds(restore.Position));
+                loaded.KeyShift = restore.KeyShift;
                 // Not if it would only reach the end at once.
                 if (restore.Play && restore.Position < loaded.Duration.TotalSeconds - 1)
                     loaded.Play();
@@ -840,9 +841,13 @@ static void Run()
         // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held; or in JUMP mode, beat jumps.
         if (HotcueKeys.For(key) is { } hotcue)
         {
-            // A roll lasts while its key's held, whatever mode the pads are in by the time it's let go.
+            // A roll lasts while its key's held, whatever mode the pads are in by the time it's let go, as does a hotcue
+            // held under slip.
             if (!pressed && hotcue.Deck < decks.Length)
+            {
                 rollPads[hotcue.Deck].Up(hotcue.Hotcue);
+                decks[hotcue.Deck].HotcueUp(hotcue.Hotcue);
+            }
             else if (pressed && hotcue.Deck < decks.Length && rollPads[hotcue.Deck].Active)
                 rollPads[hotcue.Deck].Down(hotcue.Hotcue);
             else if (pressed && hotcue.Deck < decks.Length && gridEditors[hotcue.Deck].Active)
@@ -1121,7 +1126,7 @@ static void Run()
 
     // What the decks are doing is written down every couple of seconds, and the record deleted as the app closes. One
     // left from last time means the app didn't close properly, so each deck gets its song back where it was, with its
-    // tempo and key lock. A deck that was playing a moment ago plays on from where it would have got to; after longer,
+    // tempo, key lock, key shift and slip. A deck that was playing a moment ago plays on from where it would have got to; after longer,
     // it waits where it was.
     const double SESSION_SAVE_SECONDS = 2;
     var sessionPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "session.json");
@@ -1134,7 +1139,8 @@ static void Run()
                 continue;
             deck.Tempo = state.Tempo;
             deck.KeyLocked = state.KeyLocked;
-            restoring[deck] = (resume ? left.PositionAt(state, DateTime.UtcNow) : state.Position, resume && state.Playing);
+            deck.Slip = state.Slip;
+            restoring[deck] = (resume ? left.PositionAt(state, DateTime.UtcNow) : state.Position, resume && state.Playing, state.KeyShift);
             Load(song, deck);
         }
         if (restoring.Count > 0)

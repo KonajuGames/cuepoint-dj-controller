@@ -12,6 +12,8 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 
 - **Two decks:** play, cue (with a preview while held), sync and key lock on each.
 - **Tempo fader:** ±8%, ±16% or ±50%.
+- **Key shift:** a deck's **-** and **+** (beside its key) move the key down or up a semitone, as far as an octave, without changing the tempo, to bring a song into a key that mixes with the other deck. The key shown moves with it. Right-click either to put the key back. A new song starts in its own key.
+- **Slip:** with a deck's **SLIP** lit (Shift + VINYL on the DDJ-SB3), a scratch, a backspin, a hotcue held down or a loop lasts only while it's held or looping. The song carries on underneath, shown as a dashed line on the overview, and when you let go the deck drops back in where it would have got to, so the mix stays in time.
 - **Hotcues:** eight per deck, kept with each song.
 - **Loops:** from 1/16 to 32 beats, fitted to the beat grid, with halve and double.
 - **Loops set by hand:** **IN** marks where a loop starts and **OUT** loops back to it from there, on the beat with quantise on. Pressed while it loops, OUT moves its end. Halve and double work on it too, and reloop goes back to the loop's start, or plays the last loop again. They work without a beat grid as well.
@@ -80,7 +82,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 
 - **Keeps going when something goes wrong:** an error in the app's own code is written to `errors.log` and mentioned on the status line, and the app carries on. The decks play on their own regardless, and the keyboard, a controller and the lighting keep working even if the screen can't be drawn.
 - **Copes with a sound card coming unplugged:** if the main output's sound card goes, or stops working, the mix moves to the system's default output within a second or two, so the music plays on, and the title bar says what's missing. When it's plugged back in, the mix goes back to it, with the headphones on its channels 3 and 4 if they were there. Headphones on a sound card of their own come back the same way. A card that wasn't plugged in when the app started is picked up as soon as it is.
-- **Picks up after a crash:** where each deck is gets written down every couple of seconds. If the app didn't close properly, the next start puts each deck's song back with its tempo and key lock. A deck that was playing moments before carries on from where it would have got to.
+- **Picks up after a crash:** where each deck is gets written down every couple of seconds. If the app didn't close properly, the next start puts each deck's song back with its tempo, key lock, key shift and slip. A deck that was playing moments before carries on from where it would have got to.
 - **Keeps the computer awake:** while the window is visible, the computer won't sleep and the screen won't switch off.
 - **Remembered between runs:** the audio devices, the music library's folder, the song list's layout and the last folder or virtual folder chosen.
 
@@ -96,6 +98,8 @@ Each deck has its own side of the keyboard.
 | Loop in / out, reloop | Shift + 3 / 4, Shift + V | Shift + 9 / 0, Shift + . |
 | Tempo down / up (Shift: volume) | 5 / 6 | 7 / 8 |
 | Headphone cue, key lock | T, G | Y, H |
+| Slip | Shift + G | Shift + H |
+| Key shift down / up, put back | Alt + 5 / 6, Alt + G | Alt + 7 / 8, Alt + H |
 | Kill low / mid / high, reset EQ | F1 F2 F3, F4 | F9 F10 F11, F12 |
 | Low-pass / high-pass filter | F5 / F6 | F7 / F8 |
 

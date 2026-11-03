@@ -6,8 +6,9 @@ namespace Brutality;
 
 /// <summary>
 /// One deck's keys, besides its hotcues (see <see cref="HotcueKeys"/>). Shift with the tempo keys moves the volume
-/// fader instead; Shift with halve and double loop marks loop in and out, as on a Pioneer controller, and with the
-/// loop key, reloops.
+/// fader instead, and Alt with them shifts the key a semitone; Shift with halve and double loop marks loop in and out,
+/// as on a Pioneer controller, and with the loop key, reloops. Shift with key lock turns slip on and off, and Alt with
+/// it puts the key back.
 /// </summary>
 sealed record DeckKeys(
     GlfwKey Cue,
@@ -138,6 +139,24 @@ sealed class KeyboardControls
         if (action == GlfwKeyAction.Repeat)
             return;
         var pressed = action == GlfwKeyAction.Press;
+
+        // Alt with a tempo key shifts the key a semitone, once, rather than sliding the tempo.
+        if (pressed && (mods & GlfwModifier.Alt) != 0)
+        {
+            for (var i = 0; i < Keys.Length && i < _decks.Count; i++)
+            {
+                if (key == Keys[i].TempoDown)
+                    _decks[i].KeyShift--;
+                else if (key == Keys[i].TempoUp)
+                    _decks[i].KeyShift++;
+                else if (key == Keys[i].KeyLock)
+                    _decks[i].KeyShift = 0;
+                else
+                    continue;
+                return;
+            }
+        }
+
         if (pressed)
             _held[key] = mods;
         else
@@ -197,6 +216,8 @@ sealed class KeyboardControls
             deck.DoubleLoop();
         else if (key == keys.Pfl)
             deck.Headphones = !deck.Headphones;
+        else if (key == keys.KeyLock && shifted)
+            deck.Slip = !deck.Slip;
         else if (key == keys.KeyLock)
             deck.KeyLocked = !deck.KeyLocked;
         else if (key == keys.KillLow)

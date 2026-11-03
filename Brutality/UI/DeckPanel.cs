@@ -57,6 +57,9 @@ sealed class DeckPanel : Panel
     readonly Slider _tempoFader;
     readonly Button _tempoRange;
     readonly Button _keyLock;
+    readonly Button _keyDown;
+    readonly Button _keyUp;
+    readonly Button _slip;
     readonly Button? _gridMode;
     readonly RollPads? _roll;
     readonly Button? _rollMode;
@@ -72,6 +75,9 @@ sealed class DeckPanel : Panel
     /// The width of the tempo fader's column down the right-hand side, and the space before it.
     /// </summary>
     const float TEMPO_COLUMN = 48;
+
+    // SLIP, and the key shift's buttons below it, beside the tempo and key.
+    const float KEY_SHIFT_WIDTH = 46;
     const float TEMPO_GAP = 10;
 
     const float PAD_GAP = 4;
@@ -204,6 +210,18 @@ sealed class DeckPanel : Panel
         );
         _quantize.Clicked += _ => _deck.Quantize = !_deck.Quantize;
 
+        // Slip: lit while a scratch, a held hotcue or a loop drops back in where the song would have got to.
+        _slip = Add(
+            new Button(small, "SLIP")
+            {
+                MinSize = new float2(KEY_SHIFT_WIDTH, 22),
+                Padding = 3,
+                FocusColor = Theme.Focus,
+                Tooltip = "Slip: a scratch, a hotcue held down or a loop lasts only while it's held or looping, then the song carries on from where it would have got to",
+            }
+        );
+        _slip.Clicked += _ => _deck.Slip = !_deck.Slip;
+
         // A loop set by hand: IN marks its start, OUT its end, looping straight back.
         _loopIn = Add(
             new Button(small, "IN")
@@ -261,6 +279,30 @@ sealed class DeckPanel : Panel
             }
         );
         _keyLock.Clicked += _ => _deck.KeyLocked = !_deck.KeyLocked;
+
+        // The key down or up a semitone, the tempo left alone; a right-click on either puts it back.
+        _keyDown = Add(
+            new Button(small, "-")
+            {
+                MinSize = new float2((KEY_SHIFT_WIDTH - 4) / 2, 20),
+                Padding = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "Key shift: down a semitone, the tempo left alone. Right-click to put the key back",
+            }
+        );
+        _keyUp = Add(
+            new Button(small, "+")
+            {
+                MinSize = new float2((KEY_SHIFT_WIDTH - 4) / 2, 20),
+                Padding = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "Key shift: up a semitone, the tempo left alone. Right-click to put the key back",
+            }
+        );
+        _keyDown.Clicked += _ => _deck.KeyShift--;
+        _keyUp.Clicked += _ => _deck.KeyShift++;
+        _keyDown.SecondaryClicked += _ => _deck.KeyShift = 0;
+        _keyUp.SecondaryClicked += _ => _deck.KeyShift = 0;
         _tempoRange.Clicked += _ =>
         {
             var ranges = Deck.TempoRanges;
@@ -326,7 +368,12 @@ sealed class DeckPanel : Panel
                 else
                     _deck.HotcueDown(index);
             };
-            pad.PressEnded += _ => _roll?.Up(index);
+            pad.PressEnded += _ =>
+            {
+                _roll?.Up(index);
+                // Under slip, a hotcue held lasts until it's let go.
+                _deck.HotcueUp(index);
+            };
             pad.Deleted += _ =>
             {
                 if (_grid is { Active: true })
@@ -378,6 +425,10 @@ sealed class DeckPanel : Panel
         _quantize.Background = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
         _quantize.HoverBackground = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
         _quantize.TextColor = quantized ? Colors.White : Theme.Muted;
+        var slip = _deck.Slip;
+        _slip.Background = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+        _slip.HoverBackground = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+        _slip.TextColor = slip ? Colors.White : Theme.Muted;
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
 
         if (!_deck.IsLoaded)
@@ -430,7 +481,7 @@ sealed class DeckPanel : Panel
             // As heard: the fader speeds the tempo up and, past about 3%, moves the key a semitone or more.
             var key = _deck.Key ?? analysis.Key;
             _bpm.Text = $"{(analysis.Grid.IsVariable ? "~" : "")}{_deck.Bpm ?? analysis.Bpm:F2}";
-            _key.Text = $"{key.Camelot}  {key.ShortName}{(_deck.KeyShift != 0 ? $"  ({_deck.KeyShift:+0;-0})" : "")}";
+            _key.Text = $"{key.Camelot}  {key.ShortName}{(_deck.KeyChange != 0 ? $"  ({_deck.KeyChange:+0;-0})" : "")}";
             _key.Color = Theme.CamelotColor(key.CamelotNumber);
             _gain.Text = $"Auto gain {analysis.AutoGainDb:+0.0;-0.0;0.0} dB";
         }
@@ -477,6 +528,7 @@ sealed class DeckPanel : Panel
         }
         _overview.Flags = flags;
         _overview.Region = _deck.Loop is { } loop ? ((float)loop.Start.TotalSeconds, (float)loop.End.TotalSeconds) : null;
+        _overview.Ghost = _deck.SlipPosition is { } slipped ? (float)slipped.TotalSeconds : null;
         RefreshLoop();
 
         _cue.Enabled = true;
@@ -511,6 +563,16 @@ sealed class DeckPanel : Panel
         _keyLock.Background = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
         _keyLock.HoverBackground = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
         _keyLock.TextColor = locked ? Colors.White : Theme.Muted;
+
+        // Lit on the side the key's been shifted to.
+        foreach (var (button, lit) in new[] { (_keyDown, _deck.KeyShift < 0), (_keyUp, _deck.KeyShift > 0) })
+        {
+            button.Background = lit ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+            button.HoverBackground = lit ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+            button.TextColor = lit ? Colors.White : Theme.Muted;
+        }
+        _keyDown.Enabled = _deck.KeyShift > -Deck.MAX_KEY_SHIFT;
+        _keyUp.Enabled = _deck.KeyShift < Deck.MAX_KEY_SHIFT;
     }
 
     void RefreshLoop()
@@ -558,7 +620,7 @@ sealed class DeckPanel : Panel
         _key.Measure();
         var right = MathF.Max(MathF.Max(_bpm.Size.X, _key.Size.X), 90);
         var content = Width - 2 * PAD - TEMPO_COLUMN - TEMPO_GAP;
-        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, content - 40 - right - 16);
+        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, content - 40 - right - 8 - KEY_SHIFT_WIDTH - 16);
         _overview.Length = content;
         // The pads share the width between them; the loading line gets what the buttons either side leave it.
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
@@ -599,6 +661,13 @@ sealed class DeckPanel : Panel
         Place(_artist, Outer(40, _artist), top + _title.Size.Y + 1);
         Place(_bpm, Inner(0, _bpm), top - 6);
         Place(_key, Inner(0, _key), top + _bpm.Size.Y - 6);
+
+        // SLIP by the tempo, and the key shift's - and + (in that order either side) by the key.
+        var right = MathF.Max(MathF.Max(_bpm.Size.X, _key.Size.X), 90);
+        var shiftLeft = Mirrored ? contentLeft + right + 8 : contentRight - right - 8 - KEY_SHIFT_WIDTH;
+        Place(_slip, shiftLeft, top);
+        Place(_keyDown, shiftLeft, top + _slip.Size.Y + 4);
+        Place(_keyUp, shiftLeft + KEY_SHIFT_WIDTH - _keyUp.Size.X, top + _slip.Size.Y + 4);
 
         var timesY = top + 52;
         Place(_elapsed, Outer(0, _elapsed), timesY);

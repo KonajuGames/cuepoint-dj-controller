@@ -47,6 +47,14 @@ sealed class WaveformBar : Slider
     public float4 WarningColor { get; set; } = Theme.Warning;
 
     /// <summary>
+    /// A second, fainter playhead, as a value between <see cref="Slider.Min"/> and <see cref="Slider.Max"/>: where a
+    /// slipping deck's song has got to underneath; none if null.
+    /// </summary>
+    public float? Ghost { get; set; }
+
+    public float4 GhostColor { get; set; } = Colors.Hex(0xFFFFFF, 0.6f);
+
+    /// <summary>
     /// Beats pinned by hand, as values between <see cref="Slider.Min"/> and <see cref="Slider.Max"/>: each a line
     /// in <see cref="PinColor"/> with a block at its top and bottom.
     /// </summary>
@@ -98,6 +106,17 @@ sealed class WaveformBar : Slider
         DrawGrid(batch, left);
         DrawPins(batch, left);
         DrawFlags(batch, left);
+        DrawGhost(batch, left);
+    }
+
+    void DrawGhost(Batch batch, float left)
+    {
+        if (Ghost is not { } ghost || Max <= Min)
+            return;
+        var x = MathF.Round(left + OffsetOf(Math.Clamp((ghost - Min) / (Max - Min), 0, 1)));
+        // Dashed, so it doesn't pass for the playhead.
+        for (var y = 0f; y < Size.Y; y += 6)
+            batch.AddRect(new float2(x, ScreenPosition.Y + y), new float2(2, MathF.Min(3, Size.Y - y)), Faded(GhostColor));
     }
 
     void DrawWarning(Batch batch, float left)

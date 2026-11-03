@@ -113,7 +113,8 @@ sealed partial class Deck
             return false;
         if (!IsPlatterActive)
         {
-            ExitLoop();
+            BeginSlip(SlipCause.Platter);
+            LeaveLoop();
             _previewing = false;
             _motor = IsPlaying;
             var at = (double)SongFrame;
@@ -155,6 +156,13 @@ sealed partial class Deck
         if (!IsPlatterActive)
             return;
         Volatile.Write(ref _platterMode, (int)PlatterMode.Off);
+        if (_slipCauses.HasFlag(SlipCause.Platter))
+        {
+            // Under slip, back to where the song's got to, unless something else is still holding it away.
+            EndSlip(SlipCause.Platter);
+            if (!IsSlipping)
+                return;
+        }
         if (_pcm is not { } pcm)
             return;
         var at = (long)Math.Clamp(Volatile.Read(ref _platterHead), 0, pcm.Frames - 1);

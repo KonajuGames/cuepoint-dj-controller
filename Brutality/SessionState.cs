@@ -35,6 +35,8 @@ sealed class SessionState
         public bool Playing { get; set; }
         public double Tempo { get; set; }
         public bool KeyLocked { get; set; }
+        public bool Slip { get; set; }
+        public int KeyShift { get; set; }
     }
 
     /// <summary>
@@ -53,6 +55,8 @@ sealed class SessionState
                     Playing = deck.IsPlaying,
                     Tempo = deck.Tempo,
                     KeyLocked = deck.KeyLocked,
+                    Slip = deck.Slip,
+                    KeyShift = deck.KeyShift,
                 })
                 .ToList(),
         };

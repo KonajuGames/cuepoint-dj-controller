@@ -60,6 +60,8 @@ static class ControllerPresets
             Note($"{deck}.sync", channel, 0x58);
             Note($"{deck}.pfl", channel, 0x54);
             Note($"{deck}.keylock", channel, 0x1A);
+            // Shift + VINYL is slip.
+            Note($"{deck}.slip", channel, 0x40);
             Note($"{deck}.loop", channel, 0x14);
             Note($"{deck}.loop.halve", channel, 0x12);
             Note($"{deck}.loop.double", channel, 0x13);

@@ -442,6 +442,13 @@ sealed class Button : Panel
     public float4 PressedBackground { get; set; }
 
     /// <summary>
+    /// The button was right-clicked.
+    /// </summary>
+    public event Action<Button>? SecondaryClicked;
+
+    public override void SecondaryClick(float2 point) => SecondaryClicked?.Invoke(this);
+
+    /// <summary>
     /// A picture to show in the middle, tinted the text's colour, for a button with no text (give it a
     /// <see cref="Panel.MinSize"/>); none if null.
     /// </summary>

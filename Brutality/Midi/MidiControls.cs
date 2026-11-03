@@ -367,7 +367,11 @@ sealed class MidiControls : IDisposable
         if (!pressed)
         {
             if (Hotcue(action) is { } released && !action.EndsWith(".delete"))
+            {
                 PadReleased?.Invoke(deck, released);
+                // Under slip, a hotcue held lasts until its pad's let go.
+                deck.HotcueUp(released);
+            }
             return;
         }
 
@@ -387,6 +391,18 @@ sealed class MidiControls : IDisposable
                 break;
             case "keylock":
                 deck.KeyLocked = !deck.KeyLocked;
+                break;
+            case "slip":
+                deck.Slip = !deck.Slip;
+                break;
+            case "key.down":
+                deck.KeyShift--;
+                break;
+            case "key.up":
+                deck.KeyShift++;
+                break;
+            case "key.reset":
+                deck.KeyShift = 0;
                 break;
             case "loop":
                 deck.ToggleLoop();
@@ -576,6 +592,7 @@ sealed class MidiControls : IDisposable
             "sync" => deck.IsInSync,
             "pfl" => deck.Headphones,
             "keylock" => deck.KeyLocked,
+            "slip" => deck.Slip,
             "loop" => deck.IsLooping,
             "grid" => IsGridMode?.Invoke(deck) == true,
             "roll" => IsRollMode?.Invoke(deck) == true,
