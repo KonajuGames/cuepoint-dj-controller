@@ -259,6 +259,12 @@ sealed class TitleBar : Panel
     /// </summary>
     const double LIMIT_LIGHT_HOLD = 0.5;
 
+    // The master meter's length, and the least it's shortened to on a crowded title bar; and the least gap between
+    // the middle and either side.
+    const float MASTER_LENGTH = 160;
+    const float MIN_MASTER_LENGTH = 60;
+    const float GAP = 16;
+
     double _limitedAt = double.NegativeInfinity;
     readonly Os2lIndicator _os2l;
     readonly RecordButton _record;
@@ -316,6 +322,11 @@ sealed class TitleBar : Panel
     /// The bottom right corner of the headphones button, where their settings drop down from.
     /// </summary>
     public float2 HeadphonesAnchor => _headphones.ScreenPosition + _headphones.Size;
+
+    /// <summary>
+    /// The beat trackers and master level in the middle, and the buttons on the right, for tests.
+    /// </summary>
+    internal (Element Centre, Element Right) Sections => (_centre, _right);
     public event Action? MinimizeClicked;
     public event Action? MaximizeClicked;
     public event Action? CloseClicked;
@@ -334,7 +345,7 @@ sealed class TitleBar : Panel
         _centre.Add(new BeatTrackers(decks, small));
         _centre.Add(new Spacer(20));
         _masterLabel = _centre.Add(new Label(small, "MASTER") { Color = Theme.Muted });
-        _master = _centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = 160, BarThickness = 4, BarGap = 2, Segments = 32 });
+        _master = _centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = MASTER_LENGTH, BarThickness = 4, BarGap = 2, Segments = 32 });
         // Lit while the master limiter is turning the mix down: a sign the decks are too loud together.
         _limit = _centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
 
@@ -410,9 +421,18 @@ sealed class TitleBar : Panel
 
     public override float2 Measure()
     {
+        // The master meter at its full length, or shorter if that's what it takes for the middle to fit between the
+        // sides once it's moved left (see Arrange), down to a short one.
+        (_master.Length, _master.Segments) = (MASTER_LENGTH, 32);
         MeasureChildren();
-        // Measured even while it's hidden, to know whether it fits again.
-        _centre.Measure();
+        var room = Width - (10 + _left.Size.X + GAP) - (_right.Size.X + GAP);
+        if (_centre.Size.X > room)
+        {
+            _master.Length = MathF.Max(MIN_MASTER_LENGTH, MASTER_LENGTH - (_centre.Size.X - room));
+            // Segments as wide as at full length.
+            _master.Segments = (int)MathF.Round(_master.Length / MASTER_LENGTH * 32);
+            _centre.Measure();
+        }
         return Size = new float2(Width, HEIGHT);
     }
 
@@ -421,11 +441,10 @@ sealed class TitleBar : Panel
         ArrangeSelf(position);
         float Middle(Element child) => MathF.Round(position.Y + (HEIGHT - child.Size.Y) / 2);
         _left.Arrange(new float2(position.X + 10, Middle(_left)));
-        // The beat trackers and master level in the middle, or as near it as the sides leave room for; on a window
-        // too narrow for them at all, they're left out.
-        var centreMin = position.X + 10 + _left.Size.X + 16;
-        var centreMax = position.X + Width - _right.Size.X - 16 - _centre.Size.X;
-        _centre.Visible = centreMax >= centreMin;
+        // The beat trackers and master level in the middle, or moved left as far as they need to be to keep clear of
+        // the buttons on the right, which always show.
+        var centreMin = position.X + 10 + _left.Size.X + GAP;
+        var centreMax = position.X + Width - _right.Size.X - GAP - _centre.Size.X;
         var centreX = Math.Clamp(position.X + (Width - _centre.Size.X) / 2, centreMin, MathF.Max(centreMin, centreMax));
         _centre.Arrange(new float2(MathF.Round(centreX), Middle(_centre)));
         _right.Arrange(new float2(position.X + Width - _right.Size.X, Middle(_right)));

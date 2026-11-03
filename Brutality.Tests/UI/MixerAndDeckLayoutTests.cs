@@ -150,6 +150,33 @@ public sealed class MixerAndDeckLayoutTests : IDisposable
         Assert.False(headphones.Visible);
     }
 
+    [Theory]
+    [InlineData(1920, false)]
+    [InlineData(1280, false)]
+    [InlineData(1280, true)]
+    public void The_title_bar_s_middle_moves_left_to_keep_clear_of_its_buttons_and_always_shows(float width, bool crowded)
+    {
+        var bar = new TitleBar(_engine, [_deck], _font, _font, _font, _images) { Width = width };
+        if (crowded)
+        {
+            // As full as it gets: a missing sound card, a recording, and OS2L.
+            bar.AudioWarning = () => "Pioneer DDJ-SB3 speakers missing";
+            bar.Recording = () => TimeSpan.FromHours(1.5);
+            bar.Os2lConnected = () => true;
+        }
+        bar.Update();
+
+        bar.Measure();
+        bar.Arrange(default);
+
+        var (centre, right) = bar.Sections;
+        Assert.True(centre.Visible);
+        Assert.True(right.Visible);
+        Assert.True(centre.ScreenPosition.X + centre.Size.X <= right.ScreenPosition.X - 15.5f);
+        if (!crowded && width == 1920)
+            Assert.InRange(centre.ScreenPosition.X + centre.Size.X / 2, width / 2 - 1, width / 2 + 1);
+    }
+
     DeckPanel Panel(RollPads? roll = null, JumpPads? jump = null) =>
         new(_deck, _font, _font, _font, _font, keys: new DeckKeyHints("Z", "X", "C", "3", "V", "4", "G", "T"), images: _images, roll: roll, jump: jump);
 
