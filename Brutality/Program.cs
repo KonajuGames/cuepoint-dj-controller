@@ -738,6 +738,12 @@ static void Run()
 
     var menu = new ContextMenu(fonts.Body);
     screen.Options.Menu = menu;
+    screen.Menu = menu;
+
+    // The headphones' settings drop down from their button on the title bar, which is lit while a deck's cued.
+    var headphones = new HeadphonesPanel(audio, fonts.Small, fonts.Body, fonts.Bold, images);
+    screen.TitleBar.HeadphonesClicked += () => headphones.Toggle(screen.TitleBar.HeadphonesAnchor);
+    screen.TitleBar.Cueing = () => decks.Any(deck => deck.Headphones);
     browser.ColumnMenuRequested += at => menu.Show(at, browser.ColumnMenu());
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
@@ -871,6 +877,8 @@ static void Run()
             case GlfwKey.Escape when pressed:
                 if (menu.Visible)
                     menu.Close();
+                else if (headphones.Visible)
+                    headphones.Close();
                 else if (prompt.Visible)
                     prompt.Close();
                 else if (confirmation.Visible)
@@ -888,6 +896,7 @@ static void Run()
     };
 
     // Right-click menus and the name prompt go over everything, so they're added last.
+    ui.Add(headphones);
     ui.Add(menu);
     ui.Add(prompt);
     ui.Add(confirmation);
@@ -1357,8 +1366,9 @@ static void Run()
                 screen.ScreenSize = new float2(size.X, size.Y);
                 if (controllerDialog is not null)
                     controllerDialog.ScreenSize = screen.ScreenSize;
-                menu.ScreenSize = prompt.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
+                headphones.ScreenSize = menu.ScreenSize = prompt.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
                 screen.Update();
+                headphones.Refresh();
                 ui.Layout(screen.ScreenSize);
                 input.UpdateCursor();
                 renderer.DrawFrame(ui);

@@ -111,7 +111,7 @@ sealed class MainScreen : Panel
                 Mirrored = i >= (decks.Count + 1) / 2,
             })
             .ToList();
-        _mixer = new MixerPanel(engine, decks, fonts.Small, fonts.Bold, decks.Select((_, i) => deckKeys?.Invoke(i)?.Pfl).ToList());
+        _mixer = new MixerPanel(engine, decks, fonts.Small, fonts.Bold, images, decks.Select((_, i) => deckKeys?.Invoke(i)?.Pfl).ToList());
         for (var i = 0; i < deckPanels.Count; i++)
         {
             if (i == (deckPanels.Count + 1) / 2)
@@ -234,6 +234,7 @@ sealed class MainScreen : Panel
         var deckWidth = (width - 2 * GAP - MixerPanel.WIDTH - GAP * (_decks.Count)) / Math.Max(1, _decks.Count);
         foreach (var deck in _decks)
             deck.Width = MathF.Floor(deckWidth);
+        _mixer.Height = DecksHeight;
 
         var browserTop = BrowserTop;
         var browserHeight = MathF.Max(120, ScreenSize.Y - browserTop - GAP);
@@ -257,7 +258,24 @@ sealed class MainScreen : Panel
 
     float DecksTop => WaveformsTop + _waveforms.Count * (WaveformHeight + 2) - 2 + GAP;
 
-    float BrowserTop => DecksTop + DeckPanel.HEIGHT + GAP;
+    /// <summary>
+    /// As tall as the tallest deck, which is taller with its buttons in two rows on a narrow window.
+    /// </summary>
+    float DecksHeight => _decks.Count == 0 ? DeckPanel.HEIGHT : _decks.Max(deck => deck.Height);
+
+    float BrowserTop => DecksTop + DecksHeight + GAP;
+
+    /// <summary>
+    /// Where the decks' pad mode lists open.
+    /// </summary>
+    public ContextMenu? Menu
+    {
+        set
+        {
+            foreach (var deck in _decks)
+                deck.Menu = value;
+        }
+    }
 
     public override void Arrange(float2 position)
     {

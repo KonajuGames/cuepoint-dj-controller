@@ -60,11 +60,30 @@ sealed class DeckPanel : Panel
     readonly Button _keyDown;
     readonly Button _keyUp;
     readonly Button _slip;
-    readonly Button? _gridMode;
     readonly RollPads? _roll;
-    readonly Button? _rollMode;
     readonly JumpPads? _jump;
-    readonly Button? _jumpMode;
+
+    /// <summary>
+    /// What the pads do: hotcues, or one of the modes there are for this deck.
+    /// </summary>
+    enum PadMode
+    {
+        Hotcues,
+        Roll,
+        Jump,
+        Grid,
+    }
+
+    readonly Dropdown<PadMode>? _padMode;
+
+    // The buttons' key hints, hidden while the deck's too narrow for them.
+    readonly List<(Button Button, string Hint)> _hints = [];
+
+    // Too narrow for the buttons as they are: shorter, without their key hints (compact); and narrower still, in two
+    // rows, which makes the deck taller.
+    bool _compact;
+    bool _twoRows;
+    bool _fitted;
     readonly Button _quantize;
     readonly Button _loopIn;
     readonly Button _loopOut;
@@ -84,7 +103,50 @@ sealed class DeckPanel : Panel
     const float PAD_HEIGHT = 28;
     const float ROW_GAP = 6;
 
-    public float Width { get; set; } = 480;
+    float _width = 480;
+
+    /// <summary>
+    /// How wide the deck's laid out. Too narrow for its buttons in a row, they're made shorter, then go in two rows,
+    /// the deck taller by one (see <see cref="Height"/>).
+    /// </summary>
+    public float Width
+    {
+        get => _width;
+        set
+        {
+            if (value == _width && _fitted)
+                return;
+            _width = value;
+            Fit();
+        }
+    }
+
+    /// <summary>
+    /// How tall the deck is: <see cref="HEIGHT"/>, or more with its buttons in two rows.
+    /// </summary>
+    public float Height => _twoRows ? HEIGHT + EXTRA_ROW : HEIGHT;
+
+    /// <summary>
+    /// Where the pad mode list opens.
+    /// </summary>
+    public ContextMenu? Menu
+    {
+        set
+        {
+            if (_padMode is not null)
+                _padMode.Menu = value;
+        }
+    }
+
+    /// <summary>
+    /// What a second row of buttons adds to the deck's height.
+    /// </summary>
+    const float EXTRA_ROW = 36;
+
+    /// <summary>
+    /// Whether the buttons are shorter, and in two rows, for testing.
+    /// </summary>
+    internal (bool Compact, bool TwoRows) Fitting => (_compact, _twoRows);
 
     /// <summary>
     /// Laid out as a reflection, for a deck to the right of the mixer: tempo fader on the left, details on the
@@ -313,34 +375,59 @@ sealed class DeckPanel : Panel
         if (keys is not null)
         {
             foreach (var (button, hint) in new[] { (_cue, keys.Cue), (_playPause, keys.Play), (_sync, keys.Sync), (_halveLoop, keys.HalveLoop), (_loop, keys.Loop), (_doubleLoop, keys.DoubleLoop), (_keyLock, keys.KeyLock) })
+            {
                 (button.KeyHint, button.HintFont) = (hint, small);
+                if (button != _keyLock)
+                    _hints.Add((button, hint));
+            }
         }
 
-        // GRID turns the pads into tools for fixing the beat grid by hand, and back.
-        if (grid is not null)
+        // What the pads do, chosen from a list: hotcues, loop rolls held as long as each pad is, beat jumps, or tools
+        // for fixing the beat grid by hand. Only the modes there are for this deck are listed.
+        if (grid is not null || roll is not null || jump is not null)
         {
-            _gridMode = Add(
-                new Button(bold, "GRID") { MinSize = new float2(56, 30), FocusColor = Theme.Focus, Tooltip = "Pads become tools for fixing the beat grid by hand" }
+            List<PadMode> modes = [PadMode.Hotcues];
+            if (roll is not null)
+                modes.Add(PadMode.Roll);
+            if (jump is not null)
+                modes.Add(PadMode.Jump);
+            if (grid is not null)
+                modes.Add(PadMode.Grid);
+            _padMode = Add(
+                new Dropdown<PadMode>(bold)
+                {
+                    Items = () => modes,
+                    Text = mode => (mode, _compact) switch
+                    {
+                        (PadMode.Hotcues, false) => "HOT CUE",
+                        (PadMode.Hotcues, true) => "CUES",
+                        (PadMode.Roll, _) => "ROLL",
+                        (PadMode.Jump, _) => "JUMP",
+                        _ => "GRID",
+                    },
+                    Width = 96,
+                    Tooltip = "What the pads do: hotcues, loop rolls held as long as each pad is, beat jumps back and on staying in time, or tools for fixing the beat grid by hand",
+                }
             );
-            _gridMode.Clicked += _ => grid.Active = !grid.Active;
-        }
-
-        // ROLL turns the pads into loop rolls, held for as long as each pad is, and back.
-        if (roll is not null)
-        {
-            _rollMode = Add(
-                new Button(bold, "ROLL") { MinSize = new float2(56, 30), FocusColor = Theme.Focus, Tooltip = "Pads become loop rolls, each looping while it's held" }
-            );
-            _rollMode.Clicked += _ => roll.Active = !roll.Active;
-        }
-
-        // JUMP turns the pads into beat jumps, back and on by a beat up to eight bars, and back.
-        if (jump is not null)
-        {
-            _jumpMode = Add(
-                new Button(bold, "JUMP") { MinSize = new float2(56, 30), FocusColor = Theme.Focus, Tooltip = "Pads jump back or on through the song by beats, staying in time" }
-            );
-            _jumpMode.Clicked += _ => jump.Active = !jump.Active;
+            _padMode.Chosen += mode =>
+            {
+                // Each turned on turns the others off; hotcues is all of them off.
+                if (mode == PadMode.Roll && roll is not null)
+                    roll.Active = true;
+                else if (mode == PadMode.Jump && jump is not null)
+                    jump.Active = true;
+                else if (mode == PadMode.Grid && grid is not null)
+                    grid.Active = true;
+                else
+                {
+                    if (roll is not null)
+                        roll.Active = false;
+                    if (jump is not null)
+                        jump.Active = false;
+                    if (grid is not null)
+                        grid.Active = false;
+                }
+            };
         }
 
         for (var i = 0; i < Deck.HOTCUE_COUNT; i++)
@@ -406,20 +493,23 @@ sealed class DeckPanel : Panel
     public void Refresh()
     {
         RefreshTempo();
-        if (_gridMode is not null && _grid is not null)
+        if (_padMode is not null)
         {
-            _gridMode.Background = _grid.Active ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
-            _gridMode.HoverBackground = _grid.Active ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
-        }
-        if (_rollMode is not null && _roll is not null)
-        {
-            _rollMode.Background = _roll.Active ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.5f) : Colors.Hex(0x2A2A35);
-            _rollMode.HoverBackground = _roll.Active ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.65f) : Colors.Hex(0x3A3A48);
-        }
-        if (_jumpMode is not null && _jump is not null)
-        {
-            _jumpMode.Background = _jump.Active ? Theme.Mix(Theme.PanelRaised, Theme.Focus, 0.5f) : Colors.Hex(0x2A2A35);
-            _jumpMode.HoverBackground = _jump.Active ? Theme.Mix(Theme.PanelRaised, Theme.Focus, 0.65f) : Colors.Hex(0x3A3A48);
+            var mode = _grid is { Active: true } ? PadMode.Grid
+                : _roll is { Active: true } ? PadMode.Roll
+                : _jump is { Active: true } ? PadMode.Jump
+                : PadMode.Hotcues;
+            _padMode.Selected = mode;
+            var (tint, amount) = mode switch
+            {
+                PadMode.Grid => (Theme.Accent, 0.6f),
+                PadMode.Roll => (Theme.Loop, 0.5f),
+                PadMode.Jump => (Theme.Focus, 0.5f),
+                _ => (Theme.PanelRaised, 0f),
+            };
+            _padMode.Background = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount) : Colors.Hex(0x2A2A35);
+            _padMode.HoverBackground = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount + 0.15f) : Colors.Hex(0x3A3A48);
+            _padMode.ArrowColor = amount > 0 ? Colors.White : Theme.Muted;
         }
         var quantized = _deck.Quantize;
         _quantize.Background = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
@@ -578,8 +668,9 @@ sealed class DeckPanel : Panel
     void RefreshLoop()
     {
         // A loop set by hand says how long it is, if there's a beat grid to say it by.
-        _loop.Text = !_deck.IsManualLoop ? $"LOOP {FormatBeats(_deck.LoopBeats)}"
-            : _deck.LoopLengthBeats is { } beats ? $"LOOP {FormatLength(beats)}"
+        var loopWord = _compact ? "" : "LOOP ";
+        _loop.Text = !_deck.IsManualLoop ? $"{loopWord}{FormatBeats(_deck.LoopBeats)}"
+            : _deck.LoopLengthBeats is { } beats ? $"{loopWord}{FormatLength(beats)}"
             : "LOOP";
         // Looping, the loop can always be halved, doubled and left, even one set by hand without a beat grid.
         var looping = _deck.IsLooping;
@@ -613,8 +704,55 @@ sealed class DeckPanel : Panel
         return Math.Abs(beats - power) < 0.02 ? FormatBeats(power) : $"{beats:0.#}";
     }
 
+    // The width of the transport and pad mode, from the outer edge, and of the loop, and of loop in and out with
+    // quantise, from the inner edge, with the gaps between them as they're laid out.
+    float TransportWidth => _cue.Size.X + 6 + _playPause.Size.X + 6 + _sync.Size.X + (_padMode is null ? 0 : 12 + _padMode.Size.X);
+    float LoopWidth => _halveLoop.Size.X + 4 + _loop.Size.X + 4 + _doubleLoop.Size.X;
+    float InOutWidth => _quantize.Size.X + 6 + _loopIn.Size.X + 4 + _loopOut.Size.X;
+
+    float ContentWidth => Width - 2 * PAD - TEMPO_COLUMN - TEMPO_GAP;
+
+    /// <summary>
+    /// Makes the buttons shorter, then puts them in two rows, as far as the width needs.
+    /// </summary>
+    void Fit()
+    {
+        _fitted = true;
+        foreach (var compact in new[] { false, true })
+        {
+            Compact(compact);
+            if (TransportWidth + 12 + InOutWidth + 6 + LoopWidth <= ContentWidth)
+            {
+                _twoRows = false;
+                return;
+            }
+        }
+        _twoRows = true;
+    }
+
+    /// <summary>
+    /// Shorter buttons without their key hints, or as they were, measured.
+    /// </summary>
+    void Compact(bool compact)
+    {
+        _compact = compact;
+        foreach (var (button, hint) in _hints)
+            button.KeyHint = compact ? null : hint;
+        _cue.MinSize = new float2(compact ? 48 : 64, 30);
+        _playPause.MinSize = new float2(compact ? 56 : 84, 30);
+        _sync.MinSize = new float2(compact ? 52 : 64, 30);
+        _loop.MinSize = new float2(compact ? 44 : 84, 30);
+        if (_padMode is not null)
+            _padMode.Width = compact ? 70 : 96;
+        RefreshLoop();
+        foreach (var element in new Element?[] { _cue, _playPause, _sync, _loop, _halveLoop, _doubleLoop, _quantize, _loopIn, _loopOut, _padMode })
+            element?.Measure();
+    }
+
     public override float2 Measure()
     {
+        if (!_fitted)
+            Fit();
         // The title gets what the tempo and key on the right leave it.
         _bpm.Measure();
         _key.Measure();
@@ -626,18 +764,20 @@ sealed class DeckPanel : Panel
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
         foreach (var pad in _pads)
             pad.FixedSize = new float2(padWidth, PAD_HEIGHT);
-        _loading.MaxWidth = MathF.Max(0, content - 64 - 6 - 84 - 6 - 64 - 24 - (30 + 6 + 34 + 4 + 34 + 6 + 26 + 4 + 84 + 4 + 26) - 12);
+        foreach (var element in new Element?[] { _cue, _playPause, _sync, _loop, _halveLoop, _doubleLoop, _quantize, _loopIn, _loopOut, _padMode })
+            element?.Measure();
+        _loading.MaxWidth = MathF.Max(0, _twoRows ? content - InOutWidth - 24 : content - TransportWidth - 12 - InOutWidth - 6 - LoopWidth - 24);
 
         // The fader fills its column between the readout above and the range button below, down to the transport.
         _tempoReadout.Measure();
         _tempoRange.Measure();
-        var columnHeight = HEIGHT - 2 * PAD - PAD_HEIGHT - ROW_GAP;
+        var columnHeight = Height - 2 * PAD - PAD_HEIGHT - ROW_GAP;
         _keyLock.Measure();
         _tempoFader.Length = columnHeight - _tempoReadout.Size.Y - 4 - _tempoRange.Size.Y - 4 - _keyLock.Size.Y - 6;
 
         foreach (var child in Children)
             child.Measure();
-        return Size = new float2(Width, HEIGHT);
+        return Size = new float2(Width, Height);
     }
 
     public override void Arrange(float2 position)
@@ -679,7 +819,7 @@ sealed class DeckPanel : Panel
 
         // From the bottom: the hotcue pads across the whole width, in order, and above them the transport and the
         // loop.
-        var padsY = position.Y + HEIGHT - PAD - PAD_HEIGHT;
+        var padsY = position.Y + Height - PAD - PAD_HEIGHT;
         var x = position.X + PAD;
         foreach (var pad in _pads)
         {
@@ -692,35 +832,33 @@ sealed class DeckPanel : Panel
         Place(_playPause, Outer(_cue.Size.X + 6, _playPause), buttonsY);
         Place(_sync, Outer(_cue.Size.X + 6 + _playPause.Size.X + 6, _sync), buttonsY);
         var transport = _cue.Size.X + 6 + _playPause.Size.X + 6 + _sync.Size.X;
-        if (_gridMode is not null)
+        if (_padMode is not null)
         {
-            Place(_gridMode, Outer(transport + 12, _gridMode), buttonsY);
-            transport += 12 + _gridMode.Size.X;
+            Place(_padMode, Outer(transport + 12, _padMode), buttonsY);
+            transport += 12 + _padMode.Size.X;
         }
-        if (_rollMode is not null)
-        {
-            Place(_rollMode, Outer(transport + 6, _rollMode), buttonsY);
-            transport += 6 + _rollMode.Size.X;
-        }
-        if (_jumpMode is not null)
-        {
-            Place(_jumpMode, Outer(transport + 6, _jumpMode), buttonsY);
-            transport += 6 + _jumpMode.Size.X;
-        }
-        Place(_loading, Outer(transport + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
 
         // The loop's buttons keep their order, halve on the left, whichever side the group is on.
-        var loopWidth = _halveLoop.Size.X + 4 + _loop.Size.X + 4 + _doubleLoop.Size.X;
+        var loopWidth = LoopWidth;
         var loopLeft = Mirrored ? contentLeft : contentRight - loopWidth;
         Place(_halveLoop, loopLeft, buttonsY);
         Place(_loop, loopLeft + _halveLoop.Size.X + 4, buttonsY);
         Place(_doubleLoop, loopLeft + _halveLoop.Size.X + 4 + _loop.Size.X + 4, buttonsY);
-        // Beside the loop, on the side nearer the transport: loop in and out, IN before OUT either way, then quantise.
+
+        // Loop in and out, IN before OUT either way, then quantise: beside the loop, on the side nearer the
+        // transport; or, too narrow for that, in the row above, from the inner edge, with the loading line beside
+        // them.
+        var inOutRowY = _twoRows ? buttonsY - ROW_GAP - _cue.Size.Y : buttonsY;
         var inOutWidth = _loopIn.Size.X + 4 + _loopOut.Size.X;
-        var inLeft = Mirrored ? loopLeft + loopWidth + 6 : loopLeft - 6 - inOutWidth;
-        Place(_loopIn, inLeft, buttonsY);
-        Place(_loopOut, inLeft + _loopIn.Size.X + 4, buttonsY);
-        Place(_quantize, Mirrored ? inLeft + inOutWidth + 6 : inLeft - 6 - _quantize.Size.X, buttonsY);
+        var inLeft = _twoRows ? (Mirrored ? contentLeft : contentRight - inOutWidth)
+            : Mirrored ? loopLeft + loopWidth + 6 : loopLeft - 6 - inOutWidth;
+        Place(_loopIn, inLeft, inOutRowY);
+        Place(_loopOut, inLeft + _loopIn.Size.X + 4, inOutRowY);
+        Place(_quantize, Mirrored ? inLeft + inOutWidth + 6 : inLeft - 6 - _quantize.Size.X, inOutRowY);
+        if (_twoRows)
+            Place(_loading, Outer(0, _loading), inOutRowY + (_cue.Size.Y - _loading.Size.Y) / 2);
+        else
+            Place(_loading, Outer(transport + 12, _loading), buttonsY + (_cue.Size.Y - _loading.Size.Y) / 2);
 
         Place(_tempoReadout, columnLeft + (TEMPO_COLUMN - _tempoReadout.Size.X) / 2, top - 2);
         var faderTop = top - 2 + _tempoReadout.Size.Y + 4;

@@ -94,6 +94,16 @@ sealed class ContextMenu : Panel
     public IReadOnlyList<string>? SubmenuTexts =>
         _subBox.Visible ? _subBox.Children.OfType<Button>().Select(button => button.Text).ToList() : null;
 
+    /// <summary>
+    /// The texts of the menu's items, for tests.
+    /// </summary>
+    internal IReadOnlyList<string> ItemTexts => _box.Children.OfType<Button>().Select(button => button.Text).ToList();
+
+    /// <summary>
+    /// Chooses the item with <paramref name="text"/>, as clicking it would, for tests.
+    /// </summary>
+    internal void Choose(string text) => _box.Children.OfType<Button>().First(button => button.Text == text).RaiseClicked();
+
     void Fill(Panel box, IEnumerable<MenuItem> items)
     {
         foreach (var button in box.Children.OfType<Button>())

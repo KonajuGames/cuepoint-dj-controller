@@ -17,12 +17,14 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 - **Hotcues:** eight per deck, kept with each song.
 - **Loops:** from 1/16 to 32 beats, fitted to the beat grid, with halve and double.
 - **Loops set by hand:** **IN** marks where a loop starts and **OUT** loops back to it from there, on the beat with quantise on. Pressed while it loops, OUT moves its end. Halve and double work on it too, and reloop goes back to the loop's start, or plays the last loop again. They work without a beat grid as well.
+- **Pad modes:** the list beside SYNC sets what the pads do: HOT CUE, ROLL, JUMP or GRID.
 - **Loop rolls:** on the pads in ROLL mode. A roll loops for as long as its pad is held, then drops back in where the song would have got to.
 - **Beat jumps:** on the pads in JUMP mode (Shift + HOT CUE on the DDJ-SB3), back or on by 1, 4, 16 or 32 beats, staying in time. A loop moves with the jump.
 - **Quantise:** with a deck's **Q** lit, hotcues and the cue point go on the nearest beat, and jumping to a hotcue while playing lands in time. It's on to begin with.
 - **Scratching and backspins:** from a controller's jog wheel. The record follows the wheel, backwards too.
 - **Waveforms:** a scrolling waveform for each deck, coloured by bass, mids and treble. When synced, both decks scroll at the same rate. There's also an overview of the whole song with its hotcues, loop and beat grid.
 - **Waveform options:** the mouse wheel over the scrolling waveforms zooms both together, as the options' slider does. In the options, they can be coloured in the deck's colour or in three bands (bass red, mids green, treble blue), shown without the beat grid, or made taller to read from further away. All of it is kept between runs.
+- **Narrow windows:** when a deck is too narrow for its buttons, they get shorter ("4" for "LOOP 4") and lose their key letters. On a window narrower still, IN, OUT and Q move to a row of their own above, and the decks get a little taller.
 - **End-of-song warning:** in a song's last 30 seconds, the remaining time and the end of its overview flash red.
 
 ### Analysis
@@ -47,7 +49,9 @@ Each song is analysed in the background as it comes into view in the list. The a
 ### Mixer
 
 - **Each channel:** a trim, a three-band EQ with kills, a filter, a level meter, a fader, and headphone cue (PFL).
-- **Crossfader**, and automatic gain for each song.
+- **Knobs:** the trim, EQ and filter are knobs, as on a mixer. Drag up to turn one up and down to turn it down; Shift or Ctrl turns it finely, the mouse wheel nudges it, and a double-click puts it back to the top. A band turned all the way down is killed and lights red.
+- **Crossfader**, and automatic gain for each song (in the options).
+- **Headphones:** the headphones button in the title bar, lit while a deck is cued, drops down what they hear (the cued decks, the main mix, or a blend) and their volume.
 - **Master limiter:** keeps the mix under 1 dB below full scale when the decks are loud together, turning it down smoothly just before each peak rather than clipping. LIMIT by the master meter lights while it's working. It can be turned off in the options.
 - **Recording the mix:** the record button in the title bar records the main mix, as the room hears it, to a 24-bit WAV file in `Music\Cuepoint Recordings`, showing how long it's been going. A set of over four hours carries on into a second file.
 - **Outputs:** the main mix and the headphones can go to separate sound cards, or the headphones can use channels 3 and 4 of a four-channel controller's sound card.

@@ -268,6 +268,7 @@ sealed class TitleBar : Panel
     readonly Label _cpu;
     readonly Label _clock;
     readonly IconButton _maximize;
+    readonly IconButton _headphones;
     readonly Process _process = Process.GetCurrentProcess();
     readonly Stopwatch _sinceCpu = Stopwatch.StartNew();
     TimeSpan _cpuBefore;
@@ -300,6 +301,21 @@ sealed class TitleBar : Panel
     public Func<string?> AudioWarning { get; set; } = () => null;
 
     public event Action? OptionsClicked;
+
+    /// <summary>
+    /// The headphones button was clicked, to show or put away their settings below it.
+    /// </summary>
+    public event Action? HeadphonesClicked;
+
+    /// <summary>
+    /// Whether any deck's being heard in the headphones, which lights their button.
+    /// </summary>
+    public Func<bool> Cueing { get; set; } = () => false;
+
+    /// <summary>
+    /// The bottom right corner of the headphones button, where their settings drop down from.
+    /// </summary>
+    public float2 HeadphonesAnchor => _headphones.ScreenPosition + _headphones.Size;
     public event Action? MinimizeClicked;
     public event Action? MaximizeClicked;
     public event Action? CloseClicked;
@@ -334,6 +350,8 @@ sealed class TitleBar : Panel
         _right.Add(new Spacer(16));
         _clock = _right.Add(new Label(body) { Color = Theme.Text });
         _right.Add(new Spacer(12));
+        _headphones = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Headphones, Tooltip = "Headphones: what they hear, and how loud" });
+        _headphones.Clicked += _ => HeadphonesClicked?.Invoke();
         var options = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Cog, Tooltip = "Options" });
         options.Clicked += _ => OptionsClicked?.Invoke();
         _right.Add(new Spacer(8));
@@ -362,6 +380,7 @@ sealed class TitleBar : Panel
         _maximize.Icon = IsMaximized() ? TitleIcon.Restore : TitleIcon.Maximize;
         _maximize.Tooltip = IsMaximized() ? "Restore" : "Maximise";
         _record.Recording = Recording();
+        _headphones.IconColor = Cueing() ? Theme.Accent : Theme.Text;
         var warning = AudioWarning();
         _audioWarning.Visible = _audioWarningGap.Visible = warning is not null;
         _audioWarning.Text = warning?.ToUpperInvariant() ?? "";
@@ -392,6 +411,8 @@ sealed class TitleBar : Panel
     public override float2 Measure()
     {
         MeasureChildren();
+        // Measured even while it's hidden, to know whether it fits again.
+        _centre.Measure();
         return Size = new float2(Width, HEIGHT);
     }
 
@@ -400,7 +421,13 @@ sealed class TitleBar : Panel
         ArrangeSelf(position);
         float Middle(Element child) => MathF.Round(position.Y + (HEIGHT - child.Size.Y) / 2);
         _left.Arrange(new float2(position.X + 10, Middle(_left)));
-        _centre.Arrange(new float2(MathF.Round(position.X + (Width - _centre.Size.X) / 2), Middle(_centre)));
+        // The beat trackers and master level in the middle, or as near it as the sides leave room for; on a window
+        // too narrow for them at all, they're left out.
+        var centreMin = position.X + 10 + _left.Size.X + 16;
+        var centreMax = position.X + Width - _right.Size.X - 16 - _centre.Size.X;
+        _centre.Visible = centreMax >= centreMin;
+        var centreX = Math.Clamp(position.X + (Width - _centre.Size.X) / 2, centreMin, MathF.Max(centreMin, centreMax));
+        _centre.Arrange(new float2(MathF.Round(centreX), Middle(_centre)));
         _right.Arrange(new float2(position.X + Width - _right.Size.X, Middle(_right)));
         AlignMiddle(_left);
         AlignMiddle(_centre);

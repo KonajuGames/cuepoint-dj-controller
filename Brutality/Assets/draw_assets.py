@@ -1,6 +1,7 @@
 """Draws Cuepoint's images as PNGs: the logo (title bar and window icon), the list's small icons, the triangles
-used for arrows (the folder list's, the loop buttons', the nudge pads'), the options button's cog, the search box's
-clearing cross, and the folder list's icons.
+used for arrows (the folder list's, the loop buttons', the nudge pads'), the options button's cog, the headphones
+button, the mixer's knob caps and the dots drawn over them, the search box's clearing cross, and the folder list's
+icons.
 
 Run with any Python 3; it needs nothing installed. Shapes are distance fields, sampled 8x8 times per pixel so edges
 come out smooth at every size, and written with zlib as straight-alpha RGBA. Small icons are white, for the app to
@@ -220,6 +221,37 @@ def cog(cx, cy, teeth, body, tip, base_width, tip_width):
 COG = [(union(outline(cog(8, 8, 6, 4.6, 7.4, 3.6, 2.6), 1.1), ring(8, 8, 2.0, 1.1)), hex_colour(WHITE))]
 
 
+# The headphones button: a headband over two ear cups, in lines like the cog's.
+HEADPHONES = [
+    (
+        union(
+            intersect(ring(8, 8.6, 5.6, 1.3), lambda x, y: y - 9.0),
+            rounded(polygon([(1.9, 8.6), (4.3, 8.6), (4.3, 13.4), (1.9, 13.4)]), 0.7),
+            rounded(polygon([(11.7, 8.6), (14.1, 8.6), (14.1, 13.4), (11.7, 13.4)]), 0.7),
+        ),
+        hex_colour(WHITE),
+    )
+]
+
+
+# A mixer knob's cap, 20 units across, in colour: a dark rim, and a grey top lit from the top left, as a mixer's
+# knobs are. Its value and pointer are drawn over it by the app.
+def knob_fill(x, y):
+    t = max(0.0, min(1.0, ((x - 3) + (y - 3)) / 16))
+    a, b = hex_colour(0x5A5B68), hex_colour(0x2A2B33)
+    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3)) + (1.0,)
+
+
+KNOB = [
+    (circle(10, 10, 9.8), hex_colour(0x0E0F13)),
+    (circle(10, 10, 8.8), knob_fill),
+    (circle(10, 10, 6.6), hex_colour(0x34353F)),
+]
+
+# A soft round dot, drawn small for a knob's arc and pointer.
+DOT = [(circle(4, 4, 3.7), hex_colour(WHITE))]
+
+
 # The search box's clear button: a cross.
 CROSS = [(union(segment(2.5, 2.5, 7.5, 7.5, 1.5), segment(7.5, 2.5, 2.5, 7.5, 1.5)), hex_colour(WHITE))]
 
@@ -305,6 +337,9 @@ def main():
         ("triangle-left-10.png", TRIANGLE_LEFT, 10, 10),
         ("cog-18.png", COG, 18, 16),
         ("cross-10.png", CROSS, 10, 10),
+        ("headphones-18.png", HEADPHONES, 18, 16),
+        ("knob-20.png", KNOB, 20, 20),
+        ("dot-8.png", DOT, 8, 8),
         ("icon-library-14.png", NOTE, 14, 14),
         ("icon-drive-14.png", DRIVE, 14, 14),
         ("icon-folder-14.png", FOLDER, 14, 14),
@@ -324,7 +359,7 @@ def main():
         ("icon-filter-20.png", FUNNEL, 20, 14),
     ]
     # Previews go over the title bar's colour, since the icons are white.
-    previews = [("preview-logo.png", LOGO, 512, 64), ("preview-logo-small.png", LOGO, 22, 64), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16)]
+    previews = [("preview-logo.png", LOGO, 512, 64), ("preview-logo-small.png", LOGO, 22, 64), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16), ("preview-headphones.png", HEADPHONES, 256, 16), ("preview-knob.png", KNOB, 200, 20)]
     for name, layers, size, units in jobs:
         path = os.path.join(HERE, name)
         write_png(path, size, size, render(layers, size, units))

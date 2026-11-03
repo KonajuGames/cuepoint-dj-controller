@@ -5,8 +5,9 @@ namespace Brutality.UI;
 
 /// <summary>
 /// The app's pictures, packed into the atlas with the fonts: the logo, and small white icons for tinting, among them
-/// the triangles drawn for arrows, the options button's cog, the search box's cross and the folder list's icons, the
-/// last two again larger for the folder list's large text. Each is a PNG built into the app (see
+/// the triangles drawn for arrows, the options button's cog, the headphones button, the search box's cross and the
+/// folder list's icons, the last two again larger for the folder list's large text; and the mixer's knob caps, in
+/// colour, with the dot their arcs and pointers are drawn with. Each is a PNG built into the app (see
 /// Assets\draw_assets.py).
 /// </summary>
 sealed record Images(
@@ -20,7 +21,10 @@ sealed record Images(
     FolderIcons Folders,
     Image LargeTriangleRight,
     Image LargeTriangleDown,
-    FolderIcons LargeFolders
+    FolderIcons LargeFolders,
+    Image Headphones,
+    Image Knob,
+    Image Dot
 )
 {
     /// <summary>
@@ -38,7 +42,10 @@ sealed record Images(
             Folders: FolderIcons.Load(atlas, 14),
             LargeTriangleRight: atlas.AddImage(Read("triangle-right-14.png")),
             LargeTriangleDown: atlas.AddImage(Read("triangle-down-14.png")),
-            LargeFolders: FolderIcons.Load(atlas, 20)
+            LargeFolders: FolderIcons.Load(atlas, 20),
+            Headphones: atlas.AddImage(Read("headphones-18.png")),
+            Knob: atlas.AddImage(Read("knob-20.png")),
+            Dot: atlas.AddImage(Read("dot-8.png"))
         );
 
     /// <summary>
