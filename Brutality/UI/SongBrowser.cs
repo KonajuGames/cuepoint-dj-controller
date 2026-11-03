@@ -40,6 +40,9 @@ sealed class SongBrowser : Panel
     readonly Label _status;
     readonly ListColumn<Song> _titleColumn;
 
+    // The letters of the decks a song's on, sized to the list's text (see Measure).
+    readonly ListColumn<Song> _deckColumn;
+
     // Every column there is, in order, shown or not, and how wide each starts.
     readonly List<ListColumn<Song>> _columns = [];
     readonly Dictionary<ListColumn<Song>, float> _defaultWidths = [];
@@ -160,15 +163,14 @@ sealed class SongBrowser : Panel
         };
         // The title takes whatever width the rest leave, so it's the one column that isn't sized by hand.
         _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title) { SortKey = song => Text(song.Title), Resizable = false };
-        _columns.Add(
-            new ListColumn<Song>("", 26, song => string.Concat(DecksOf(song)))
-            {
-                Id = "Deck",
-                Color = song => DecksOf(song) is [var deck, ..] ? Theme.DeckColor(deck) : null,
-                SortKey = song => DecksOf(song) is { Count: > 0 } decks ? string.Concat(decks) : null,
-                Resizable = false,
-            }
-        );
+        _deckColumn = new ListColumn<Song>("", 26, song => string.Concat(DecksOf(song)))
+        {
+            Id = "Deck",
+            Color = song => DecksOf(song) is [var deck, ..] ? Theme.DeckColor(deck) : null,
+            SortKey = song => DecksOf(song) is { Count: > 0 } decks ? string.Concat(decks) : null,
+            Resizable = false,
+        };
+        _columns.Add(_deckColumn);
         _columns.Add(
             new ListColumn<Song>("", 30, _ => "")
             {
@@ -465,6 +467,9 @@ sealed class SongBrowser : Panel
     public override float2 Measure()
     {
         var inner = FixedSize - new float2(2 * PAD, 2 * PAD);
+
+        // The decks' letters fit whatever size the list's text is, both of them for a song on both decks.
+        _deckColumn.Width = MathF.Ceiling(List.Font.Advance("AB")) + 2 * List.CellPadding;
 
         // The title takes whatever width the other columns leave, less the scrollbar's.
         var others = List.Columns.Where(column => column != _titleColumn).Sum(column => column.Width);
