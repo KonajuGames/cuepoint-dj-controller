@@ -161,7 +161,9 @@ sealed record MidiBinding
 }
 
 /// <summary>
-/// A controller's bindings, kept per device by name.
+/// A controller's bindings, kept per device by name, with which controls were changed by hand. A device with a
+/// built-in preset gets the preset with its own changes laid over it (see <see cref="Over"/>), so controls added to
+/// the preset later still reach a controller whose mapping was changed before.
 /// </summary>
 sealed class ControllerMapping
 {
@@ -177,7 +179,13 @@ sealed class ControllerMapping
     public string Device { get; set; } = "";
     public List<MidiBinding> Bindings { get; set; } = [];
 
-    public ControllerMapping Copy() => new() { Device = Device, Bindings = [.. Bindings] };
+    /// <summary>
+    /// The controls bound or unbound by hand, or that lost their binding to one bound by hand: those a preset's own
+    /// bindings mustn't come back for. Null in a mapping saved before it was kept (see <see cref="Over"/>).
+    /// </summary>
+    public List<string>? Changed { get; set; }
+
+    public ControllerMapping Copy() => new() { Device = Device, Bindings = [.. Bindings], Changed = Changed is null ? null : [.. Changed] };
 
     /// <summary>
     /// Binds <paramref name="binding"/>'s control to its message alone: whatever else the control had, and whatever
@@ -185,14 +193,52 @@ sealed class ControllerMapping
     /// </summary>
     public void Bind(MidiBinding binding)
     {
-        Bindings.RemoveAll(other =>
+        var displaced = Bindings.Where(other =>
             other.Control == binding.Control
             || (other.Kind == binding.Kind && other.Channel == binding.Channel && (other.Number == binding.Number || other.Fine == binding.Number))
-        );
+        ).ToList();
+        Bindings.RemoveAll(displaced.Contains);
         Bindings.Add(binding);
+        MarkChanged([binding.Control, .. displaced.Select(other => other.Control)]);
     }
 
-    public void Unbind(string control) => Bindings.RemoveAll(binding => binding.Control == control);
+    public void Unbind(string control)
+    {
+        Bindings.RemoveAll(binding => binding.Control == control);
+        MarkChanged([control]);
+    }
+
+    void MarkChanged(IEnumerable<string> controls)
+    {
+        Changed ??= [];
+        foreach (var control in controls)
+        {
+            if (!Changed.Contains(control))
+                Changed.Add(control);
+        }
+    }
+
+    /// <summary>
+    /// <paramref name="preset"/> with <paramref name="saved"/>'s own bindings in place of its: each control
+    /// <paramref name="saved"/> binds, or that was changed by hand, as <paramref name="saved"/> has it, and the rest
+    /// as the preset has them, unless their message is taken. A mapping saved before the changes were kept counts the
+    /// controls it binds as changed (a control unbound by hand back then comes back from the preset). The other
+    /// controls' preset bindings come first, then the saved ones.
+    /// </summary>
+    public static ControllerMapping Over(ControllerMapping preset, ControllerMapping saved)
+    {
+        var changed = saved.Changed ?? saved.Bindings.Select(binding => binding.Control).Distinct().ToList();
+        bool Taken(MidiBinding binding) =>
+            saved.Bindings.Any(other =>
+                other.Kind == binding.Kind
+                && other.Channel == binding.Channel
+                && (other.Number == binding.Number || other.Fine == binding.Number || (binding.Fine is { } fine && (other.Number == fine || other.Fine == fine)))
+            );
+        var fromPreset = preset.Bindings
+            .Where(binding => !changed.Contains(binding.Control) && saved.Bindings.All(other => other.Control != binding.Control) && !Taken(binding))
+            .ToList();
+        return new ControllerMapping { Device = saved.Device, Bindings = [.. fromPreset, .. saved.Bindings], Changed = [.. changed] };
+    }
 
     public static ControllerMapping? Load(string path)
     {

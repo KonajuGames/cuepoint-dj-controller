@@ -139,7 +139,10 @@ sealed class MidiControls : IDisposable
 
     void OnConnected(MidiDevice device)
     {
-        var mapping = ControllerMapping.Load(ControllerMapping.PathFor(_folder, device.Name)) ?? ControllerPresets.For(device.Name);
+        // What was changed by hand, over the built-in mapping if there is one, so controls added to it since still come.
+        var saved = ControllerMapping.Load(ControllerMapping.PathFor(_folder, device.Name));
+        var preset = ControllerPresets.For(device.Name);
+        var mapping = saved is not null && preset is not null ? ControllerMapping.Over(preset, saved) : saved ?? preset;
         _mappings[device] = mapping ?? new ControllerMapping { Device = device.Name };
         Log?.Invoke(
             mapping is null ? $"Controller {device.Name} connected, with nothing mapped yet: bind its controls in the options"
