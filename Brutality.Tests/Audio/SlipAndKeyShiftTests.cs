@@ -156,6 +156,31 @@ public sealed class SlipAndKeyShiftTests : IDisposable
     }
 
     [Fact]
+    public void A_song_s_first_memory_cue_is_its_cue_point_and_where_it_waits_once_loaded()
+    {
+        _deck.SetMemoryCues([TimeSpan.FromSeconds(12), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(99)]);
+
+        Assert.Equal(new[] { TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(12) }, _deck.MemoryCues);
+        Assert.Equal(4, _deck.CuePoint.TotalSeconds, 2);
+        Assert.Equal(4, _deck.Position.TotalSeconds, 2);
+        Assert.False(_deck.IsPlaying);
+
+        _deck.Load(_folder["song.wav"]);
+        Assert.Empty(_deck.MemoryCues);
+    }
+
+    [Fact]
+    public void Memory_cues_put_back_partway_through_set_the_cue_point_but_leave_the_deck_where_it_is()
+    {
+        _deck.Seek(TimeSpan.FromSeconds(10));
+
+        _deck.SetMemoryCues([TimeSpan.FromSeconds(4)]);
+
+        Assert.Equal(4, _deck.CuePoint.TotalSeconds, 2);
+        Assert.Equal(10, _deck.Position.TotalSeconds, 2);
+    }
+
+    [Fact]
     public void Key_shift_moves_the_key_by_semitones_within_an_octave_and_goes_with_the_song()
     {
         _deck.KeyShift = 2;

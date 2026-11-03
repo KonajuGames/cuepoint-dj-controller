@@ -550,6 +550,7 @@ sealed class DeckPanel : Panel
             _overview.Marks.Clear();
             _overview.Waveform = null;
             _overview.Detail = null;
+            _overview.MemoryCues = [];
             _overview.Grid = null;
             _overview.Flags = [];
             _overview.Region = null;
@@ -594,6 +595,7 @@ sealed class DeckPanel : Panel
         _overview.Enabled = true;
         _overview.Waveform = _deck.Waveform;
         _overview.Detail = _deck.Detail;
+        _overview.MemoryCues = _deck.MemoryCues;
         _overview.Grid = _deck.Analysis?.Grid;
         _overview.Pins = _grid?.Pins ?? [];
         _overview.Max = (float)_deck.Duration.TotalSeconds;

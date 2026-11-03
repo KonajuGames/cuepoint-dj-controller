@@ -3,6 +3,7 @@ using Brutal.Numerics;
 using Brutal.VulkanApi;
 using Brutality;
 using Brutality.Audio;
+using Brutality.Audio.Analysis;
 using Brutality.Input;
 using Brutality.Midi;
 using Brutality.Music;
@@ -171,33 +172,79 @@ static void Run()
         virtualFolders.RemoveFile = WindowsShell.MoveToRecycleBin;
 
     // Other DJ software's playlists and hot cues: Rekordbox collections exported as XML, and Serato's crates. Each
-    // collection's hot cues come into the library once (and again when it's exported afresh), for songs with none
-    // of their own here; a record of what's come in keeps hot cues cleared here from coming back.
+    // collection's hot cues, memory cues and beat grids come into the library once (and again when it's exported
+    // afresh), each for songs with none of their own here; a record of what's come in keeps what's cleared here from
+    // coming back.
     var imports = ImportedLibraries.Find(library.Root, VirtualFolders.ReadyDrives().Select(drive => drive.Root), settings.RekordboxXmlFiles);
     var importRecordPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "imports.json");
     var importRecord = ImportRecord.Load(importRecordPath);
-    // A collection's hot cues, for each of its songs here with none of their own; how many songs got them, and why
-    // they couldn't be saved, if they couldn't.
-    (int Songs, string? Error) ImportHotcues(RekordboxCollection collection)
+    // A collection's hot cues, memory cues and beat grids, each for its songs here with none of their own: a
+    // Rekordbox grid takes the analysed one's place, as one fixed by hand here would. What came in, as "hot cues for
+    // 3 songs, ...", or null if nothing did; and why it couldn't be saved, if it couldn't.
+    (string? News, string? Error) ImportCollection(RekordboxCollection collection)
     {
-        var songs = 0;
-        foreach (var (path, cues) in collection.Hotcues)
+        int hotcues = 0, memoryCues = 0, grids = 0;
+        var gridded = new List<string>();
+        foreach (var path in collection.Songs)
         {
-            if (!File.Exists(path) || database.GetHotcues(path).Any(cue => cue is not null))
+            if (!File.Exists(path))
                 continue;
-            database.SetHotcues(path, cues);
-            songs++;
+            if (collection.Hotcues.TryGetValue(path, out var cues) && database.GetHotcues(path).All(cue => cue is null))
+            {
+                database.SetHotcues(path, cues);
+                hotcues++;
+            }
+            if (collection.MemoryCues.TryGetValue(path, out var memory) && database.GetMemoryCues(path).Count == 0)
+            {
+                database.SetMemoryCues(path, memory);
+                memoryCues++;
+            }
+            if (collection.Grids.TryGetValue(path, out var grid) && !database.HasGridEdit(path))
+            {
+                // Where the tempo changes, each change is pinned, as it would be fixing the grid here.
+                database.SetGridEdit(path, new GridEdit(grid, grid.IsVariable ? grid.Markers.Select(marker => marker.Time).ToList() : []));
+                gridded.Add(path);
+                grids++;
+            }
         }
-        if (songs == 0)
-            return (0, null);
+        UseGrids(gridded);
+
+        static string Songs(int count) => count == 1 ? "1 song" : $"{count} songs";
+        var news = new List<string>();
+        if (hotcues > 0)
+            news.Add($"hot cues for {Songs(hotcues)}");
+        if (memoryCues > 0)
+            news.Add($"memory cues for {Songs(memoryCues)}");
+        if (grids > 0)
+            news.Add($"beat grids for {Songs(grids)}");
+        if (news.Count == 0)
+            return (null, null);
+        var said = news.Count == 1 ? news[0] : $"{string.Join(", ", news.Take(news.Count - 1))} and {news[^1]}";
         try
         {
             database.Save();
-            return (songs, null);
+            return (said, null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return (songs, e.Message);
+            return (said, e.Message);
+        }
+    }
+
+    // Songs given a beat grid from elsewhere use it straight away: in the library, and on a deck.
+    void UseGrids(IReadOnlyCollection<string> paths)
+    {
+        if (paths.Count == 0)
+            return;
+        foreach (var path in paths)
+        {
+            if (library.Find(path) is { Analysis: { } analysis } song)
+                song.Analysis = database.WithEdits(path, analysis);
+        }
+        foreach (var deck in decks)
+        {
+            if (deck.FilePath is { } path && paths.Contains(path, StringComparer.OrdinalIgnoreCase) && deck.Analysis is { } analysis)
+                deck.Analysis = database.WithEdits(path, analysis);
         }
     }
 
@@ -206,9 +253,9 @@ static void Run()
     {
         if (!ImportRecord.IsNew(importRecord.Rekordbox, collection.FilePath))
             continue;
-        var (songs, error) = ImportHotcues(collection);
-        if (songs > 0)
-            importNews.Add($"Brought in hot cues for {songs} {(songs == 1 ? "song" : "songs")} from {collection.FilePath}");
+        var (news, error) = ImportCollection(collection);
+        if (news is not null)
+            importNews.Add($"Brought in {news} from {collection.FilePath}");
         if (error is not null)
             importNews.Add($"Couldn't save them: {error}");
     }
@@ -363,8 +410,8 @@ static void Run()
     // Windows' own, say, which runs its own events while it's open.
     var afterEvents = new Queue<Action>();
 
-    // A Rekordbox collection chosen to import: its playlists in the folder list, and hot cues for its songs with none
-    // here. It's remembered, so it's found again next time, and read again whenever it changes.
+    // A Rekordbox collection chosen to import: its playlists in the folder list, and hot cues, memory cues and beat
+    // grids for its songs with none here. It's remembered, so it's found again next time, and read again whenever it changes.
     void ImportRekordbox()
     {
         var owner = OperatingSystem.IsWindows() ? WindowChrome.Handle : 0;
@@ -388,11 +435,11 @@ static void Run()
         if (folders.FirstOrDefault(node => node.Name == "Rekordbox" && node.Parent is null) is { } rekordbox)
             screen.FolderTree.SetExpanded(rekordbox, true);
 
-        var (songs, error) = ImportHotcues(collection);
+        var (news, error) = ImportCollection(collection);
         var playlists = Count(collection.Playlists);
         screen.Log(
             $"Imported {Path.GetFileName(path)}: {playlists} {(playlists == 1 ? "playlist" : "playlists")} under Rekordbox, "
-                + (songs > 0 ? $"hot cues for {songs} {(songs == 1 ? "song" : "songs")}" : "no hot cues needed")
+                + (news ?? "no cues or grids needed")
                 + (error is null ? "" : $"; couldn't save them: {error}")
         );
 
@@ -589,7 +636,10 @@ static void Run()
             }
             loaded.Analysis = loaded.FilePath is { } path ? library.Find(path)?.Analysis : null;
             if (loaded.FilePath is { } file)
+            {
                 loaded.SetHotcues(database.GetHotcues(file));
+                loaded.SetMemoryCues(database.GetMemoryCues(file));
+            }
         };
 
         // Hotcues are saved as soon as they're set or cleared, so none is lost if the app closes mid-set.
@@ -1181,10 +1231,10 @@ static void Run()
                 continue;
             imports.Put(changed);
             ShowRekordbox();
-            var (songs, error) = ImportHotcues(changed);
+            var (news, error) = ImportCollection(changed);
             screen.Log(
-                error is not null ? $"{Path.GetFileName(changed.FilePath)} changed; couldn't save its hot cues: {error}"
-                : songs > 0 ? $"{Path.GetFileName(changed.FilePath)} changed, so it's read again; hot cues for {songs} {(songs == 1 ? "song" : "songs")} brought in"
+                error is not null ? $"{Path.GetFileName(changed.FilePath)} changed; couldn't save what came in: {error}"
+                : news is not null ? $"{Path.GetFileName(changed.FilePath)} changed, so it's read again; {news} brought in"
                 : $"{Path.GetFileName(changed.FilePath)} changed, so its playlists are read again"
             );
         }

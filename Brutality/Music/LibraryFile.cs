@@ -10,7 +10,7 @@ namespace Brutality.Music;
 /// keeps one for each drive). Each song's analysis, or why it couldn't be analysed, with the file size and time it was
 /// made from so a changed file gets analysed again, and its title, artist and album from its tags, so they're known
 /// before the tags are read again. A beat grid is stored as its markers, each a beat time and the
-/// tempo from there on. Hotcues, and beat grids fixed by hand, are kept apart from the analysis, since they're the
+/// tempo from there on. Hotcues, memory cues, and beat grids fixed by hand, are kept apart from the analysis, since they're the
 /// DJ's own work: analysing again, or a newer analysis, leaves them be, and a song's fixed grid is given in place of
 /// the analysed one wherever its analysis is.
 ///
@@ -53,17 +53,19 @@ sealed class LibraryFile
     public bool Dirty { get; private set; }
 
     /// <summary>
-    /// Whether it knows nothing: no analyses, hotcues or fixed grids.
+    /// Whether it knows nothing: no analyses, hotcues, memory cues or fixed grids.
     /// </summary>
-    public bool IsEmpty => _tracks.Count == 0 && _hotcues.Count == 0 && _grids.Count == 0;
+    public bool IsEmpty => _tracks.Count == 0 && _hotcues.Count == 0 && _memoryCues.Count == 0 && _grids.Count == 0;
 
     /// <summary>
     /// Every song it knows anything about, by its full path.
     /// </summary>
-    public IEnumerable<string> Paths => _tracks.Keys.Concat(_hotcues.Keys).Concat(_grids.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+    public IEnumerable<string> Paths =>
+        _tracks.Keys.Concat(_hotcues.Keys).Concat(_memoryCues.Keys).Concat(_grids.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
 
     readonly Dictionary<string, TrackRecord> _tracks;
     readonly Dictionary<string, double?[]> _hotcues;
+    readonly Dictionary<string, double[]> _memoryCues;
     readonly Dictionary<string, GridRecord> _grids;
 
     LibraryFile(
@@ -71,6 +73,7 @@ sealed class LibraryFile
         string? root,
         Dictionary<string, TrackRecord> tracks,
         Dictionary<string, double?[]> hotcues,
+        Dictionary<string, double[]> memoryCues,
         Dictionary<string, GridRecord> grids,
         string? loadError
     )
@@ -79,6 +82,7 @@ sealed class LibraryFile
         Root = root;
         _tracks = Whole(tracks);
         _hotcues = Whole(hotcues);
+        _memoryCues = Whole(memoryCues);
         _grids = Whole(grids);
         LoadError = loadError;
     }
@@ -132,19 +136,19 @@ sealed class LibraryFile
         if (root is not null)
             root = WithSeparator(root);
         if (!File.Exists(filePath))
-            return new LibraryFile(filePath, root, [], [], [], null);
+            return new LibraryFile(filePath, root, [], [], [], [], null);
 
         try
         {
             using var stream = File.OpenRead(filePath);
             var file = JsonSerializer.Deserialize<DatabaseFile>(stream, JsonOptions);
             if (file is null || file.Version != FILE_VERSION)
-                return new LibraryFile(filePath, root, [], [], [], $"Unrecognised database version {file?.Version}");
-            return new LibraryFile(filePath, root, file.Tracks ?? [], file.Hotcues ?? [], file.Grids ?? [], null);
+                return new LibraryFile(filePath, root, [], [], [], [], $"Unrecognised database version {file?.Version}");
+            return new LibraryFile(filePath, root, file.Tracks ?? [], file.Hotcues ?? [], file.MemoryCues ?? [], file.Grids ?? [], null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new LibraryFile(filePath, root, [], [], [], e.Message);
+            return new LibraryFile(filePath, root, [], [], [], [], e.Message);
         }
     }
 
@@ -165,6 +169,7 @@ sealed class LibraryFile
         }
         Move(_tracks, other._tracks);
         Move(_hotcues, other._hotcues);
+        Move(_memoryCues, other._memoryCues);
         Move(_grids, other._grids);
         if (moving.Count > 0)
             Dirty = other.Dirty = true;
@@ -302,6 +307,26 @@ sealed class LibraryFile
     }
 
     /// <summary>
+    /// The song at <paramref name="path"/>'s memory cues, in order through it; none if it has none.
+    /// </summary>
+    public IReadOnlyList<TimeSpan> GetMemoryCues(string path) =>
+        _memoryCues.TryGetValue(Path.GetFullPath(path), out var seconds) ? seconds.Select(TimeSpan.FromSeconds).ToList() : [];
+
+    /// <summary>
+    /// Keeps <paramref name="cues"/> as the song at <paramref name="path"/>'s memory cues, in order, or forgets them
+    /// if there are none.
+    /// </summary>
+    public void SetMemoryCues(string path, IReadOnlyList<TimeSpan> cues)
+    {
+        Dirty = true;
+        path = Path.GetFullPath(path);
+        if (cues.Count == 0)
+            _memoryCues.Remove(path);
+        else
+            _memoryCues[path] = cues.Select(at => Math.Round(at.TotalSeconds, 3)).Distinct().Order().ToArray();
+    }
+
+    /// <summary>
     /// <paramref name="analysis"/> of the song at <paramref name="path"/>, with its beat grid as fixed by hand if it
     /// was.
     /// </summary>
@@ -385,6 +410,7 @@ sealed class LibraryFile
                     Version = FILE_VERSION,
                     Tracks = Kept(_tracks),
                     Hotcues = Kept(_hotcues),
+                    MemoryCues = _memoryCues.Count > 0 ? Kept(_memoryCues) : null,
                     Grids = _grids.Count > 0 ? Kept(_grids) : null,
                 },
                 JsonOptions
@@ -402,6 +428,11 @@ sealed class LibraryFile
         /// Each song's hotcues in seconds, null where one isn't set; songs without any are left out.
         /// </summary>
         public Dictionary<string, double?[]>? Hotcues { get; set; }
+
+        /// <summary>
+        /// Each song's memory cues in seconds, in order; songs without any are left out.
+        /// </summary>
+        public Dictionary<string, double[]>? MemoryCues { get; set; }
 
         /// <summary>
         /// Each song's beat grid as fixed by hand; songs left as analysed are left out.

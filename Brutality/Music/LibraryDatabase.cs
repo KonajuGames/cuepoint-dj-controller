@@ -159,6 +159,10 @@ sealed class LibraryDatabase
 
     public void SetHotcues(string path, IReadOnlyList<TimeSpan?> hotcues) => FileFor(path).SetHotcues(path, hotcues);
 
+    public IReadOnlyList<TimeSpan> GetMemoryCues(string path) => FileFor(path).GetMemoryCues(path);
+
+    public void SetMemoryCues(string path, IReadOnlyList<TimeSpan> cues) => FileFor(path).SetMemoryCues(path, cues);
+
     public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) => FileFor(path).WithEdits(path, analysis);
 
     public GridEdit? GetGridEdit(string path, double duration) => FileFor(path).GetGridEdit(path, duration);

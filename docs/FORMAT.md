@@ -1,6 +1,6 @@
 # Cuepoint file formats
 
-This document describes the files Cuepoint keeps about a music library: the **library files** (`library.json`), which hold each song's analysis, hotcues and hand-fixed beat grid, and the **virtual folders** (`.m3u8` playlists). It's written for implementing a reader. Every rule here is taken from the code that writes the files: `Brutality/Music/LibraryFile.cs`, `LibraryDatabase.cs` and `VirtualFolders.cs`.
+This document describes the files Cuepoint keeps about a music library: the **library files** (`library.json`), which hold each song's analysis, hotcues, memory cues and hand-fixed beat grid, and the **virtual folders** (`.m3u8` playlists). It's written for implementing a reader. Every rule here is taken from the code that writes the files: `Brutality/Music/LibraryFile.cs`, `LibraryDatabase.cs` and `VirtualFolders.cs`.
 
 All files are UTF-8 without a byte order mark. Paths use Windows separators (`\`).
 
@@ -33,6 +33,7 @@ Notes:
   "version": 1,
   "tracks":  { "<song path>": <Track>, ... },
   "hotcues": { "<song path>": [ <seconds or null>, ... ], ... },
+  "memoryCues": { "<song path>": [ <seconds>, ... ], ... },
   "grids":   { "<song path>": <Grid>, ... }
 }
 ```
@@ -42,11 +43,12 @@ Notes:
 | `version` | integer | The file format's version. **Always `1`.** A file with any other version is ignored by the app. |
 | `tracks` | object | The analysis of each song, or why it couldn't be analysed (see 1.3). May be empty `{}`. |
 | `hotcues` | object | Each song's hotcues (see 1.5). May be empty `{}`. Songs with no hotcues are left out. |
+| `memoryCues` | object | Each song's memory cues (see 1.5). **Left out entirely** when there are none. |
 | `grids` | object | Beat grids fixed by hand (see 1.6). **Left out entirely** when there are none. |
 
 Property names are camelCase. A property whose value would be `null` is left out rather than written as `null`; that applies to every object below. Readers should treat any missing property as its default, and ignore properties they don't know.
 
-The three maps are independent. A song can have hotcues or a fixed grid without an analysis, and the other way round.
+The maps are independent. A song can have hotcues, memory cues or a fixed grid without an analysis, and the other way round.
 
 ### 1.3 `tracks`: a song's analysis
 
@@ -157,7 +159,7 @@ timeOfBeat(b):
 - For one marker, it's that marker's `bpm`.
 - For several, give each marker a span from its `time` to the next marker's (from 0 for the first, and to `duration` for the last). The main tempo is the weighted median `bpm` over those spans: sort them by `bpm` and take the first whose running total of seconds reaches half the total.
 
-### 1.5 `hotcues`
+### 1.5 `hotcues` and `memoryCues`
 
 ```json
 "hotcues": {
@@ -167,6 +169,17 @@ timeOfBeat(b):
 
 - **The array:** each entry is a hotcue's position in seconds from the start of the song (rounded to 3 decimal places), or `null` where that hotcue isn't set. The entries are hotcues 1, 2, 3 and so on in order. The app has **8 hotcues** and writes 8 entries, but a reader should accept any length; missing entries mean not set.
 - **Songs with no hotcues set** are left out of the map.
+
+**`memoryCues`**, beside it, holds each song's memory cues: places marked in the song, brought in from Rekordbox.
+
+```json
+"memoryCues": {
+  "Music\\Some Artist\\Song.m4a": [0.025, 32.5, 96.0]
+}
+```
+
+- **The array:** each memory cue's position in seconds (rounded to 3 decimal places), in increasing order, without repeats. The first is where the song's cue point starts when it's loaded.
+- **Songs with none** are left out, and the whole map is left out when no song has any.
 
 ### 1.6 `grids`: beat grids fixed by hand
 
@@ -188,7 +201,7 @@ timeOfBeat(b):
 
 **Where a song has an entry in `grids`, that grid replaces the analysed one** (`tracks[…].grid` and `downbeat`) everywhere: for tempo, sync, beats, bars and display. Its length comes from the analysis's `duration`. An entry whose markers are empty, or not in increasing time order, is ignored.
 
-Fixed grids survive re-analysis, since they're kept apart from `tracks`. A song can be in `grids` without being in `tracks`.
+Fixed grids survive re-analysis, since they're kept apart from `tracks`. A song can be in `grids` without being in `tracks`. A beat grid brought in from Rekordbox is kept here too, as if fixed by hand: its tempo changes are its `pins`.
 
 ### 1.7 Keys
 

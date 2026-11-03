@@ -99,6 +99,25 @@ public class LibraryFileTests
     }
 
     [Fact]
+    public void Memory_cues_are_kept_in_order_and_forgotten_once_cleared()
+    {
+        using var folder = new TempFolder();
+        var path = folder["Music", "a.mp3"];
+        var file = LibraryFile.Load(folder["library.json"]);
+
+        file.SetMemoryCues(path, [TimeSpan.FromSeconds(64.12345), TimeSpan.FromSeconds(0.5), TimeSpan.FromSeconds(0.5)]);
+        file.Save();
+        var loaded = LibraryFile.Load(folder["library.json"]);
+        Assert.Equal(new[] { TimeSpan.FromSeconds(0.5), TimeSpan.FromSeconds(64.123) }, loaded.GetMemoryCues(path));
+        Assert.False(loaded.IsEmpty);
+
+        loaded.SetMemoryCues(path, []);
+        loaded.Save();
+        Assert.Empty(LibraryFile.Load(folder["library.json"]).GetMemoryCues(path));
+        Assert.DoesNotContain("memoryCues", File.ReadAllText(folder["library.json"]));
+    }
+
+    [Fact]
     public void A_grid_fixed_by_hand_is_used_in_place_of_the_analysed_one()
     {
         using var folder = new TempFolder();

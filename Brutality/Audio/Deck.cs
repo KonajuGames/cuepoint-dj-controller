@@ -748,6 +748,7 @@ sealed partial class Deck : IDisposable
         _cueFrames = 0;
         _previewing = false;
         Array.Clear(_hotcues);
+        _memoryCues.Clear();
         (_manualLoop, _loopIn, _lastLoop) = (false, null, null);
     }
 
@@ -887,6 +888,32 @@ sealed partial class Deck : IDisposable
     {
         for (var i = 0; i < HOTCUE_COUNT; i++)
             _hotcues[i] = i < hotcues.Count && hotcues[i] is { } at && IsLoaded && at >= TimeSpan.Zero && at <= Duration ? at : null;
+    }
+
+    readonly List<TimeSpan> _memoryCues = [];
+
+    /// <summary>
+    /// The song's memory cues, in order through it: places marked to come back to, as Rekordbox has them. The first is
+    /// where the cue point starts. Cleared when another song loads.
+    /// </summary>
+    public IReadOnlyList<TimeSpan> MemoryCues => _memoryCues;
+
+    /// <summary>
+    /// Puts back the memory cues saved for the loaded song (any past its end are left out), the first as the cue
+    /// point; and if the deck's paused at the very start, as a song is once it's loaded, it goes there, ready to play.
+    /// </summary>
+    public void SetMemoryCues(IReadOnlyList<TimeSpan> cues)
+    {
+        _memoryCues.Clear();
+        if (!IsLoaded || _pcm is not { } pcm)
+            return;
+        _memoryCues.AddRange(cues.Where(at => at >= TimeSpan.Zero && at <= Duration).Distinct().Order());
+        if (_memoryCues.Count == 0)
+            return;
+        var waitingAtStart = !IsPlaying && !_previewing && !IsLooping && !IsPlatterActive && _track.GetPlaybackPosition() <= 0;
+        _cueFrames = Math.Clamp(ToFrames(_memoryCues[0]), 0, pcm.Frames - 1);
+        if (waitingAtStart)
+            PauseAt(_cueFrames);
     }
 
     /// <summary>

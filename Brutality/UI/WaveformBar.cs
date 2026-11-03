@@ -95,6 +95,14 @@ sealed class WaveformBar : Slider
     /// </summary>
     public IReadOnlyList<double> Pins { get; set; } = [];
 
+    /// <summary>
+    /// The song's memory cues, in seconds: each a faint line in <see cref="MemoryCueColor"/> with a small triangle at
+    /// the bottom, as Rekordbox marks them.
+    /// </summary>
+    public IReadOnlyList<TimeSpan> MemoryCues { get; set; } = [];
+
+    public float4 MemoryCueColor { get; set; } = Colors.Hex(0xE5484D);
+
     public float4 PinColor { get; set; } = Colors.White;
 
     public Font? FlagFont { get; set; }
@@ -148,6 +156,7 @@ sealed class WaveformBar : Slider
         DrawWarning(batch, left);
         DrawGrid(batch, left);
         DrawPins(batch, left);
+        DrawMemoryCues(batch, left);
         DrawFlags(batch, left);
         DrawGhost(batch, left);
     }
@@ -170,6 +179,21 @@ sealed class WaveformBar : Slider
         var end = MathF.Round(left + OffsetOf(1));
         if (end > start)
             batch.AddRect(new float2(start, ScreenPosition.Y), new float2(end - start, Size.Y), Faded(Theme.Fade(WarningColor, 0.35f)));
+    }
+
+    void DrawMemoryCues(Batch batch, float left)
+    {
+        if (Max <= Min)
+            return;
+        var bottom = ScreenPosition.Y + Size.Y;
+        foreach (var cue in MemoryCues)
+        {
+            var x = MathF.Round(left + OffsetOf(Math.Clamp(((float)cue.TotalSeconds - Min) / (Max - Min), 0, 1)));
+            batch.AddRect(new float2(x, ScreenPosition.Y), new float2(1, Size.Y), Faded(Theme.Fade(MemoryCueColor, 0.6f)));
+            // A triangle pointing up at it, 7 pixels across.
+            for (var row = 0; row < 4; row++)
+                batch.AddRect(new float2(x - row, bottom - 4 + row), new float2(2 * row + 1, 1), Faded(MemoryCueColor));
+        }
     }
 
     void DrawPins(Batch batch, float left)

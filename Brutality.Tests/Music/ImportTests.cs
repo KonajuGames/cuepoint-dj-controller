@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Brutality.Audio.Analysis;
 using Brutality.Music.Imports;
 
 namespace Brutality.Tests.Music;
@@ -17,8 +18,14 @@ public class RekordboxXmlTests
               <POSITION_MARK Name="Drop" Type="0" Start="64.5" Num="0" Red="40" Green="226" Blue="20"/>
               <POSITION_MARK Name="" Type="0" Start="96.125" Num="3"/>
               <POSITION_MARK Name="" Type="4" Start="120" End="128" Num="1"/>
+              <POSITION_MARK Name="" Type="4" Start="32.5" End="36.25" Num="-1"/>
             </TRACK>
-            <TRACK TrackID="12" Name="Two" Location="file://localhost/D:/Sets/Two.flac"/>
+            <TRACK TrackID="12" Name="Two" TotalTime="240" Location="file://localhost/D:/Sets/Two.flac">
+              <TEMPO Inizio="1.5" Bpm="100.00" Metro="4/4" Battito="3"/>
+              <TEMPO Inizio="61.5" Bpm="102.50" Metro="4/4" Battito="3"/>
+              <TEMPO Inizio="61.5" Bpm="104.00" Metro="4/4" Battito="3"/>
+              <TEMPO Inizio="bad" Bpm="104.00" Metro="4/4" Battito="1"/>
+            </TRACK>
             <TRACK TrackID="13" Name="Mac" Location="file://localhost/Users/dj/Music/Three.mp3">
               <POSITION_MARK Name="" Type="0" Start="5" Num="0"/>
             </TRACK>
@@ -59,6 +66,49 @@ public class RekordboxXmlTests
         Assert.Equal(TimeSpan.FromSeconds(120), cues[1]);
         Assert.Equal(TimeSpan.FromSeconds(96.125), cues[3]);
         Assert.Equal(new[] { 0, 1, 3 }, cues.Select((cue, i) => (cue, i)).Where(pair => pair.cue is not null).Select(pair => pair.i));
+    }
+
+    [Fact]
+    public void Memory_cues_and_memory_loops_come_in_order_as_memory_cues()
+    {
+        using var folder = new TempFolder();
+        var collection = Load(folder);
+
+        Assert.Equal(new[] { TimeSpan.FromSeconds(0.025), TimeSpan.FromSeconds(32.5) }, collection.MemoryCues[@"C:\Music\A Song.mp3"]);
+        Assert.Single(collection.MemoryCues);
+    }
+
+    [Fact]
+    public void A_steady_beat_grid_comes_from_its_one_tempo()
+    {
+        using var folder = new TempFolder();
+        var grid = Load(folder).Grids[@"C:\Music\A Song.mp3"];
+
+        Assert.Equal(new[] { new GridMarker(0.025, 128) }, grid.Markers);
+        // Battito 1: the marker's beat starts a bar.
+        Assert.True(grid.IsBarStart(0));
+    }
+
+    [Fact]
+    public void A_changing_beat_grid_keeps_its_tempos_in_order_and_where_its_bars_start()
+    {
+        using var folder = new TempFolder();
+        var grid = Load(folder).Grids[@"D:\Sets\Two.flac"];
+
+        // A second tempo at the same moment takes the first's place; one that won't read is left out.
+        Assert.Equal(new[] { new GridMarker(1.5, 100), new GridMarker(61.5, 104) }, grid.Markers);
+        Assert.Equal(240, grid.Duration);
+        // Battito 3: the first marker's beat is the third of its bar, so the bar starts two beats later.
+        Assert.Equal(2, grid.BarPosition(0));
+        Assert.True(grid.IsBarStart(2));
+    }
+
+    [Fact]
+    public void Its_songs_are_those_with_hot_cues_memory_cues_or_a_beat_grid()
+    {
+        using var folder = new TempFolder();
+
+        Assert.Equal(new[] { @"C:\Music\A Song.mp3", @"D:\Sets\Two.flac" }, Load(folder).Songs.Order());
     }
 
     [Fact]

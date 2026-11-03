@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
+using Brutality.Audio.Analysis;
 
 namespace Brutality.Music.Imports;
 
@@ -13,14 +14,33 @@ sealed record RekordboxNode(string Name, bool IsFolder, IReadOnlyList<RekordboxN
 
 /// <summary>
 /// A Rekordbox collection exported as XML (File &gt; Export Collection in xml format): its songs' hot cues, by file,
-/// and its playlists, in their folders.
+/// and its playlists, in their folders; and its songs' memory cues and beat grids, by file.
 /// </summary>
-sealed record RekordboxCollection(string FilePath, IReadOnlyDictionary<string, IReadOnlyList<TimeSpan?>> Hotcues, IReadOnlyList<RekordboxNode> Playlists);
+sealed record RekordboxCollection(string FilePath, IReadOnlyDictionary<string, IReadOnlyList<TimeSpan?>> Hotcues, IReadOnlyList<RekordboxNode> Playlists)
+{
+    /// <summary>
+    /// Each song's memory cues, in order through the song; songs with none are left out. A memory loop comes in as a
+    /// memory cue at its start.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<TimeSpan>> MemoryCues { get; init; } = new Dictionary<string, IReadOnlyList<TimeSpan>>();
+
+    /// <summary>
+    /// Each song's beat grid, as Rekordbox has it (often fixed by hand there); songs without one are left out.
+    /// </summary>
+    public IReadOnlyDictionary<string, BeatGrid> Grids { get; init; } = new Dictionary<string, BeatGrid>();
+
+    /// <summary>
+    /// Every song it has hot cues, memory cues or a beat grid for.
+    /// </summary>
+    public IEnumerable<string> Songs => Hotcues.Keys.Concat(MemoryCues.Keys).Concat(Grids.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+}
 
 /// <summary>
 /// Reads Rekordbox's XML collection format. Its songs are TRACKs with a file URL as their Location and POSITION_MARKs
 /// for their cues: Type 0 a cue and 4 a loop, Num 0 to 7 hot cues A to H and -1 a memory cue, Start in seconds. A hot
-/// loop comes in as a hot cue at its start, so its pad still goes there.
+/// loop comes in as a hot cue at its start, so its pad still goes there, and a memory loop as a memory cue at its
+/// start. A TRACK's beat grid is its TEMPOs: each a beat at Inizio seconds and the tempo (Bpm) from there, Battito
+/// saying which beat of its bar (1 to 4) that beat is; one for a steady tempo, more where it changes.
 /// Playlists are NODEs under PLAYLISTS: Type 0 a folder, Type 1 a playlist of TRACKs keyed by TrackID (KeyType 0) or
 /// Location (KeyType 1).
 /// </summary>
@@ -63,6 +83,8 @@ static class RekordboxXml
                 return null;
 
             var hotcues = new Dictionary<string, IReadOnlyList<TimeSpan?>>(StringComparer.OrdinalIgnoreCase);
+            var memoryCues = new Dictionary<string, IReadOnlyList<TimeSpan>>(StringComparer.OrdinalIgnoreCase);
+            var grids = new Dictionary<string, BeatGrid>(StringComparer.OrdinalIgnoreCase);
             var byId = new Dictionary<string, string>();
             XElement? playlists = null;
             var inCollection = false;
@@ -85,6 +107,10 @@ static class RekordboxXml
                             byId[id] = file;
                         if (Hotcues(track) is { } cues)
                             hotcues[file] = cues;
+                        if (MemoryCues(track) is { } memory)
+                            memoryCues[file] = memory;
+                        if (Grid(track) is { } grid)
+                            grids[file] = grid;
                         break;
                     case "PLAYLISTS":
                         playlists = XElement.Load(reader.ReadSubtree());
@@ -95,7 +121,7 @@ static class RekordboxXml
             // The tree's top node is ROOT, a folder holding the rest.
             var root = playlists?.Element("NODE");
             var nodes = root is null ? [] : root.Elements("NODE").Select(node => Node(node, byId)).ToList();
-            return new RekordboxCollection(path, hotcues, nodes);
+            return new RekordboxCollection(path, hotcues, nodes) { MemoryCues = memoryCues, Grids = grids };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or XmlException)
         {
@@ -121,6 +147,56 @@ static class RekordboxXml
         }
         return any ? cues : null;
     }
+
+    /// <summary>
+    /// A track's memory cues (and memory loops' starts), in order; null if it has none.
+    /// </summary>
+    static IReadOnlyList<TimeSpan>? MemoryCues(XElement track)
+    {
+        var cues = track.Elements("POSITION_MARK")
+            .Where(mark => (string?)mark.Attribute("Num") == "-1")
+            .Select(mark => Seconds(mark, "Start"))
+            .OfType<double>()
+            .Where(start => start >= 0)
+            .Distinct()
+            .Order()
+            .Select(TimeSpan.FromSeconds)
+            .ToList();
+        return cues.Count > 0 ? cues : null;
+    }
+
+    /// <summary>
+    /// A track's beat grid from its TEMPOs; null if it has none that make one. Bars are counted from the first's
+    /// Battito: the beat it's on is that one of its bar.
+    /// </summary>
+    static BeatGrid? Grid(XElement track)
+    {
+        var markers = new List<GridMarker>();
+        var downbeat = 0;
+        foreach (var tempo in track.Elements("TEMPO"))
+        {
+            if (Seconds(tempo, "Inizio") is not { } start || start < 0 || Seconds(tempo, "Bpm") is not { } bpm || bpm <= 0)
+                continue;
+            // In time order, each after the last: one at the same moment as the one before takes its place.
+            if (markers.Count > 0 && start <= markers[^1].Time)
+            {
+                if (start < markers[^1].Time)
+                    continue;
+                markers.RemoveAt(markers.Count - 1);
+            }
+            if (markers.Count == 0 && int.TryParse((string?)tempo.Attribute("Battito"), out var beat) && beat is >= 1 and <= BeatGrid.BEATS_PER_BAR)
+                downbeat = 1 - beat;
+            markers.Add(new GridMarker(start, bpm));
+        }
+        if (markers.Count == 0)
+            return null;
+        // The song's length, for how far the last tempo runs; or, without it, a beat past the last marker.
+        var duration = Seconds(track, "TotalTime") is { } total && total > markers[^1].Time ? total : markers[^1].Time + markers[^1].BeatSeconds;
+        return new BeatGrid(markers, duration).WithDownbeat(downbeat);
+    }
+
+    static double? Seconds(XElement element, string attribute) =>
+        double.TryParse((string?)element.Attribute(attribute), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : null;
 
     static RekordboxNode Node(XElement node, IReadOnlyDictionary<string, string> byId)
     {
