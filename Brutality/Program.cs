@@ -493,6 +493,29 @@ static void Run()
 
     // Songs played out for ten seconds or more get a tick in the list.
     var plays = new SessionPlays();
+
+    // The songs played this session, in order, saved where the DJ says: as an M3U playlist or a plain-text set list,
+    // by the type chosen in the Save dialog.
+    void ExportHistory()
+    {
+        if (plays.History.Count == 0)
+        {
+            screen.Log("Nothing's been played yet this session, so there's no history to export");
+            return;
+        }
+        (string Description, string Pattern)[] types = [("M3U playlist", "*.m3u8"), ("Plain text", "*.txt")];
+        var owner = OperatingSystem.IsWindows() ? WindowChrome.Handle : 0;
+        var name = $"Play history {plays.History[0].Started:yyyy-MM-dd}";
+        if (WindowsShell.AskWhereToSave(owner, "Export play history", types, name, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)) is not { } chosen)
+            return;
+        var format = chosen.Type == 0 ? HistoryFormat.M3u : HistoryFormat.Text;
+        var error = PlayHistory.Save(chosen.Path, PlayHistory.Write(plays.History, format, library.SongAt), format);
+        var count = plays.History.Count;
+        screen.Log(
+            error is not null ? $"Couldn't export the play history: {error}"
+            : $"Exported {count} {(count == 1 ? "song" : "songs")} played to {chosen.Path}"
+        );
+    }
     browser.IsPlayed = song => plays.Contains(song.Path);
 
     // Decks being put back after the app didn't close properly, and where each goes once its song is in.
@@ -939,6 +962,7 @@ static void Run()
                     new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node),
                     // Other DJ software's libraries, one format to a line, more to come.
                     new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox))]),
+                    new MenuItem("Export", [new MenuItem("Play history...", () => afterEvents.Enqueue(ExportHistory))]),
                 ]
             );
         else if (node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive, Path: { } path })

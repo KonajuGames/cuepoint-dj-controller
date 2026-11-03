@@ -6,6 +6,7 @@ namespace Brutality.Tests.UI;
 /// <summary>
 /// The options dialog built for real, with an audio engine and a system font, as the app builds it.
 /// </summary>
+[Collection(AudioEngineTests.NAME)]
 public class OptionsDialogTests
 {
     static IEnumerable<Element> Within(Element element) =>

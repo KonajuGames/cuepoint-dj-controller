@@ -97,7 +97,7 @@ static unsafe partial class WindowsShell
         Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
     }
 
-    const uint OFN_NOCHANGEDIR = 0x8, OFN_PATHMUSTEXIST = 0x800, OFN_FILEMUSTEXIST = 0x1000, OFN_EXPLORER = 0x80000;
+    const uint OFN_OVERWRITEPROMPT = 0x2, OFN_NOCHANGEDIR = 0x8, OFN_PATHMUSTEXIST = 0x800, OFN_FILEMUSTEXIST = 0x1000, OFN_EXPLORER = 0x80000;
 
     /// <summary>
     /// What Windows' Open dialog is told and tells back; the Unicode OPENFILENAMEW.
@@ -169,6 +169,64 @@ static unsafe partial class WindowsShell
 
     [LibraryImport("comdlg32.dll")]
     private static partial int GetOpenFileNameW(OpenFileName* dialog);
+
+    /// <summary>
+    /// Asks where to save a file with Windows' own Save dialog, over <paramref name="owner"/>, offering
+    /// <paramref name="types"/> to choose from, each a description and its pattern, as ("M3U playlist", "*.m3u8"),
+    /// and starting with <paramref name="fileName"/>. Returns where, with the chosen type's extension put on if none
+    /// was typed, and which of the types was chosen, from 0; null if it was cancelled. It asks before overwriting a
+    /// file there already. Null away from Windows.
+    /// </summary>
+    public static (string Path, int Type)? AskWhereToSave(
+        nint owner,
+        string title,
+        IReadOnlyList<(string Description, string Pattern)> types,
+        string fileName,
+        string? folder = null
+    )
+    {
+        if (!OperatingSystem.IsWindows() || types.Count == 0)
+            return null;
+        var filters = string.Concat(types.Select(type => $"{type.Description} ({type.Pattern})\0{type.Pattern}\0")) + "\0";
+        // Without a dot, the extension of the type chosen goes on what's typed.
+        var extension = types[0].Pattern.TrimStart('*', '.');
+        var file = new char[4096];
+        fileName.AsSpan(0, Math.Min(fileName.Length, file.Length - 1)).CopyTo(file);
+        int chosen;
+        fixed (char* filterText = filters)
+        fixed (char* titleText = title)
+        fixed (char* folderText = folder)
+        fixed (char* extensionText = extension)
+        fixed (char* fileText = file)
+        {
+            var dialog = new OpenFileName
+            {
+                Size = sizeof(OpenFileName),
+                Owner = owner,
+                Filter = filterText,
+                FilterIndex = 1,
+                File = fileText,
+                MaxFile = file.Length,
+                InitialFolder = folderText,
+                Title = titleText,
+                DefaultExtension = extensionText,
+                Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
+            };
+            if (GetSaveFileNameW(&dialog) == 0)
+                return null;
+            chosen = Math.Clamp(dialog.FilterIndex - 1, 0, types.Count - 1);
+        }
+        var length = Array.IndexOf(file, '\0');
+        if (length <= 0)
+            return null;
+        var path = new string(file, 0, length);
+        if (!Path.HasExtension(path))
+            path += "." + types[chosen].Pattern.TrimStart('*', '.');
+        return (path, chosen);
+    }
+
+    [LibraryImport("comdlg32.dll")]
+    private static partial int GetSaveFileNameW(OpenFileName* dialog);
 
     /// <summary>
     /// Reports a fatal error: to the console, and on Windows also in a message box, since a windowed app usually
