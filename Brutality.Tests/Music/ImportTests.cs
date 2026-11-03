@@ -269,4 +269,138 @@ public class SeratoTests
         Assert.Null(SeratoMarkers.ReadHotcues(folder["song.flac"]));
         Assert.Null(SeratoMarkers.ReadHotcues(folder["missing.mp3"]));
     }
+
+    /// <summary>
+    /// Serato's markers as an M4A or FLAC keeps them: the header, then the markers as an MP3 keeps them, all in base64
+    /// again, without padding, a line break every 72 characters.
+    /// </summary>
+    static byte[] Wrapped(byte[] markers2)
+    {
+        byte[] unwrapped = [.. "application/octet-stream\0\0Serato Markers2\0"u8, .. markers2];
+        var base64 = Convert.ToBase64String(unwrapped).TrimEnd('=');
+        return Encoding.ASCII.GetBytes(string.Join('\n', base64.Chunk(72).Select(chunk => new string(chunk))));
+    }
+
+    static byte[] Box(string type, params byte[][] contents)
+    {
+        var body = contents.SelectMany(part => part).ToArray();
+        var box = new byte[8 + body.Length];
+        BinaryPrimitives.WriteInt32BigEndian(box, box.Length);
+        // Latin-1, for the one byte types like "©nam" start with.
+        Encoding.Latin1.GetBytes(type).CopyTo(box, 4);
+        body.CopyTo(box, 8);
+        return box;
+    }
+
+    /// <summary>
+    /// An M4A's metadata with a title and, if given, Serato's markers, as iTunes-style tags: ilst › "----" › mean, name
+    /// and data.
+    /// </summary>
+    static byte[] Ilst(byte[]? wrapped)
+    {
+        byte[] Freeform(string mean, string name, byte[] value) =>
+            Box("----", Box("mean", [0, 0, 0, 0], Encoding.UTF8.GetBytes(mean)), Box("name", [0, 0, 0, 0], Encoding.UTF8.GetBytes(name)), Box("data", [0, 0, 0, 1, 0, 0, 0, 0], value));
+        // iTunes' title tag, "©nam", which Serato's is found among.
+        var title = Box("©nam", Box("data", [0, 0, 0, 1, 0, 0, 0, 0], "Song"u8.ToArray()));
+        var other = Freeform("com.apple.iTunes", "iTunNORM", "0000"u8.ToArray());
+        return wrapped is null ? Box("ilst", title, other) : Box("ilst", title, other, Freeform("com.serato.dj", "markersv2", wrapped));
+    }
+
+    // A "meta" box: four bytes of version and flags, a handler, then the tags.
+    static byte[] Meta(byte[] ilst) => Box("meta", [0, 0, 0, 0], Box("hdlr", new byte[25]), ilst);
+
+    static byte[] M4a(byte[] moov, bool moovFirst)
+    {
+        var ftyp = Box("ftyp", "M4A \0\0\0\0M4A mp42isom"u8.ToArray());
+        var mdat = Box("mdat", new byte[3000]);
+        return moovFirst ? [.. ftyp, .. moov, .. mdat] : [.. ftyp, .. mdat, .. moov];
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void An_M4As_Serato_hot_cues_are_read_from_its_freeform_tag_wherever_its_metadata_is(bool moovFirst)
+    {
+        using var folder = new TempFolder();
+        var moov = Box("moov", Box("mvhd", new byte[100]), Box("udta", Meta(Ilst(Wrapped(Markers2((1, 4_000), (7, 200_500)))))));
+        File.WriteAllBytes(folder["song.m4a"], M4a(moov, moovFirst));
+
+        var cues = SeratoMarkers.ReadHotcues(folder["song.m4a"])!;
+
+        Assert.Equal(TimeSpan.FromSeconds(4), cues[1]);
+        Assert.Equal(TimeSpan.FromMilliseconds(200_500), cues[7]);
+    }
+
+    [Fact]
+    public void An_M4A_with_its_metadata_straight_in_moov_is_read_too()
+    {
+        using var folder = new TempFolder();
+        File.WriteAllBytes(folder["song.m4a"], M4a(Box("moov", Meta(Ilst(Wrapped(Markers2((0, 750)))))), moovFirst: true));
+
+        Assert.Equal(TimeSpan.FromMilliseconds(750), SeratoMarkers.ReadHotcues(folder["song.m4a"])![0]);
+    }
+
+    [Fact]
+    public void An_M4A_without_Seratos_tag_has_none()
+    {
+        using var folder = new TempFolder();
+        File.WriteAllBytes(folder["song.m4a"], M4a(Box("moov", Box("udta", Meta(Ilst(null)))), moovFirst: true));
+        File.WriteAllBytes(folder["broken.m4a"], [0, 0, 0, 99, .. "ftyp"u8, 1, 2]);
+
+        Assert.Null(SeratoMarkers.ReadHotcues(folder["song.m4a"]));
+        Assert.Null(SeratoMarkers.ReadHotcues(folder["broken.m4a"]));
+    }
+
+    /// <summary>
+    /// A FLAC's start: its stream info, then a Vorbis comment with a title and the comments given.
+    /// </summary>
+    static byte[] Flac(params string[] comments)
+    {
+        byte[] Block(int type, bool last, byte[] data) => [(byte)(type | (last ? 0x80 : 0)), (byte)(data.Length >> 16), (byte)(data.Length >> 8), (byte)data.Length, .. data];
+        byte[] Field(string text)
+        {
+            var bytes = Encoding.UTF8.GetBytes(text);
+            var length = new byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(length, bytes.Length);
+            return [.. length, .. bytes];
+        }
+        var all = comments.Prepend("TITLE=Song").ToArray();
+        var count = new byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(count, all.Length);
+        byte[] vorbis = [.. Field("reference libFLAC 1.4.3"), .. count, .. all.SelectMany(Field)];
+        return [.. "fLaC"u8, .. Block(0, false, new byte[34]), .. Block(1, false, new byte[100]), .. Block(4, true, vorbis), 0xff, 0xf8];
+    }
+
+    [Fact]
+    public void A_FLACs_Serato_hot_cues_are_read_from_its_Vorbis_comment()
+    {
+        using var folder = new TempFolder();
+        var markers = Encoding.ASCII.GetString(Wrapped(Markers2((3, 90_000))));
+        File.WriteAllBytes(folder["song.flac"], Flac("ARTIST=Someone", "serato_markers_v2=" + markers));
+
+        Assert.Equal(TimeSpan.FromSeconds(90), SeratoMarkers.ReadHotcues(folder["song.flac"])![3]);
+    }
+
+    [Fact]
+    public void A_FLAC_with_an_ID3_tag_first_is_read_past_it()
+    {
+        using var folder = new TempFolder();
+        var markers = Encoding.ASCII.GetString(Wrapped(Markers2((0, 5_000))));
+        byte[] id3 = [.. "ID3"u8, 4, 0, 0, 0, 0, 0, 20, .. new byte[20]];
+        File.WriteAllBytes(folder["song.flac"], [.. id3, .. Flac("SERATO_MARKERS_V2=" + markers)]);
+
+        Assert.Equal(TimeSpan.FromSeconds(5), SeratoMarkers.ReadHotcues(folder["song.flac"])![0]);
+    }
+
+    [Fact]
+    public void A_FLAC_without_Seratos_comment_has_none()
+    {
+        using var folder = new TempFolder();
+        File.WriteAllBytes(folder["song.flac"], Flac("ARTIST=Someone"));
+        // Wrapped wrongly: base64 of the markers, but without the header.
+        File.WriteAllBytes(folder["odd.flac"], Flac("SERATO_MARKERS_V2=" + Convert.ToBase64String(Markers2((0, 1000)))));
+
+        Assert.Null(SeratoMarkers.ReadHotcues(folder["song.flac"]));
+        Assert.Null(SeratoMarkers.ReadHotcues(folder["odd.flac"]));
+    }
 }

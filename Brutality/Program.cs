@@ -512,8 +512,8 @@ static void Run()
             plays.Restart(loaded);
             screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
 
-            // Hot cues Serato kept in the file come in the first time it's loaded (and again if it changes), if it
-            // has none here.
+            // Hot cues Serato kept in the file (an MP3, M4A or FLAC) come in the first time it's loaded (and again if it
+            // changes), if it has none here.
             if (loaded.FilePath is { } loadedPath && ImportRecord.IsNew(importRecord.Serato, loadedPath))
             {
                 if (database.GetHotcues(loadedPath).All(cue => cue is null) && SeratoMarkers.ReadHotcues(loadedPath) is { } serato)
