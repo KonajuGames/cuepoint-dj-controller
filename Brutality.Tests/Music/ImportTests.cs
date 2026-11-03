@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Brutality.Audio.Analysis;
+using Brutality.Music;
 using Brutality.Music.Imports;
 
 namespace Brutality.Tests.Music;
@@ -306,6 +307,28 @@ public class SeratoTests
         var cues = SeratoMarkers.ReadHotcues(path)!;
 
         Assert.Equal(TimeSpan.FromSeconds(30), cues[2]);
+    }
+
+    [Fact]
+    public void Songs_chosen_get_Serato_s_hot_cues_unless_they_have_their_own_here()
+    {
+        using var folder = new TempFolder();
+        var withCues = folder["a.mp3"];
+        var ownCues = folder["b.mp3"];
+        var noCues = folder["c.mp3"];
+        File.WriteAllBytes(withCues, Mp3(4, Markers2((0, 1500))));
+        File.WriteAllBytes(ownCues, Mp3(3, Markers2((2, 9000))));
+        File.WriteAllBytes(noCues, Mp3(4, Markers2()));
+        var database = LibraryDatabase.Load(folder["library.json"], folder.Path, _ => folder.Path);
+        database.SetHotcues(ownCues, [TimeSpan.FromSeconds(4)]);
+
+        var found = SeratoCueImport.Read([withCues, ownCues, noCues, folder["missing.mp3"]]);
+        Assert.Equal(new[] { withCues, ownCues }, found.Select(read => read.Path));
+
+        Assert.Equal((1, 1), SeratoCueImport.Take(database, found));
+        Assert.Equal(TimeSpan.FromSeconds(1.5), database.GetHotcues(withCues)[0]);
+        Assert.Equal(TimeSpan.FromSeconds(4), database.GetHotcues(ownCues)[0]);
+        Assert.Null(database.GetHotcues(ownCues).ElementAtOrDefault(2));
     }
 
     [Fact]
