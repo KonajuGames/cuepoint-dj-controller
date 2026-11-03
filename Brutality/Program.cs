@@ -201,8 +201,7 @@ static void Run()
             }
             if (collection.Grids.TryGetValue(path, out var grid) && !database.HasGridEdit(path))
             {
-                // Where the tempo changes, each change is pinned, as it would be fixing the grid here.
-                database.SetGridEdit(path, new GridEdit(grid, grid.IsVariable ? grid.Markers.Select(marker => marker.Time).ToList() : []));
+                database.SetGridEdit(path, SeratoImport.AsEdit(grid));
                 gridded.Add(path);
                 grids++;
             }
@@ -614,22 +613,23 @@ static void Run()
             plays.Restart(loaded);
             screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
 
-            // Hot cues Serato kept in the file (an MP3, M4A or FLAC) come in the first time it's loaded (and again if it
-            // changes), if it has none here.
+            // Hot cues and a beat grid Serato kept in the file (an MP3, M4A or FLAC) come in the first time it's loaded
+            // (and again if it changes), if it has none of its own here.
             if (loaded.FilePath is { } loadedPath && ImportRecord.IsNew(importRecord.Serato, loadedPath))
             {
-                if (database.GetHotcues(loadedPath).All(cue => cue is null) && SeratoMarkers.ReadHotcues(loadedPath) is { } serato)
+                var taken = SeratoImport.Take(database, SeratoImport.Read([loadedPath]));
+                UseGrids(taken.Gridded);
+                if (taken.Hotcues + taken.Grids > 0)
                 {
-                    database.SetHotcues(loadedPath, serato);
-                    var count = serato.Count(cue => cue is not null);
-                    screen.Log($"Deck {loaded.Name}: brought in {count} {(count == 1 ? "hot cue" : "hot cues")} from Serato");
+                    var what = taken is { Hotcues: > 0, Grids: > 0 } ? "hot cues and beat grid" : taken.Hotcues > 0 ? "hot cues" : "beat grid";
+                    screen.Log($"Deck {loaded.Name}: brought in its {what} from Serato");
                     try
                     {
                         database.Save();
                     }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                     {
-                        screen.Log($"Couldn't save hot cues to {database.FilePath}: {e.Message}");
+                        screen.Log($"Couldn't save its {what} to {database.FilePath}: {e.Message}");
                     }
                 }
                 importRecord.Save(importRecordPath);
@@ -1049,23 +1049,24 @@ static void Run()
         }
     }
 
-    // Serato's hot cues for many songs at once, from a menu: the files are looked in for them in the background, as
-    // a big folder's would take a while, then each song with none here gets Serato's. Songs that have their own here
-    // keep them. What it's for is named in what's said: a folder or list ("Disco"), the songs chosen ("3 songs"), or
+    // Serato's hot cues and beat grids for many songs at once, from a menu: the files are looked in for them in the
+    // background, as a big folder's would take a while, then each song gets what it has none of here. Songs keep
+    // their own hot cues, and a grid fixed here. What it's for is named in what's said: a folder or list ("Disco"), the songs chosen ("3 songs"), or
     // one song by its title, with oneSong.
     void ImportSeratoCues(string what, Func<IReadOnlyList<string>> paths, bool oneSong = false)
     {
-        screen.Log(oneSong ? $"Looking for Serato cues in {what}..." : $"Looking for Serato cues in the songs in {what}...");
+        screen.Log(oneSong ? $"Looking for Serato cues and a grid in {what}..." : $"Looking for Serato cues and grids in the songs in {what}...");
         library.Background.Start(
             () =>
             {
                 var all = paths();
-                return (Count: all.Count, Found: SeratoCueImport.Read(all));
+                return (Count: all.Count, Found: SeratoImport.Read(all));
             },
             result =>
             {
-                var (brought, kept) = SeratoCueImport.Take(database, result.Found);
-                foreach (var (path, _) in result.Found)
+                var taken = SeratoImport.Take(database, result.Found);
+                UseGrids(taken.Gridded);
+                foreach (var (path, _, _) in result.Found)
                 {
                     // Looked in now, so not again when it's next loaded.
                     ImportRecord.IsNew(importRecord.Serato, path);
@@ -1078,7 +1079,7 @@ static void Run()
                 }
                 importRecord.Save(importRecordPath);
                 string? error = null;
-                if (brought > 0)
+                if (taken.Hotcues + taken.Grids > 0)
                 {
                     try
                     {
@@ -1091,14 +1092,18 @@ static void Run()
                 }
                 static string Songs(int count) => count == 1 ? "1 song" : $"{count} songs";
                 var saving = error is null ? "" : $"; couldn't save them: {error}";
+                var news = taken.News(Songs);
                 screen.Log(
-                    oneSong ? (result.Found.Count == 0 ? $"{what} has no Serato cues"
-                        : brought > 0 ? $"Brought in Serato's hot cues for {what}{saving}"
-                        : $"{what} has hot cues here already, so kept them rather than Serato's")
+                    oneSong ? (result.Found.Count == 0 ? $"{what} has no Serato cues or grid"
+                        : taken.Hotcues + taken.Grids > 0
+                            ? $"Brought in Serato's {(taken is { Hotcues: > 0, Grids: > 0 } ? "hot cues and beat grid" : taken.Hotcues > 0 ? "hot cues" : "beat grid")} for {what}"
+                                + (taken.Kept > 0 ? "; kept its own of the rest" : "")
+                                + saving
+                        : $"{what} has its own here already, so kept them rather than Serato's")
                     : result.Count == 0 ? $"There are no songs in {what} to look in"
-                    : result.Found.Count == 0 ? $"None of the {Songs(result.Count)} in {what} has Serato cues"
-                    : $"Brought in Serato's hot cues for {Songs(brought)} of the {Songs(result.Count)} in {what}"
-                        + (kept > 0 ? $"; {Songs(kept)} had hot cues here already, so kept them" : "")
+                    : result.Found.Count == 0 ? $"None of the {Songs(result.Count)} in {what} has Serato cues or a grid"
+                    : (news is null ? $"Nothing new from Serato for the {Songs(result.Count)} in {what}" : $"Brought in Serato's {news}, of the {Songs(result.Count)} in {what}")
+                        + (taken.Kept > 0 ? $"; {Songs(taken.Kept)} had their own here already, so kept them" : "")
                         + saving
                 );
             }
@@ -1107,7 +1112,7 @@ static void Run()
 
     // What a node in the folder list imports Serato's cues for: a folder or drive, every song in it and its folders
     // (looked for in the background); anything else with songs, those it lists now.
-    MenuItem SeratoCuesFor(LibraryNode node, string text = "Import Serato cues")
+    MenuItem SeratoCuesFor(LibraryNode node, string text = "Import Serato cues and grids")
     {
         if (node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive, Path: { } path })
             return new MenuItem(text, () => ImportSeratoCues(node.Name, () => MusicLibrary.ListFolder(path, recursive: true).Select(file => file.FullName).ToList()));
@@ -1125,7 +1130,7 @@ static void Run()
                 [
                     new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node),
                     // Other DJ software's libraries, one format to a line, more to come.
-                    new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox)), SeratoCuesFor(node, "Serato cues")]),
+                    new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox)), SeratoCuesFor(node, "Serato cues and grids")]),
                     new MenuItem("Export", [new MenuItem("Play history...", () => afterEvents.Enqueue(ExportHistory))]),
                 ]
             );
@@ -1231,9 +1236,9 @@ static void Run()
                     },
                     Enabled: listed.Any(song => song.Analysis is null && song.AnalysisError is null)
                 ),
-                // Serato's hot cues for the songs chosen, for those with none here.
+                // Serato's hot cues and beat grids for the songs chosen, for those without their own here.
                 new MenuItem(
-                    songs.Count > 1 ? $"Import Serato cues for {songs.Count} songs" : "Import Serato cues",
+                    songs.Count > 1 ? $"Import Serato cues and grids for {songs.Count} songs" : "Import Serato cues and grids",
                     () =>
                     {
                         var paths = songs.Select(song => song.Path).ToList();

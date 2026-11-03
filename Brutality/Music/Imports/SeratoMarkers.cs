@@ -1,10 +1,11 @@
 using System.Buffers.Binary;
 using System.Text;
+using Brutality.Audio.Analysis;
 
 namespace Brutality.Music.Imports;
 
 /// <summary>
-/// Reads the hot cues Serato keeps inside a song's own file, its "Serato Markers2". In an MP3 they're in its ID3 tag,
+/// Reads the hot cues and beat grid Serato keeps inside a song's own file. Its hot cues are its "Serato Markers2". In an MP3 they're in its ID3 tag,
 /// in a GEOB frame of that description: two bytes (1, 1), then base64 text, often without its padding and with line
 /// breaks. That decodes to two bytes (1, 1) again and a run of entries, each a name ending in a zero byte, a four-byte
 /// length, big-endian, and that much data, up to an empty name. A "CUE" entry is a hot cue: a zero byte, its number
@@ -14,6 +15,13 @@ namespace Brutality.Music.Imports;
 /// a FLAC in a Vorbis comment, SERATO_MARKERS_V2; in both it's wrapped once more, in base64 again, after a header of
 /// "application/octet-stream", two zero bytes, and "Serato Markers2" and a zero byte. (See the serato-tags notes,
 /// github.com/Holzhaus/serato-tags, and Mixxx's reader, which agree.)
+///
+/// Its beat grid, "Serato BeatGrid", is kept the same ways: a GEOB frame of that description in an MP3, freeform tag
+/// "beatgrid" in an M4A and comment SERATO_BEATGRID in a FLAC, wrapped the same way in those. It's two bytes (1, 0),
+/// the number of markers as four bytes, then the markers, eight bytes each and big-endian: each but the last its place
+/// in seconds as a float and how many beats it is to the next as four bytes, the last its place and the tempo from
+/// there on as floats; then a byte of no meaning. Serato analyses every song's grid, often a little off the beat, so
+/// only one the DJ has locked in Serato (its markers' "BPMLOCK" entry set) is taken as checked by hand and read.
 /// </summary>
 static class SeratoMarkers
 {
@@ -25,24 +33,45 @@ static class SeratoMarkers
     const int MAX_TAG_BYTES = 32 << 20;
 
     /// <summary>
-    /// The header before the data, once the base64 wrapping an M4A's or FLAC's markers is undone.
+    /// One of Serato's tags, by what it's called in an MP3's GEOB frame (and the header before it once the base64
+    /// wrapping an M4A's or FLAC's is undone), an M4A's freeform tag and a FLAC's Vorbis comment.
     /// </summary>
-    static readonly byte[] WrappedHeader = "application/octet-stream\0\0Serato Markers2\0"u8.ToArray();
+    sealed record Tag(string Geob, string Mp4, string Vorbis)
+    {
+        public byte[] WrappedHeader { get; } = Encoding.ASCII.GetBytes($"application/octet-stream\0\0{Geob}\0");
+    }
+
+    static readonly Tag Markers2 = new("Serato Markers2", "markersv2", "SERATO_MARKERS_V2");
+    static readonly Tag BeatGridTag = new("Serato BeatGrid", "beatgrid", "SERATO_BEATGRID");
 
     /// <summary>
     /// The hot cues Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, by number; null if there
     /// are none, it's another kind of file, or it can't be read.
     /// </summary>
-    public static IReadOnlyList<TimeSpan?>? ReadHotcues(string path)
+    public static IReadOnlyList<TimeSpan?>? ReadHotcues(string path) => Read(path, Markers2) is { } data ? FromMarkers2(data) : null;
+
+    /// <summary>
+    /// The beat grid Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, its bars counted from
+    /// its first marker, if it's locked there; null if it isn't locked, it has none, it's another kind of file, or it
+    /// can't be read.
+    /// </summary>
+    public static BeatGrid? ReadGrid(string path) =>
+        Read(path, Markers2) is { } markers && IsBpmLocked(markers) && Read(path, BeatGridTag) is { } data ? FromBeatGrid(data) : null;
+
+    /// <summary>
+    /// What's in <paramref name="tag"/> in the file at <paramref name="path"/>, as an MP3 keeps it (unwrapped, from an
+    /// M4A or FLAC); null if it isn't there or can't be read.
+    /// </summary>
+    static byte[]? Read(string path, Tag tag)
     {
         try
         {
             using var file = File.OpenRead(path);
             return Path.GetExtension(path).ToLowerInvariant() switch
             {
-                ".mp3" => FromMp3(file),
-                ".m4a" or ".mp4" => FromMp4(file),
-                ".flac" => FromFlac(file),
+                ".mp3" => FromMp3(file, tag),
+                ".m4a" or ".mp4" => FromMp4(file, tag),
+                ".flac" => FromFlac(file, tag),
                 _ => null,
             };
         }
@@ -52,21 +81,21 @@ static class SeratoMarkers
         }
     }
 
-    static IReadOnlyList<TimeSpan?>? FromMp3(Stream file)
+    static byte[]? FromMp3(Stream file, Tag wanted)
     {
         Span<byte> header = stackalloc byte[10];
         if (file.Read(header) < 10)
             return null;
         var tag = new byte[Math.Min(Id3Size(header), MAX_TAG_BYTES)];
         file.ReadExactly(tag);
-        return FromId3(header, tag);
+        return FromId3(header, tag, wanted);
     }
 
     /// <summary>
-    /// The hot cues in an M4A: its "moov" box read whole, wherever it is among the boxes at the top of the file (before
-    /// the audio, or after it), and Serato's freeform tag found in its metadata.
+    /// A tag in an M4A: its "moov" box read whole, wherever it is among the boxes at the top of the file (before the
+    /// audio, or after it), and Serato's freeform tag found in its metadata.
     /// </summary>
-    static IReadOnlyList<TimeSpan?>? FromMp4(Stream file)
+    static byte[]? FromMp4(Stream file, Tag wanted)
     {
         Span<byte> header = stackalloc byte[16];
         while (file.Position + 8 <= file.Length)
@@ -94,7 +123,7 @@ static class SeratoMarkers
                     return null;
                 var moov = new byte[size - headerSize];
                 file.ReadExactly(moov);
-                return FromMoov(moov);
+                return FromMoov(moov, wanted);
             }
             file.Position = start + size;
         }
@@ -102,10 +131,10 @@ static class SeratoMarkers
     }
 
     /// <summary>
-    /// The hot cues in a "moov" box's contents: in moov › udta › meta › ilst, as iTunes keeps tags, or moov › meta ›
-    /// ilst, as some taggers do.
+    /// A tag in a "moov" box's contents: in moov › udta › meta › ilst, as iTunes keeps tags, or moov › meta › ilst, as
+    /// some taggers do.
     /// </summary>
-    internal static IReadOnlyList<TimeSpan?>? FromMoov(ReadOnlySpan<byte> moov)
+    static byte[]? FromMoov(ReadOnlySpan<byte> moov, Tag wanted)
     {
         var meta = Box(moov, "udta") is { } udta ? Box(moov.Slice(udta.Start, udta.Length), "meta", udta.Start) : null;
         meta ??= Box(moov, "meta");
@@ -132,8 +161,8 @@ static class SeratoMarkers
                 else if (part.Type == "data" && content.Length >= 8)
                     value = content[8..];
             }
-            if (mean == "com.serato.dj" && name == "markersv2")
-                return FromWrapped(value);
+            if (mean == "com.serato.dj" && name == wanted.Mp4)
+                return FromWrapped(value, wanted);
         }
         return null;
     }
@@ -172,12 +201,12 @@ static class SeratoMarkers
     }
 
     /// <summary>
-    /// The hot cues in a FLAC's Vorbis comment SERATO_MARKERS_V2. A FLAC begins "fLaC" (after an ID3 tag, if a tagger
-    /// put one first), then its metadata blocks, each a byte of type (the top bit set on the last) and three of
+    /// A tag in a FLAC's Vorbis comment, SERATO_MARKERS_V2 or SERATO_BEATGRID. A FLAC begins "fLaC" (after an ID3 tag,
+    /// if a tagger put one first), then its metadata blocks, each a byte of type (the top bit set on the last) and three of
     /// length, big-endian; the Vorbis comment, type 4, is a vendor string and then the comments, "NAME=value", each
     /// after its length, little-endian.
     /// </summary>
-    static IReadOnlyList<TimeSpan?>? FromFlac(Stream file)
+    static byte[]? FromFlac(Stream file, Tag wanted)
     {
         Span<byte> header = stackalloc byte[10];
         if (file.Read(header) < 10)
@@ -200,7 +229,7 @@ static class SeratoMarkers
             {
                 var comments = new byte[length];
                 file.ReadExactly(comments);
-                return FromVorbisComment(comments);
+                return FromVorbisComment(comments, wanted);
             }
             if (last)
                 return null;
@@ -209,9 +238,9 @@ static class SeratoMarkers
     }
 
     /// <summary>
-    /// The hot cues in a Vorbis comment block's bytes, from its SERATO_MARKERS_V2 comment.
+    /// A tag in a Vorbis comment block's bytes, from its comment of that name.
     /// </summary>
-    internal static IReadOnlyList<TimeSpan?>? FromVorbisComment(ReadOnlySpan<byte> comments)
+    static byte[]? FromVorbisComment(ReadOnlySpan<byte> comments, Tag wanted)
     {
         if (comments.Length < 8)
             return null;
@@ -221,7 +250,7 @@ static class SeratoMarkers
             return null;
         var count = BinaryPrimitives.ReadInt32LittleEndian(comments[at..]);
         at += 4;
-        var key = "SERATO_MARKERS_V2="u8;
+        var key = Encoding.ASCII.GetBytes(wanted.Vorbis + "=");
         for (var i = 0; i < count && at + 4 <= comments.Length; i++)
         {
             var length = BinaryPrimitives.ReadInt32LittleEndian(comments[at..]);
@@ -230,22 +259,21 @@ static class SeratoMarkers
                 return null;
             var comment = comments.Slice(at, length);
             // Names are matched ignoring case, as Vorbis comments' are.
-            if (comment.Length > key.Length && Encoding.ASCII.GetString(comment[..key.Length]).Equals("SERATO_MARKERS_V2=", StringComparison.OrdinalIgnoreCase))
-                return FromWrapped(comment[key.Length..]);
+            if (comment.Length > key.Length && Encoding.ASCII.GetString(comment[..key.Length]).Equals(wanted.Vorbis + "=", StringComparison.OrdinalIgnoreCase))
+                return FromWrapped(comment[key.Length..], wanted);
             at += length;
         }
         return null;
     }
 
     /// <summary>
-    /// The hot cues in Serato's markers as an M4A or FLAC keeps them: base64 of the header, then the markers as an
-    /// MP3 keeps them.
+    /// A tag as an M4A or FLAC keeps it: base64 of its header, then what an MP3 keeps.
     /// </summary>
-    internal static IReadOnlyList<TimeSpan?>? FromWrapped(ReadOnlySpan<byte> base64)
+    static byte[]? FromWrapped(ReadOnlySpan<byte> base64, Tag wanted)
     {
-        if (Base64(base64) is not { } unwrapped || !unwrapped.AsSpan().StartsWith(WrappedHeader))
+        if (Base64(base64) is not { } unwrapped || !unwrapped.AsSpan().StartsWith(wanted.WrappedHeader))
             return null;
-        return FromMarkers2(unwrapped.AsSpan(WrappedHeader.Length));
+        return unwrapped[wanted.WrappedHeader.Length..];
     }
 
     /// <summary>
@@ -258,9 +286,9 @@ static class SeratoMarkers
     static int Syncsafe(ReadOnlySpan<byte> bytes) => bytes[0] << 21 | bytes[1] << 14 | bytes[2] << 7 | bytes[3];
 
     /// <summary>
-    /// The hot cues in an ID3 tag's frames, <paramref name="tag"/>, after its <paramref name="header"/>.
+    /// A Serato tag in an ID3 tag's frames, <paramref name="tag"/>, after its <paramref name="header"/>.
     /// </summary>
-    internal static IReadOnlyList<TimeSpan?>? FromId3(ReadOnlySpan<byte> header, ReadOnlySpan<byte> tag)
+    static byte[]? FromId3(ReadOnlySpan<byte> header, ReadOnlySpan<byte> tag, Tag wanted)
     {
         var version = header[3];
         // Unsynchronised tags (rare, and never Serato's) would need undoing first.
@@ -276,18 +304,18 @@ static class SeratoMarkers
             var size = version == 4 ? Syncsafe(tag.Slice(at + 4, 4)) : BinaryPrimitives.ReadInt32BigEndian(tag.Slice(at + 4, 4));
             if (size <= 0 || at + 10 + size > tag.Length)
                 break;
-            if (id == "GEOB" && FromGeob(tag.Slice(at + 10, size)) is { } cues)
-                return cues;
+            if (id == "GEOB" && FromGeob(tag.Slice(at + 10, size), wanted) is { } data)
+                return data;
             at += 10 + size;
         }
         return null;
     }
 
     /// <summary>
-    /// The hot cues in a GEOB frame's contents, if it's Serato's markers: a text encoding byte, then its MIME type,
-    /// file name and description, each ending in a zero byte, then the data.
+    /// A GEOB frame's data, if it's the tag wanted: a text encoding byte, then its MIME type, file name and
+    /// description, each ending in a zero byte, then the data.
     /// </summary>
-    static IReadOnlyList<TimeSpan?>? FromGeob(ReadOnlySpan<byte> frame)
+    static byte[]? FromGeob(ReadOnlySpan<byte> frame, Tag wanted)
     {
         if (frame.Length < 1 || frame[0] != 0)
             return null;
@@ -301,21 +329,85 @@ static class SeratoMarkers
             fields[i] = Encoding.Latin1.GetString(rest[..end]);
             rest = rest[(end + 1)..];
         }
-        return fields[2] == "Serato Markers2" ? FromMarkers2(rest) : null;
+        return fields[2] == wanted.Geob ? rest.ToArray() : null;
     }
 
     /// <summary>
-    /// The hot cues in Serato Markers2's data: its two bytes, then the base64 of its entries.
+    /// The beat grid in Serato BeatGrid's data, each marker but the last given the tempo its beats to the next take;
+    /// null if it isn't one, or its markers don't make a grid (out of order, or no beats or tempo).
+    /// </summary>
+    internal static BeatGrid? FromBeatGrid(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 6 || data[0] != 1 || data[1] != 0)
+            return null;
+        var count = BinaryPrimitives.ReadUInt32BigEndian(data[2..]);
+        if (count == 0 || count > 10_000 || data.Length < 6 + count * 8)
+            return null;
+
+        var places = new double[count];
+        var beats = new uint[count];
+        double bpm = 0;
+        for (var i = 0; i < count; i++)
+        {
+            var marker = data.Slice(6 + i * 8, 8);
+            places[i] = BinaryPrimitives.ReadSingleBigEndian(marker);
+            if (i + 1 < count)
+                beats[i] = BinaryPrimitives.ReadUInt32BigEndian(marker[4..]);
+            else
+                bpm = BinaryPrimitives.ReadSingleBigEndian(marker[4..]);
+            if (!double.IsFinite(places[i]) || places[i] < 0 || (i > 0 && places[i] <= places[i - 1]) || (i + 1 < count && beats[i] == 0))
+                return null;
+        }
+        if (!double.IsFinite(bpm) || bpm <= 0)
+            return null;
+
+        var markers = new List<GridMarker>((int)count);
+        for (var i = 0; i + 1 < count; i++)
+            markers.Add(new GridMarker(places[i], beats[i] * 60 / (places[i + 1] - places[i])));
+        markers.Add(new GridMarker(places[^1], bpm));
+        // As long again as a beat past the last marker, for want of the song's length; a grid's length is the song's
+        // wherever it's used.
+        return new BeatGrid(markers, places[^1] + 60 / bpm);
+    }
+
+    /// <summary>
+    /// The hot cues in Serato Markers2's data, from its CUE entries.
     /// </summary>
     internal static IReadOnlyList<TimeSpan?>? FromMarkers2(ReadOnlySpan<byte> data)
     {
-        if (data.Length < 2 || data[0] != 1 || data[1] != 1)
-            return null;
-        if (Base64(data[2..]) is not { } entries || entries.Length < 2 || entries[0] != 1 || entries[1] != 1)
-            return null;
-
         var cues = new TimeSpan?[HOTCUES];
         var any = false;
+        foreach (var (name, entry) in Entries(data))
+        {
+            if (name != "CUE" || entry.Length < 6)
+                continue;
+            var number = entry[1];
+            if (number < HOTCUES)
+            {
+                cues[number] = TimeSpan.FromMilliseconds(BinaryPrimitives.ReadUInt32BigEndian(entry.AsSpan(2, 4)));
+                any = true;
+            }
+        }
+        return any ? cues : null;
+    }
+
+    /// <summary>
+    /// Whether Serato Markers2's data says the beat grid's locked: its BPMLOCK entry, one byte, not zero.
+    /// </summary>
+    internal static bool IsBpmLocked(ReadOnlySpan<byte> data) => Entries(data).Any(entry => entry.Name == "BPMLOCK" && entry.Data is [not 0, ..]);
+
+    /// <summary>
+    /// Serato Markers2's entries, each its name and data: its two bytes, then the base64 of the entries, up to an empty
+    /// name or one that runs past the end. None if it isn't Markers2.
+    /// </summary>
+    static List<(string Name, byte[] Data)> Entries(ReadOnlySpan<byte> data)
+    {
+        var found = new List<(string, byte[])>();
+        if (data.Length < 2 || data[0] != 1 || data[1] != 1)
+            return found;
+        if (Base64(data[2..]) is not { } entries || entries.Length < 2 || entries[0] != 1 || entries[1] != 1)
+            return found;
+
         var at = 2;
         while (at < entries.Length && entries[at] != 0)
         {
@@ -327,19 +419,10 @@ static class SeratoMarkers
             var start = nameEnd + 5;
             if (length < 0 || start + length > entries.Length)
                 break;
-            if (name == "CUE" && length >= 6)
-            {
-                var number = entries[start + 1];
-                var milliseconds = BinaryPrimitives.ReadUInt32BigEndian(entries.AsSpan(start + 2, 4));
-                if (number < HOTCUES)
-                {
-                    cues[number] = TimeSpan.FromMilliseconds(milliseconds);
-                    any = true;
-                }
-            }
+            found.Add((name, entries[start..(start + length)]));
             at = start + length;
         }
-        return any ? cues : null;
+        return found;
     }
 
     /// <summary>

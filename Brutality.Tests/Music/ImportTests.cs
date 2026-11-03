@@ -226,7 +226,12 @@ public class SeratoTests
     /// <summary>
     /// Serato Markers2's entries, encoded as Serato does: base64 with line breaks every 72 characters and no padding.
     /// </summary>
-    static byte[] Markers2(params (int Number, uint Milliseconds)[] cues)
+    static byte[] Markers2(params (int Number, uint Milliseconds)[] cues) => Markers2(false, cues);
+
+    /// <summary>
+    /// Serato Markers2's data with these hot cues, and the beat grid <paramref name="locked"/> or not.
+    /// </summary>
+    static byte[] Markers2(bool locked, params (int Number, uint Milliseconds)[] cues)
     {
         var entries = new List<byte> { 1, 1 };
         void Entry(string name, byte[] data)
@@ -247,7 +252,7 @@ public class SeratoTests
             data[7] = 0xcc;
             Entry("CUE", data);
         }
-        Entry("BPMLOCK", [0]);
+        Entry("BPMLOCK", [(byte)(locked ? 1 : 0)]);
         entries.Add(0);
 
         var base64 = Convert.ToBase64String(entries.ToArray()).TrimEnd('=');
@@ -275,7 +280,7 @@ public class SeratoTests
     /// <summary>
     /// An MP3 with an ID3v2 tag holding a title, and Serato's markers in a GEOB frame.
     /// </summary>
-    static byte[] Mp3(int version, byte[] markers2)
+    static byte[] Mp3(int version, byte[] markers2, byte[]? beatGrid = null)
     {
         byte[] Frame(string id, byte[] content)
         {
@@ -289,7 +294,8 @@ public class SeratoTests
             return frame;
         }
         byte[] geob = [0, .. "application/octet-stream\0\0Serato Markers2\0"u8, .. markers2];
-        byte[] frames = [.. Frame("TIT2", [0, .. "Song"u8]), .. Frame("GEOB", geob), .. new byte[64]];
+        byte[] grid = beatGrid is null ? [] : Frame("GEOB", [0, .. "application/octet-stream\0\0Serato BeatGrid\0"u8, .. beatGrid]);
+        byte[] frames = [.. Frame("TIT2", [0, .. "Song"u8]), .. Frame("GEOB", geob), .. grid, .. new byte[64]];
         return [.. "ID3"u8, (byte)version, 0, 0, .. Syncsafe(frames.Length), .. frames, 0xff, 0xfb, 0x90, 0x00];
     }
 
@@ -322,13 +328,141 @@ public class SeratoTests
         var database = LibraryDatabase.Load(folder["library.json"], folder.Path, _ => folder.Path);
         database.SetHotcues(ownCues, [TimeSpan.FromSeconds(4)]);
 
-        var found = SeratoCueImport.Read([withCues, ownCues, noCues, folder["missing.mp3"]]);
+        var found = SeratoImport.Read([withCues, ownCues, noCues, folder["missing.mp3"]]);
         Assert.Equal(new[] { withCues, ownCues }, found.Select(read => read.Path));
 
-        Assert.Equal((1, 1), SeratoCueImport.Take(database, found));
+        var taken = SeratoImport.Take(database, found);
+        Assert.Equal((1, 0, 1), (taken.Hotcues, taken.Grids, taken.Kept));
         Assert.Equal(TimeSpan.FromSeconds(1.5), database.GetHotcues(withCues)[0]);
         Assert.Equal(TimeSpan.FromSeconds(4), database.GetHotcues(ownCues)[0]);
         Assert.Null(database.GetHotcues(ownCues).ElementAtOrDefault(2));
+    }
+
+    /// <summary>
+    /// Serato BeatGrid's data: each marker but the last a place and the beats to the next, the last a place and a
+    /// tempo, then a footer byte.
+    /// </summary>
+    static byte[] BeatGridData(float lastPlace, float bpm, params (float Place, uint Beats)[] before)
+    {
+        var data = new List<byte> { 1, 0 };
+        var number = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(number, (uint)before.Length + 1);
+        data.AddRange(number);
+        foreach (var (place, beats) in before)
+        {
+            var marker = new byte[8];
+            BinaryPrimitives.WriteSingleBigEndian(marker, place);
+            BinaryPrimitives.WriteUInt32BigEndian(marker.AsSpan(4), beats);
+            data.AddRange(marker);
+        }
+        var last = new byte[8];
+        BinaryPrimitives.WriteSingleBigEndian(last, lastPlace);
+        BinaryPrimitives.WriteSingleBigEndian(last.AsSpan(4), bpm);
+        data.AddRange(last);
+        data.Add(0x37);
+        return [.. data];
+    }
+
+    [Fact]
+    public void A_steady_Serato_grid_is_its_one_marker_s_place_and_tempo()
+    {
+        // The serato-tags notes' example: one marker, at about 0.305 seconds, 115 BPM.
+        byte[] data = [0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x3e, 0x9c, 0x28, 0x38, 0x42, 0xe6, 0x00, 0x00, 0x37];
+
+        var grid = SeratoMarkers.FromBeatGrid(data)!;
+
+        Assert.Equal(0.30499, Assert.Single(grid.Markers).Time, 4);
+        Assert.Equal(115, grid.Markers[0].Bpm);
+        Assert.True(grid.IsBarStart(0));
+    }
+
+    [Fact]
+    public void A_changing_Serato_grid_gives_each_marker_the_tempo_its_beats_to_the_next_take()
+    {
+        // 64 beats in 32 seconds is 120 BPM; then 125 from there on.
+        var grid = SeratoMarkers.FromBeatGrid(BeatGridData(32.5f, 125, (0.5f, 64)))!;
+
+        Assert.Equal(new[] { new GridMarker(0.5, 120), new GridMarker(32.5, 125) }, grid.Markers);
+        Assert.Equal(64, grid.BeatNumberAt(32.5), 6);
+    }
+
+    [Fact]
+    public void A_Serato_grid_that_does_not_make_sense_is_left_out()
+    {
+        Assert.Null(SeratoMarkers.FromBeatGrid(BeatGridData(32.5f, 125, (0.5f, 0))));
+        Assert.Null(SeratoMarkers.FromBeatGrid(BeatGridData(0.25f, 125, (0.5f, 16))));
+        Assert.Null(SeratoMarkers.FromBeatGrid(BeatGridData(0.5f, 0)));
+        Assert.Null(SeratoMarkers.FromBeatGrid([2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
+        Assert.Null(SeratoMarkers.FromBeatGrid([1, 0, 0, 0, 0, 2, 0]));
+    }
+
+    [Fact]
+    public void An_MP3s_Serato_grid_is_read_from_its_own_GEOB_frame_beside_the_hot_cues_once_it_s_locked()
+    {
+        using var folder = new TempFolder();
+        File.WriteAllBytes(folder["song.mp3"], Mp3(4, Markers2(true, (0, 1500)), BeatGridData(0.25f, 128)));
+        File.WriteAllBytes(folder["unlocked.mp3"], Mp3(4, Markers2((0, 1500)), BeatGridData(0.25f, 128)));
+        File.WriteAllBytes(folder["cues only.mp3"], Mp3(4, Markers2(true, (0, 1500))));
+
+        Assert.Equal(new GridMarker(0.25, 128), Assert.Single(SeratoMarkers.ReadGrid(folder["song.mp3"])!.Markers));
+        Assert.Equal(TimeSpan.FromSeconds(1.5), SeratoMarkers.ReadHotcues(folder["song.mp3"])![0]);
+        // Serato's own analysis, not locked, isn't taken.
+        Assert.Null(SeratoMarkers.ReadGrid(folder["unlocked.mp3"]));
+        Assert.Equal(TimeSpan.FromSeconds(1.5), SeratoMarkers.ReadHotcues(folder["unlocked.mp3"])![0]);
+        Assert.Null(SeratoMarkers.ReadGrid(folder["cues only.mp3"]));
+    }
+
+    [Fact]
+    public void A_grid_s_lock_is_its_markers_BPMLOCK_entry()
+    {
+        Assert.True(SeratoMarkers.IsBpmLocked(Markers2(true)));
+        Assert.False(SeratoMarkers.IsBpmLocked(Markers2(false, (1, 500))));
+        Assert.False(SeratoMarkers.IsBpmLocked([1, 1, .. "not base64!!"u8]));
+    }
+
+    [Fact]
+    public void An_M4As_Serato_grid_is_read_from_its_beatgrid_tag_even_with_a_character_too_many()
+    {
+        using var folder = new TempFolder();
+        // Serato writes the grid's base64 with a stray character on the end, which Mixxx splits off.
+        var wrapped = Wrapped(BeatGridData(1.5f, 100), "Serato BeatGrid");
+        var moov = Box("moov", Box("udta", Meta(Ilst(Wrapped(Markers2(true)), [.. wrapped, (byte)'A']))));
+        File.WriteAllBytes(folder["song.m4a"], M4a(moov, moovFirst: true));
+
+        Assert.Equal(new GridMarker(1.5, 100), Assert.Single(SeratoMarkers.ReadGrid(folder["song.m4a"])!.Markers));
+        Assert.Null(SeratoMarkers.ReadHotcues(folder["song.m4a"]));
+    }
+
+    [Fact]
+    public void A_FLACs_Serato_grid_is_read_from_its_SERATO_BEATGRID_comment()
+    {
+        using var folder = new TempFolder();
+        var grid = Encoding.ASCII.GetString(Wrapped(BeatGridData(10, 140, (2, 16)), "Serato BeatGrid"));
+        var markers = Encoding.ASCII.GetString(Wrapped(Markers2(true)));
+        File.WriteAllBytes(folder["song.flac"], Flac("SERATO_MARKERS_V2=" + markers, "SERATO_BEATGRID=" + grid));
+
+        Assert.Equal(new[] { new GridMarker(2, 120), new GridMarker(10, 140) }, SeratoMarkers.ReadGrid(folder["song.flac"])!.Markers);
+    }
+
+    [Fact]
+    public void A_Serato_grid_comes_in_for_a_song_without_one_fixed_here()
+    {
+        using var folder = new TempFolder();
+        var fresh = folder["a.mp3"];
+        var fixedHere = folder["b.mp3"];
+        File.WriteAllBytes(fresh, Mp3(4, Markers2(true), BeatGridData(0.5f, 126)));
+        File.WriteAllBytes(fixedHere, Mp3(4, Markers2(true), BeatGridData(0.5f, 126)));
+        var database = LibraryDatabase.Load(folder["library.json"], folder.Path, _ => folder.Path);
+        var own = new GridEdit(BeatGrid.Constant(127.5, 0.1, 200), [0.1]);
+        database.SetGridEdit(fixedHere, own);
+
+        var taken = SeratoImport.Take(database, SeratoImport.Read([fresh, fixedHere]));
+
+        Assert.Equal((0, 1, 1), (taken.Hotcues, taken.Grids, taken.Kept));
+        Assert.Equal(new[] { fresh }, taken.Gridded);
+        Assert.Equal(126, Assert.Single(database.GetGridEdit(fresh, 200)!.Grid.Markers).Bpm);
+        Assert.Equal(127.5, database.GetGridEdit(fixedHere, 200)!.Grid.Markers[0].Bpm);
+        Assert.Equal("hot cues for 2 songs and beat grids for 1 song", new SeratoImport.Taken(2, 1, 0, []).News(n => n == 1 ? "1 song" : $"{n} songs"));
     }
 
     [Fact]
@@ -347,9 +481,9 @@ public class SeratoTests
     /// Serato's markers as an M4A or FLAC keeps them: the header, then the markers as an MP3 keeps them, all in base64
     /// again, without padding, a line break every 72 characters.
     /// </summary>
-    static byte[] Wrapped(byte[] markers2)
+    static byte[] Wrapped(byte[] markers2, string tag = "Serato Markers2")
     {
-        byte[] unwrapped = [.. "application/octet-stream\0\0Serato Markers2\0"u8, .. markers2];
+        byte[] unwrapped = [.. Encoding.ASCII.GetBytes($"application/octet-stream\0\0{tag}\0"), .. markers2];
         var base64 = Convert.ToBase64String(unwrapped).TrimEnd('=');
         return Encoding.ASCII.GetBytes(string.Join('\n', base64.Chunk(72).Select(chunk => new string(chunk))));
     }
@@ -369,14 +503,15 @@ public class SeratoTests
     /// An M4A's metadata with a title and, if given, Serato's markers, as iTunes-style tags: ilst › "----" › mean, name
     /// and data.
     /// </summary>
-    static byte[] Ilst(byte[]? wrapped)
+    static byte[] Ilst(byte[]? wrapped, byte[]? wrappedGrid = null)
     {
         byte[] Freeform(string mean, string name, byte[] value) =>
             Box("----", Box("mean", [0, 0, 0, 0], Encoding.UTF8.GetBytes(mean)), Box("name", [0, 0, 0, 0], Encoding.UTF8.GetBytes(name)), Box("data", [0, 0, 0, 1, 0, 0, 0, 0], value));
         // iTunes' title tag, "©nam", which Serato's is found among.
         var title = Box("©nam", Box("data", [0, 0, 0, 1, 0, 0, 0, 0], "Song"u8.ToArray()));
         var other = Freeform("com.apple.iTunes", "iTunNORM", "0000"u8.ToArray());
-        return wrapped is null ? Box("ilst", title, other) : Box("ilst", title, other, Freeform("com.serato.dj", "markersv2", wrapped));
+        byte[] grid = wrappedGrid is null ? [] : Freeform("com.serato.dj", "beatgrid", wrappedGrid);
+        return wrapped is null ? Box("ilst", title, other, grid) : Box("ilst", title, other, Freeform("com.serato.dj", "markersv2", wrapped), grid);
     }
 
     // A "meta" box: four bytes of version and flags, a handler, then the tags.
