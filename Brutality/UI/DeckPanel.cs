@@ -60,6 +60,14 @@ sealed class DeckPanel : Panel
     readonly Button _keyDown;
     readonly Button _keyUp;
     readonly Button _slip;
+
+    // The effect: which one, its length in beats, how much, and on or off.
+    readonly Dropdown<DeckEffect> _fxKind;
+    readonly Button _fxShorter;
+    readonly Label _fxBeats;
+    readonly Button _fxLonger;
+    readonly Slider _fxLevel;
+    readonly Button _fxOn;
     readonly RollPads? _roll;
     readonly JumpPads? _jump;
 
@@ -143,6 +151,7 @@ sealed class DeckPanel : Panel
         {
             if (_padMode is not null)
                 _padMode.Menu = value;
+            _fxKind.Menu = value;
         }
     }
 
@@ -311,6 +320,74 @@ sealed class DeckPanel : Panel
             }
         );
         _loopOut.Clicked += _ => _deck.LoopOut();
+
+        // The effect, beside the times: chosen from a list, its length in beats (for echo and flanger) stepped shorter
+        // or longer, how much of it there is, and FX to switch it on and off.
+        _fxKind = Add(
+            new Dropdown<DeckEffect>(small)
+            {
+                Items = () => Enum.GetValues<DeckEffect>(),
+                Text = kind => kind switch
+                {
+                    DeckEffect.Echo => "ECHO",
+                    DeckEffect.Reverb => "REVERB",
+                    _ => "FLANGER",
+                },
+                Width = 78,
+                Padding = 3,
+                Tooltip = "The deck's effect: an echo in time with the beat, reverb, or a flanger sweeping in time",
+            }
+        );
+        _fxKind.Chosen += kind => _deck.Effects.Kind = kind;
+        _fxShorter = Add(
+            new Button(small, "")
+            {
+                Icon = images?.TriangleLeft,
+                MinSize = new float2(18, 20),
+                Padding = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "Fewer beats: closer echoes, or a faster sweep",
+            }
+        );
+        _fxShorter.Clicked += _ => _deck.Effects.StepBeats(-1);
+        _fxBeats = Add(new Label(small) { Color = Theme.Text });
+        _fxLonger = Add(
+            new Button(small, "")
+            {
+                Icon = images?.TriangleRight,
+                MinSize = new float2(18, 20),
+                Padding = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "More beats: echoes further apart, or a slower sweep",
+            }
+        );
+        _fxLonger.Clicked += _ => _deck.Effects.StepBeats(1);
+        _fxLevel = Add(
+            new Slider
+            {
+                Length = FX_LEVEL_LENGTH,
+                Thickness = 14,
+                TrackThickness = 3,
+                HandleLength = 8,
+                DefaultValue = 0.6f,
+                Value = deck.Effects.Level,
+                ShowFill = true,
+                FillColor = Theme.Accent,
+                FocusColor = Theme.Focus,
+                Tooltip = "How much of the effect: the echoes' or reverb's level, or the flanger's depth. Double-click for the usual amount",
+            }
+        );
+        _fxLevel.Changed += slider => _deck.Effects.Level = slider.Value;
+        _fxOn = Add(
+            new Button(small, "FX")
+            {
+                MinSize = new float2(34, 20),
+                Padding = 3,
+                FocusColor = Theme.Focus,
+                Tooltip = "The effect on or off. Echo and reverb ring on as they fade when it's switched off",
+            }
+        );
+        _fxOn.Clicked += _ => _deck.Effects.On = !_deck.Effects.On;
 
         // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
         _tempoReadout = Add(new Label(small) { Color = Theme.Muted });
@@ -527,6 +604,16 @@ sealed class DeckPanel : Panel
         _slip.Background = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
         _slip.HoverBackground = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
         _slip.TextColor = slip ? Colors.White : Theme.Muted;
+
+        var fx = _deck.Effects;
+        _fxKind.Selected = fx.Kind;
+        _fxBeats.Text = fx.HasBeats ? FormatFxBeats(fx.Beats) : "";
+        _fxShorter.Enabled = _fxLonger.Enabled = fx.HasBeats;
+        if (!_fxLevel.IsDragging)
+            _fxLevel.Value = fx.Level;
+        _fxOn.Background = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+        _fxOn.HoverBackground = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
+        _fxOn.TextColor = fx.On ? Colors.White : Theme.Muted;
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
 
         if (!_deck.IsLoaded)
@@ -702,6 +789,18 @@ sealed class DeckPanel : Panel
     }
 
     /// <summary>
+    /// An effect's length in beats: as <see cref="FormatBeats"/>, with three quarters as "3/4".
+    /// </summary>
+    static string FormatFxBeats(double beats) => beats == 0.75 ? "3/4" : FormatBeats(beats);
+
+    /// <summary>
+    /// The effect's level slider's length, and the room its beats take, wide enough for "1/16".
+    /// </summary>
+    const float FX_LEVEL_LENGTH = 48;
+
+    const float FX_BEATS_WIDTH = 28;
+
+    /// <summary>
     /// A loop's length as DJs say it: "4", or "1/2" for half a beat.
     /// </summary>
     public static string FormatBeats(double beats) => beats >= 1 ? $"{beats:0}" : $"1/{Math.Round(1 / beats):0}";
@@ -824,8 +923,32 @@ sealed class DeckPanel : Panel
         var timesY = top + 52;
         Place(_elapsed, Outer(0, _elapsed), timesY);
         Place(_remaining, Outer(_elapsed.Size.X + 12, _remaining), timesY);
+
+        // The effect's controls from the inner edge, in the same order either side; then, as room allows, the cue
+        // point after the times, and the automatic gain beside the effect.
+        var fxWidth = _fxKind.Size.X + 6 + _fxShorter.Size.X + 2 + FX_BEATS_WIDTH + 2 + _fxLonger.Size.X + 6 + _fxLevel.Size.X + 6 + _fxOn.Size.X;
+        var fxX = Mirrored ? contentLeft : contentRight - fxWidth;
+        float Centred(Element child) => timesY + (_elapsed.Size.Y - child.Size.Y) / 2;
+        Place(_fxKind, fxX, Centred(_fxKind));
+        fxX += _fxKind.Size.X + 6;
+        Place(_fxShorter, fxX, Centred(_fxShorter));
+        fxX += _fxShorter.Size.X + 2;
+        Place(_fxBeats, fxX + (FX_BEATS_WIDTH - _fxBeats.Size.X) / 2, Centred(_fxBeats));
+        fxX += FX_BEATS_WIDTH + 2;
+        Place(_fxLonger, fxX, Centred(_fxLonger));
+        fxX += _fxLonger.Size.X + 6;
+        Place(_fxLevel, fxX, Centred(_fxLevel));
+        fxX += _fxLevel.Size.X + 6;
+        Place(_fxOn, fxX, Centred(_fxOn));
+
+        var content = contentRight - contentLeft;
+        var times = _elapsed.Size.X + 12 + _remaining.Size.X;
+        _cuePoint.Visible = times + 16 + _cuePoint.Size.X + 12 + fxWidth <= content;
+        if (_cuePoint.Visible)
+            times += 16 + _cuePoint.Size.X;
         Place(_cuePoint, Outer(_elapsed.Size.X + 12 + _remaining.Size.X + 16, _cuePoint), timesY);
-        Place(_gain, Inner(0, _gain), timesY);
+        _gain.Visible = times + 16 + _gain.Size.X + 12 + fxWidth <= content;
+        Place(_gain, Inner(fxWidth + 12, _gain), timesY);
 
         Place(_overview, contentLeft, timesY + _elapsed.Size.Y + 4);
 

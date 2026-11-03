@@ -177,6 +177,21 @@ public sealed class MixerAndDeckLayoutTests : IDisposable
             Assert.InRange(centre.ScreenPosition.X + centre.Size.X / 2, width / 2 - 1, width / 2 + 1);
     }
 
+    [Fact]
+    public void The_deck_s_effect_list_switches_its_effect()
+    {
+        var panel = Panel();
+        var menu = new ContextMenu(_font);
+        panel.Menu = menu;
+        var effects = panel.Children.OfType<Dropdown<DeckEffect>>().Single();
+
+        effects.RaiseClicked();
+        Assert.Equal(new[] { "ECHO", "REVERB", "FLANGER" }, menu.ItemTexts);
+        menu.Choose("FLANGER");
+
+        Assert.Equal(DeckEffect.Flanger, _deck.Effects.Kind);
+    }
+
     DeckPanel Panel(RollPads? roll = null, JumpPads? jump = null) =>
         new(_deck, _font, _font, _font, _font, keys: new DeckKeyHints("Z", "X", "C", "3", "V", "4", "G", "T"), images: _images, roll: roll, jump: jump);
 
@@ -217,8 +232,11 @@ public sealed class MixerAndDeckLayoutTests : IDisposable
         var panel = Panel(roll, jump);
         var menu = new ContextMenu(_font);
         panel.Menu = menu;
-        var dropdown = Assert.Single(panel.Children.OfType<IOpensMenu>());
-        Assert.Same(menu, dropdown.Menu);
+        // The pad modes' list, and the effect's, both open on the menu.
+        var dropdowns = panel.Children.OfType<IOpensMenu>().ToList();
+        Assert.Equal(2, dropdowns.Count);
+        Assert.All(dropdowns, each => Assert.Same(menu, each.Menu));
+        var dropdown = dropdowns.Single(each => each is not Dropdown<DeckEffect>);
 
         roll.Active = true;
         panel.Refresh();

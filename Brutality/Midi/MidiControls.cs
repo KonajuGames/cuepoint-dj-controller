@@ -407,6 +407,18 @@ sealed class MidiControls : IDisposable
             case "key.reset":
                 deck.KeyShift = 0;
                 break;
+            case "fx.on":
+                deck.Effects.On = !deck.Effects.On;
+                break;
+            case "fx.next":
+                deck.Effects.Kind = (DeckEffect)(((int)deck.Effects.Kind + 1) % Enum.GetValues<DeckEffect>().Length);
+                break;
+            case "fx.shorter":
+                deck.Effects.StepBeats(-1);
+                break;
+            case "fx.longer":
+                deck.Effects.StepBeats(1);
+                break;
             case "loop":
                 deck.ToggleLoop();
                 break;
@@ -531,6 +543,9 @@ sealed class MidiControls : IDisposable
             case "filter":
                 deck.Equalizer.Filter = centred;
                 break;
+            case "fx.level":
+                deck.Effects.Level = position;
+                break;
         }
     }
 
@@ -596,6 +611,7 @@ sealed class MidiControls : IDisposable
             "pfl" => deck.Headphones,
             "keylock" => deck.KeyLocked,
             "slip" => deck.Slip,
+            "fx.on" => deck.Effects.On,
             "loop" => deck.IsLooping,
             "grid" => IsGridMode?.Invoke(deck) == true,
             "roll" => IsRollMode?.Invoke(deck) == true,

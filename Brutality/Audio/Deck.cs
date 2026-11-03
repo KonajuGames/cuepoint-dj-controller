@@ -247,6 +247,11 @@ sealed partial class Deck : IDisposable
     /// </summary>
     public Equalizer Equalizer { get; } = new();
 
+    /// <summary>
+    /// The deck's echo, reverb or flanger, after its EQ, timed by its tempo.
+    /// </summary>
+    public DeckEffects Effects { get; } = new();
+
     readonly KeyLock _keyLock = new();
 
     /// <summary>
@@ -303,6 +308,7 @@ sealed partial class Deck : IDisposable
             if (!deck.RenderPlatter(samples, count, channels, spec->freq))
                 deck._keyLock.Process(samples, count, channels, spec->freq, Volatile.Read(ref deck._speed));
             deck.Equalizer.Process(samples, count, channels, spec->freq);
+            deck.Effects.Process(samples, count, channels, spec->freq);
             deck.Meter.Measure(samples, count, channels);
             if (deck.Headphones)
                 deck._engine.AddCue(samples, count);
@@ -659,6 +665,8 @@ sealed partial class Deck : IDisposable
     {
         UpdatePlatter();
         UpdateRoll();
+        // The effects keep time with the beat coming out, or 120 BPM without one.
+        Effects.BeatSeconds = 60 / (Bpm is > 0 and var bpm ? bpm : 120);
         if (IsSlipping)
             AdvanceSlip();
         if (_pending is not { Task.IsCompleted: true } done)
@@ -723,6 +731,7 @@ sealed partial class Deck : IDisposable
     void Apply(DecodedSong song)
     {
         _rolls.Clear();
+        Effects.Silence();
         _slipCauses = SlipCause.None;
         KeyShift = 0;
         (_platterMode, _touched) = ((int)PlatterMode.Off, false);
@@ -792,7 +801,11 @@ sealed partial class Deck : IDisposable
             return;
         }
         if (IsPlaying)
+        {
             _track.Pause();
+            // An echo or reverb ringing on would otherwise wait, and carry on when it plays again.
+            Effects.Silence();
+        }
     }
 
     public void TogglePlay()
