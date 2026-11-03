@@ -113,7 +113,16 @@ sealed class SongBrowser : Panel
 
         _heading = Add(new Label(bold) { Color = Theme.Text });
         _count = Add(new Label(body) { Color = Theme.Muted });
-        _search = Add(new TextBox(body) { Width = 280, Placeholder = "Search title, artist or album", FocusColor = Theme.Focus, ClearOnEscape = true });
+        _search = Add(
+            new TextBox(body)
+            {
+                Width = 280,
+                Placeholder = "Search, or 120-126 BPM, 8A, ~8A",
+                FocusColor = Theme.Focus,
+                ClearOnEscape = true,
+                Tooltip = "Words find songs by title, artist or album. 120-126 finds songs from 120 to 126 BPM, and 124bpm those at 124. 8A finds songs in that key, and ~8A those that mix with it. They go together: disco 120-126 ~8A",
+            }
+        );
         _search.TextChanged += _ => Filter();
 
         // A cross at the search box's end empties it, while there's anything to empty.
@@ -329,7 +338,9 @@ sealed class SongBrowser : Panel
             _analyser.ActiveCount == 0 ? ""
             : _analyser.QueuedCount == 0 ? $", analysing {_analyser.ActiveCount}"
             : $", analysing {_analyser.ActiveCount}, {_analyser.QueuedCount} waiting";
-        _count.Text = songs + tags + analysing;
+        // Songs not analysed yet have no tempo or key to be found by.
+        var unsearched = _unanalysed > 0 ? $", {_unanalysed} not analysed yet (right-click > Analyse All)" : "";
+        _count.Text = songs + unsearched + tags + analysing;
     }
 
     /// <summary>
@@ -341,11 +352,23 @@ sealed class SongBrowser : Panel
             Filter();
     }
 
+    // The search as it was last read, and how many of the songs it looked through it couldn't search by tempo or key,
+    // as they're not analysed yet.
+    SongQuery _query = SongQuery.Everything;
+    int _unanalysed;
+
+    /// <summary>
+    /// Whether the search is by tempo or key, so a song being analysed can change what it finds.
+    /// </summary>
+    public bool SearchesAnalysis => _query.NeedsAnalysis;
+
     void Filter()
     {
         _clearSearch.Visible = _search.Text.Length > 0;
-        var query = _search.Text.Trim();
-        IEnumerable<Song> songs = query.Length == 0 ? _sourceSongs : _sourceSongs.Where(song => song.Matches(query));
+        _query = SongQuery.Parse(_search.Text);
+        var query = _query;
+        IEnumerable<Song> songs = query.IsEmpty ? _sourceSongs : _sourceSongs.Where(query.Matches);
+        _unanalysed = query.NeedsAnalysis ? _sourceSongs.Count(song => song.Analysis is null && song.AnalysisError is null) : 0;
 
         // Sorted, those with nothing to sort by go last either way, and ties keep the order they came in.
         if (_sortColumn?.SortKey is { } key)
@@ -359,7 +382,7 @@ sealed class SongBrowser : Panel
 
         // A virtual folder's songs can be put in a new order, but only seeing them all, in their own order: dropping
         // between two songs a search or sort has brought together would be ambiguous.
-        List.CanReorder = _source?.Folder is not null && query.Length == 0 && _sortColumn is null;
+        List.CanReorder = _source?.Folder is not null && query.IsEmpty && _sortColumn is null;
     }
 
     /// <summary>

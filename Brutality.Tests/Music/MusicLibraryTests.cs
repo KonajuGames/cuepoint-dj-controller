@@ -103,7 +103,7 @@ public class MusicLibraryTests
     {
         var song = LibraryFileTests.Song("x.mp3", title: "Digital Love", artist: "Daft Punk", album: "Discovery");
 
-        Assert.Equal(matches, song.Matches(query));
+        Assert.Equal(matches, SongQuery.Parse(query).Matches(song));
     }
 
     /// <summary>

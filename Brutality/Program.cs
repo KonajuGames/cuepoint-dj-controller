@@ -667,6 +667,9 @@ static void Run()
     {
         if (song.AnalysisError is { } analysisError)
             screen.Log($"Couldn't analyse {Path.GetFileName(song.Path)}: {analysisError}");
+        // A search by tempo or key finds the song now it has them.
+        if (browser.SearchesAnalysis)
+            browser.Refilter();
         foreach (var deck in decks)
         {
             if (string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase))

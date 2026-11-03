@@ -55,23 +55,6 @@ sealed class Song
         Artist = artist;
         Album = album;
     }
-
-    /// <summary>
-    /// Whether every word of <paramref name="query"/> appears in the title, artist or album, ignoring case.
-    /// </summary>
-    public bool Matches(string query)
-    {
-        foreach (var word in query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (
-                !Title.Contains(word, StringComparison.OrdinalIgnoreCase)
-                && !Artist.Contains(word, StringComparison.OrdinalIgnoreCase)
-                && !Album.Contains(word, StringComparison.OrdinalIgnoreCase)
-            )
-                return false;
-        }
-        return true;
-    }
 }
 
 /// <summary>

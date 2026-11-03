@@ -1,0 +1,91 @@
+using Brutality.Audio.Analysis;
+using Brutality.Music;
+
+namespace Brutality.Tests.Music;
+
+public class SongQueryTests
+{
+    static Song Song(string title, double? bpm = null, MusicalKey? key = null, string artist = "Artist")
+    {
+        var song = LibraryFileTests.Song($@"C:\Music\{title}.mp3", title: title, artist: artist);
+        if (bpm is { } tempo)
+            song.Analysis = new TrackAnalysis(BeatGrid.Constant(tempo, 0.1, 200), -9, 0.9f, key ?? new MusicalKey(9, true));
+        return song;
+    }
+
+    // 8A is A minor; 9A E minor, 7A D minor, 8B C major, 3B D flat major.
+    static readonly MusicalKey AMinor = new(9, true);
+    static readonly MusicalKey EMinor = new(4, true);
+    static readonly MusicalKey DMinor = new(2, true);
+    static readonly MusicalKey CMajor = new(0, false);
+    static readonly MusicalKey DFlatMajor = new(1, false);
+
+    [Theory]
+    [InlineData("120-126")]
+    [InlineData("126-120")]
+    [InlineData("120 - 126")]
+    [InlineData("120\u2013126")]
+    [InlineData("120-126BPM")]
+    public void A_tempo_range_is_written_either_way_round_with_or_without_spaces(string text)
+    {
+        var query = SongQuery.Parse(text);
+
+        Assert.Equal((120.0, 126.0), (query.MinBpm, query.MaxBpm));
+        Assert.Empty(query.Words);
+    }
+
+    [Fact]
+    public void A_range_finds_songs_by_the_tempo_shown_including_its_ends()
+    {
+        var query = SongQuery.Parse("120-126");
+
+        Assert.True(query.Matches(Song("Low end", 119.96)));
+        Assert.True(query.Matches(Song("High end", 126)));
+        Assert.False(query.Matches(Song("Too fast", 126.1)));
+        Assert.False(query.Matches(Song("Not analysed")));
+    }
+
+    [Fact]
+    public void One_tempo_finds_songs_within_half_a_beat_a_minute()
+    {
+        var query = SongQuery.Parse("124bpm");
+
+        Assert.True(query.Matches(Song("Near", 124.4)));
+        Assert.False(query.Matches(Song("Off", 125)));
+    }
+
+    [Fact]
+    public void A_Camelot_key_finds_that_key_and_with_a_tilde_those_that_mix_with_it()
+    {
+        var exact = SongQuery.Parse("8a");
+        var mixes = SongQuery.Parse("~8A");
+
+        Assert.True(exact.Matches(Song("Same", 124, AMinor)));
+        Assert.False(exact.Matches(Song("Relative", 124, CMajor)));
+        foreach (var key in new[] { AMinor, EMinor, DMinor, CMajor })
+            Assert.True(mixes.Matches(Song("Mixes", 124, key)));
+        Assert.False(mixes.Matches(Song("Clashes", 124, DFlatMajor)));
+    }
+
+    [Fact]
+    public void Words_tempo_and_key_go_together_and_anything_else_is_a_word()
+    {
+        var query = SongQuery.Parse("disco 1999 120-126 ~8A 13B");
+
+        Assert.Equal(new[] { "disco", "1999", "13B" }, query.Words);
+        Assert.True(query.Matches(Song("Disco 1999 13B", 123, EMinor)));
+        Assert.False(query.Matches(Song("Disco 1999 13B", 130, EMinor)));
+        Assert.False(query.Matches(Song("Funk 1999 13B", 123, EMinor)));
+    }
+
+    [Fact]
+    public void Words_alone_find_songs_analysed_or_not_by_title_artist_or_album()
+    {
+        var query = SongQuery.Parse("  daft  ");
+
+        Assert.False(query.NeedsAnalysis);
+        Assert.True(query.Matches(Song("One More Time", artist: "Daft Punk")));
+        Assert.False(query.Matches(Song("Porcelain", artist: "Moby")));
+        Assert.True(SongQuery.Parse("").IsEmpty);
+    }
+}

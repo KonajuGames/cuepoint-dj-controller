@@ -63,7 +63,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 - **Folder list:** the music library, every drive's folders, virtual folders, History, Recently added, and live filters such as songs compatible in key and tempo with each deck.
 - **Recursive folders:** a folder, drive or the music library lists only the songs directly in it. Right-click it and choose **Recursive** to list every song in its subfolders too, until another folder is chosen.
 - **Song list:**
-  - searchable
+  - searchable by title, artist and album, and by tempo and key: `120-126` finds songs from 120 to 126 BPM and `124bpm` those at 124, `8A` finds songs in that key and `~8A` those that mix with it, and they go together, as in `disco 120-126 ~8A`. Songs not analysed yet can't be found by tempo or key; the list says how many there are, and **Analyse All** sees to them
   - sortable by any column
   - resizable columns, which can be shown or hidden
   - marks the songs loaded on each deck and those played this session
