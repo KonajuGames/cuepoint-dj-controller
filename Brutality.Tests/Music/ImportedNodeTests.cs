@@ -9,6 +9,20 @@ public class ImportedNodeTests : IDisposable
     readonly TempFolder _folder = new();
     readonly MusicLibrary _library;
 
+    // A playlist's or crate's songs, once they've been looked for in the background.
+    IReadOnlyList<Song> Loaded(LibraryNode node)
+    {
+        _ = node.Songs;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (node.IsLoadingSongs && watch.Elapsed.TotalSeconds < 5)
+        {
+            _library.Background.Apply();
+            Thread.Sleep(5);
+        }
+        Assert.False(node.IsLoadingSongs);
+        return node.Songs;
+    }
+
     public ImportedNodeTests()
     {
         _folder.File("Music", "a.mp3");
@@ -51,7 +65,7 @@ public class ImportedNodeTests : IDisposable
 
         Assert.Equal(LibraryNodeKind.Imported, playlist.Kind);
         // In the playlist's order, those whose files are here, in the library or not.
-        Assert.Equal(new[] { _folder["Music", "b.mp3"], _folder["Elsewhere", "c.mp3"] }, playlist.Songs.Select(song => song.Path));
+        Assert.Equal(new[] { _folder["Music", "b.mp3"], _folder["Elsewhere", "c.mp3"] }, Loaded(playlist).Select(song => song.Path));
         Assert.False(LibraryTree.Find(nodes, ["Rekordbox", "rekordbox.xml", "Gigs"])!.HasSongs);
     }
 
@@ -71,8 +85,8 @@ public class ImportedNodeTests : IDisposable
         Assert.Equal(new[] { "House", "Gigs" }, Names(serato.Children));
         var house = LibraryTree.Find(nodes, ["Serato", "House"])!;
         Assert.Equal(LibraryNodeKind.Imported, house.Kind);
-        Assert.Equal(_folder["Music", "a.mp3"], Assert.Single(house.Songs).Path);
-        Assert.Equal(_folder["Music", "b.mp3"], Assert.Single(LibraryTree.Find(nodes, ["Serato", "House", "Deep"])!.Songs).Path);
+        Assert.Equal(_folder["Music", "a.mp3"], Assert.Single(Loaded(house)).Path);
+        Assert.Equal(_folder["Music", "b.mp3"], Assert.Single(Loaded(LibraryTree.Find(nodes, ["Serato", "House", "Deep"])!)).Path);
         var gigs = LibraryTree.Find(nodes, ["Serato", "Gigs"])!;
         Assert.False(gigs.HasSongs);
         Assert.Equal(new[] { "Friday" }, Names(gigs.Children));

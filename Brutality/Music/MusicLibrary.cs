@@ -377,6 +377,37 @@ sealed partial class MusicLibrary : IDisposable
     /// The song at <paramref name="path"/>, wherever it is: one known already, or else found by looking in its folder,
     /// as browsing there would. Null if there's no such file, or it isn't one a deck can play. UI thread only.
     /// </summary>
+    /// <summary>
+    /// The songs at <paramref name="paths"/>, in order, those whose files are there, handed on once they've been
+    /// looked for: whether each is there, and the folders of any not known yet, in the background; the songs made on
+    /// the UI thread at the next <see cref="BackgroundWork.Apply"/>. UI thread only.
+    /// </summary>
+    public void LoadSongsAt(IReadOnlyList<string> paths, Action<IReadOnlyList<Song>> done)
+    {
+        var wanted = paths.ToList();
+        var unknown = wanted.Where(path => Find(path) is null).ToList();
+        Background.Start(
+            () =>
+            {
+                var there = wanted.Where(File.Exists).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var folders = unknown
+                    .Where(there.Contains)
+                    .Select(path => System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path)))
+                    .OfType<string>()
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(folder => (Folder: folder, Files: ListFolder(folder)))
+                    .ToList();
+                return (There: there, Folders: folders);
+            },
+            found =>
+            {
+                foreach (var (folder, files) in found.Folders)
+                    SongsIn(folder, files);
+                done(wanted.Where(found.There.Contains).Select(Find).OfType<Song>().ToList());
+            }
+        );
+    }
+
     public Song? SongAt(string path)
     {
         if (Find(path) is { } known)

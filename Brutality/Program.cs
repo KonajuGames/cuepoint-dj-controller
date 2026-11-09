@@ -175,19 +175,20 @@ static void Run()
     // collection's hot cues, memory cues and beat grids come into the library once (and again when it's exported
     // afresh), each for songs with none of their own here; a record of what's come in keeps what's cleared here from
     // coming back.
-    var imports = ImportedLibraries.Find(library.Root, VirtualFolders.ReadyDrives().Select(drive => drive.Root), settings.RekordboxXmlFiles);
+    // They're looked for in the background once the screen's up, as a big collection takes a while to read.
+    var imports = new ImportedLibraries();
     var importRecordPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "imports.json");
     var importRecord = ImportRecord.Load(importRecordPath);
     // A collection's hot cues, memory cues and beat grids, each for its songs here with none of their own: a
     // Rekordbox grid takes the analysed one's place, as one fixed by hand here would. What came in, as "hot cues for
     // 3 songs, ...", or null if nothing did; and why it couldn't be saved, if it couldn't.
-    (string? News, string? Error) ImportCollection(RekordboxCollection collection)
+    (string? News, string? Error) ImportCollection(RekordboxCollection collection, HashSet<string> filesThere)
     {
         int hotcues = 0, memoryCues = 0, grids = 0;
         var gridded = new List<string>();
         foreach (var path in collection.Songs)
         {
-            if (!File.Exists(path))
+            if (!filesThere.Contains(path))
                 continue;
             if (collection.Hotcues.TryGetValue(path, out var cues) && database.GetHotcues(path).All(cue => cue is null))
             {
@@ -247,17 +248,6 @@ static void Run()
         }
     }
 
-    var importNews = new List<string>();
-    foreach (var collection in imports.Rekordbox)
-    {
-        if (!ImportRecord.IsNew(importRecord.Rekordbox, collection.FilePath))
-            continue;
-        var (news, error) = ImportCollection(collection);
-        if (news is not null)
-            importNews.Add($"Brought in {news} from {collection.FilePath}");
-        if (error is not null)
-            importNews.Add($"Couldn't save them: {error}");
-    }
     importRecord.Save(importRecordPath);
 
     var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports);
@@ -316,14 +306,18 @@ static void Run()
     foreach (var heading in folders.Where(node => node.Kind is LibraryNodeKind.VirtualFolders || node.Name is "Lists" or "Filters"))
         screen.FolderTree.SetExpanded(heading, true);
     browser.Layout = settings.Browser;
-    var lastFolder = settings.BrowserFolder is { } lastPath ? LibraryTree.Find(folders, lastPath) : null;
-    if (lastFolder is { HasSongs: true })
+    void ShowFolder(LibraryNode node)
     {
-        for (var parent = lastFolder.Parent; parent is not null; parent = parent.Parent)
+        for (var parent = node.Parent; parent is not null; parent = parent.Parent)
             screen.FolderTree.SetExpanded(parent, true);
-        screen.FolderTree.Select(lastFolder);
-        screen.FolderTree.ScrollIntoView(lastFolder);
+        screen.FolderTree.Select(node);
+        screen.FolderTree.ScrollIntoView(node);
     }
+    var lastFolder = settings.BrowserFolder is { } lastPath ? LibraryTree.Find(folders, lastPath) : null;
+    // One in what's imported isn't known of yet, and is gone back to once it is.
+    var lastFolderToRestore = lastFolder is null && settings.BrowserFolder is ["Rekordbox" or "Serato", ..] ? settings.BrowserFolder : null;
+    if (lastFolder is { HasSongs: true })
+        ShowFolder(lastFolder);
     else
         screen.FolderTree.Select(folders[0]);
 
@@ -347,22 +341,20 @@ static void Run()
             browser.Reload();
     }
 
-    // What other DJ software there was, and what came in from it, said with the library's songs, as the status line
-    // shows only the last thing said.
-    string? importSummary = null;
-    if (!imports.IsEmpty)
-    {
-        var found = new List<string>();
-        if (imports.Rekordbox.Count > 0)
-            found.Add(imports.Rekordbox.Count == 1 ? "a Rekordbox collection" : $"{imports.Rekordbox.Count} Rekordbox collections");
-        var crates = imports.Serato.Sum(drive => drive.Crates.Count);
-        if (crates > 0)
-            found.Add(crates == 1 ? "a Serato crate" : $"{crates} Serato crates");
-        importSummary = string.Join("; ", [$"found {string.Join(" and ", found)}, in the folder list", .. importNews]);
-    }
+    // What other DJ software has, read in the background; its nodes join the folder list when it's in, what came in
+    // from it is said, and a playlist or crate chosen last time is gone back to.
+    var (importRoot, importChosen) = (library.Root, settings.RekordboxXmlFiles?.ToList());
+    library.Background.Start(
+        () =>
+        {
+            var found = ImportedLibraries.Find(importRoot, VirtualFolders.ReadyDrives().Select(drive => drive.Root), importChosen);
+            return (Found: found, Files: found.Rekordbox.ToDictionary(collection => collection, FilesThere));
+        },
+        read => TakeImports(read.Found, read.Files)
+    );
 
     // The library's looked through in the background, its songs coming in once it's done.
-    screen.Log($"Looking through {library.Root}" + (importSummary is null ? "" : $"; {importSummary}"));
+    screen.Log($"Looking through {library.Root}");
     library.BeginScan(
         library.Root,
         library.Recursive,
@@ -372,7 +364,7 @@ static void Run()
             if (library.Error is null && database.LoadError is { } loadError)
                 screen.Log($"Couldn't read {loadError}; it starts afresh");
             else
-                LogLibrary(importSummary);
+                LogLibrary();
         }
     );
 
@@ -390,6 +382,42 @@ static void Run()
         if (node.HasSongs)
             RememberFolder();
     };
+
+    static HashSet<string> FilesThere(RekordboxCollection collection) => collection.Songs.Where(File.Exists).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    void TakeImports(ImportedLibraries found, Dictionary<RekordboxCollection, HashSet<string>> files)
+    {
+        imports = found;
+        var news = new List<string>();
+        foreach (var collection in imports.Rekordbox)
+        {
+            if (!ImportRecord.IsNew(importRecord.Rekordbox, collection.FilePath))
+                continue;
+            var (brought, error) = ImportCollection(collection, files[collection]);
+            if (brought is not null)
+                news.Add($"brought in {brought} from {collection.FilePath}");
+            if (error is not null)
+                news.Add($"couldn't save them: {error}");
+        }
+        importRecord.Save(importRecordPath);
+
+        folders.RemoveAll(node => node.Kind == LibraryNodeKind.Group && node.Name is "Rekordbox" or "Serato");
+        folders.InsertRange(folders.IndexOf(virtualFoldersNode) + 1, LibraryTree.ImportedNodes(library, imports));
+        screen.FolderTree.Roots = folders;
+        if (lastFolderToRestore is { } last && browser.Source == folders[0] && LibraryTree.Find(folders, last) is { HasSongs: true } node)
+            ShowFolder(node);
+        lastFolderToRestore = null;
+
+        if (imports.IsEmpty)
+            return;
+        var kinds = new List<string>();
+        if (imports.Rekordbox.Count > 0)
+            kinds.Add(imports.Rekordbox.Count == 1 ? "a Rekordbox collection" : $"{imports.Rekordbox.Count} Rekordbox collections");
+        var crates = imports.Serato.Sum(drive => drive.Crates.Count);
+        if (crates > 0)
+            kinds.Add(crates == 1 ? "a Serato crate" : $"{crates} Serato crates");
+        screen.Log(string.Join("; ", [$"Found {string.Join(" and ", kinds)}, in the folder list", .. news]));
+    }
 
     // The folder list's "Rekordbox" node, made if there wasn't one, after the virtual folders; or opened afresh to
     // show what's changed.
@@ -434,7 +462,7 @@ static void Run()
         if (folders.FirstOrDefault(node => node.Name == "Rekordbox" && node.Parent is null) is { } rekordbox)
             screen.FolderTree.SetExpanded(rekordbox, true);
 
-        var (news, error) = ImportCollection(collection);
+        var (news, error) = ImportCollection(collection, FilesThere(collection));
         var playlists = Count(collection.Playlists);
         screen.Log(
             $"Imported {Path.GetFileName(path)}: {playlists} {(playlists == 1 ? "playlist" : "playlists")} under Rekordbox, "
@@ -1116,7 +1144,7 @@ static void Run()
     {
         if (node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive, Path: { } path })
             return new MenuItem(text, () => ImportSeratoCues(node.Name, () => MusicLibrary.ListFolder(path, recursive: true).Select(file => file.FullName).ToList()));
-        var listed = node.Songs.Select(song => song.Path).ToList();
+        var listed = node.SongPaths?.Invoke().ToList() ?? node.Songs.Select(song => song.Path).ToList();
         return new MenuItem(text, () => ImportSeratoCues(node.Name, () => listed), Enabled: listed.Count > 0);
     }
 
@@ -1180,7 +1208,17 @@ static void Run()
     // drive has of that name asks first.
     MenuItem ExportFor(LibraryNode node)
     {
-        var songs = node.Songs;
+        var paths = node.SongPaths?.Invoke() ?? [];
+        void Start(StorageDrive drive) =>
+            library.LoadSongsAt(paths, songs =>
+            {
+                if (export is not null)
+                    return;
+                if (songs.Count > 0)
+                    StartExport(node.Name, songs, drive);
+                else
+                    screen.Log($"None of {node.Name}'s songs are here to export");
+            });
         var drives = RemovableDrives.Writable().Where(drive => node.Folder is not { } folder || !virtualFolders.IsOn(folder, drive.Root));
         return new MenuItem(
             "Export to drive",
@@ -1191,13 +1229,13 @@ static void Run()
                     {
                         var name = DriveExport.SafeName(node.Name);
                         if (virtualFolders.IsOnDrive(name, drive.Root))
-                            confirmation.Show($"Replace {name} on {drive.Label}?", "The drive already has a playlist of that name. Its list of songs is replaced.", "Replace", () => StartExport(node.Name, songs, drive));
+                            confirmation.Show($"Replace {name} on {drive.Label}?", "The drive already has a playlist of that name. Its list of songs is replaced.", "Replace", () => Start(drive));
                         else
-                            StartExport(node.Name, songs, drive);
+                            Start(drive);
                     }
                 ))
                 .ToList(),
-            enabled: export is null && songs.Count > 0
+            enabled: export is null && paths.Count > 0
         );
     }
 
@@ -1401,15 +1439,22 @@ static void Run()
             if (!File.Exists(known.FilePath) || !ImportRecord.IsNew(importRecord.Rekordbox, known.FilePath))
                 continue;
             importRecord.Save(importRecordPath);
-            if (RekordboxXml.Load(known.FilePath) is not { } changed)
-                continue;
-            imports.Put(changed);
-            ShowRekordbox();
-            var (news, error) = ImportCollection(changed);
-            screen.Log(
-                error is not null ? $"{Path.GetFileName(changed.FilePath)} changed; couldn't save what came in: {error}"
-                : news is not null ? $"{Path.GetFileName(changed.FilePath)} changed, so it's read again; {news} brought in"
-                : $"{Path.GetFileName(changed.FilePath)} changed, so its playlists are read again"
+            var path = known.FilePath;
+            library.Background.Start(
+                () => RekordboxXml.Load(path) is { } collection ? (Collection: collection, Files: FilesThere(collection)) : default,
+                read =>
+                {
+                    if (read.Collection is not { } changed)
+                        return;
+                    imports.Put(changed);
+                    ShowRekordbox();
+                    var (news, error) = ImportCollection(changed, read.Files);
+                    screen.Log(
+                        error is not null ? $"{Path.GetFileName(changed.FilePath)} changed; couldn't save what came in: {error}"
+                        : news is not null ? $"{Path.GetFileName(changed.FilePath)} changed, so it's read again; {news} brought in"
+                        : $"{Path.GetFileName(changed.FilePath)} changed, so its playlists are read again"
+                    );
+                }
             );
         }
     }

@@ -114,6 +114,33 @@ sealed class WaveformBar : Slider
     public float4 UnplayedColor { get; set; } = Colors.Hex(0xFFFFFF, 0.35f);
     public float4 BackgroundColor { get; set; } = Colors.Hex(0x000000, 0.25f);
 
+    // Each column's height and colour in three bands, worked out once for a song at a size: they don't change as it
+    // plays, and looking through the bands for every column takes a good part of a frame.
+    float[] _columnHeights = [];
+    float4[] _columnBands = [];
+    (Waveform? Waveform, DetailWaveform? Bands, int Columns, float Tallest, float Min, float Max) _columnsFor;
+
+    void PrepareColumns(Waveform waveform, DetailWaveform? bands, int columns, float tallest)
+    {
+        var wanted = (waveform, bands, columns, tallest, Min, Max);
+        if (_columnsFor == wanted)
+            return;
+        _columnsFor = wanted;
+        _columnHeights = new float[columns];
+        _columnBands = bands is null ? [] : new float4[columns];
+        for (var column = 0; column < columns; column++)
+        {
+            var peak = waveform.PeakBetween(column / Travel, (column + 1) / Travel);
+            _columnHeights[column] = MathF.Max(1, MathF.Round(peak * tallest));
+            if (bands is null)
+                continue;
+            // The column's stretch of the song, in seconds, and its bands weighted as the scrolling waveforms weight
+            // them, treble being far quieter than bass in energy for how much it's heard.
+            var (_, bass, mids, treble) = bands.Between(Min + column / Travel * (Max - Min), Min + (column + 1) / Travel * (Max - Min));
+            _columnBands[column] = ScrollingWaveform.ThreeBand(bass, mids * 1.5f, treble * 2.5f, OVERVIEW_CONTRAST);
+        }
+    }
+
     protected override void DrawTrack(Batch batch)
     {
         if (Waveform is not { } waveform || IsVertical)
@@ -135,18 +162,15 @@ sealed class WaveformBar : Slider
         var unplayed = Faded(UnplayedColor);
         var bands = Colours == WaveformColours.ThreeBand && Detail is not null && Max > Min ? Detail : null;
         _darkenPlayed = bands is not null;
+        PrepareColumns(waveform, bands, columns, tallest);
         for (var column = 0; column < columns; column++)
         {
-            var peak = waveform.PeakBetween(column / Travel, (column + 1) / Travel);
-            var height = MathF.Max(1, MathF.Round(peak * tallest));
+            var height = _columnHeights[column];
             var isPlayed = column + 0.5f < playhead;
             var color = isPlayed ? played : unplayed;
             if (bands is not null)
             {
-                // The column's stretch of the song, in seconds, and its bands weighted as the scrolling waveforms
-                // weight them, treble being far quieter than bass in energy for how much it's heard.
-                var (_, bass, mids, treble) = bands.Between(Min + column / Travel * (Max - Min), Min + (column + 1) / Travel * (Max - Min));
-                var band = ScrollingWaveform.ThreeBand(bass, mids * 1.5f, treble * 2.5f, OVERVIEW_CONTRAST);
+                var band = _columnBands[column];
                 color = Faded(isPlayed ? band * new float4(PLAYED_THREE_BAND, PLAYED_THREE_BAND, PLAYED_THREE_BAND, 1) : band);
             }
             batch.AddRect(new float2(left + column, bottom - height), new float2(1, height), color);

@@ -171,6 +171,83 @@ sealed class LibraryDatabase
 
     public bool HasGridEdit(string path) => FileFor(path).HasGridEdit(path);
 
+    // Files being written on another thread, each with its drive (null for the app's own) and what went wrong.
+    Task<List<(string? Root, LibraryFile File, Exception? Error)>>? _saving;
+
+    /// <summary>
+    /// Whether a save started by <see cref="BeginSave"/> hasn't been finished with yet.
+    /// </summary>
+    public bool IsSaving => _saving is not null;
+
+    /// <summary>
+    /// Starts writing out whatever's changed on another thread, as <see cref="Save"/> would, so a big library doesn't
+    /// hold up the screen. Does nothing if one's going already. Call <see cref="FinishSave"/> once a frame after it.
+    /// </summary>
+    public void BeginSave()
+    {
+        if (_saving is not null)
+            return;
+        var jobs = new List<(string? Root, LibraryFile File, Action Write)>();
+        foreach (var (root, file) in _drives)
+        {
+            if (file.Dirty && (!file.IsEmpty || File.Exists(file.FilePath)))
+                jobs.Add((root, file, file.Snapshot()));
+        }
+        if (_system.Dirty || !File.Exists(_system.FilePath))
+            jobs.Add((null, _system, _system.Snapshot()));
+        if (jobs.Count == 0)
+            return;
+        _saving = Task.Run(() =>
+        {
+            var results = new List<(string?, LibraryFile, Exception?)>(jobs.Count);
+            foreach (var (root, file, write) in jobs)
+            {
+                Exception? error = null;
+                try
+                {
+                    write();
+                }
+                catch (Exception e)
+                {
+                    error = e;
+                }
+                results.Add((root, file, error));
+            }
+            return results;
+        });
+    }
+
+    /// <summary>
+    /// Takes in a save started by <see cref="BeginSave"/>, if it's done, as <see cref="Save"/> deals with its files;
+    /// returns whether it was, and in <paramref name="error"/> why the app's own file couldn't be written, if it
+    /// couldn't.
+    /// </summary>
+    public bool FinishSave(out string? error)
+    {
+        error = null;
+        if (_saving is not { IsCompleted: true } saving)
+            return false;
+        _saving = null;
+        foreach (var (root, file, problem) in saving.Result)
+        {
+            if (problem is null)
+                continue;
+            if (root is null)
+            {
+                file.MarkDirty();
+                error = problem.Message;
+            }
+            else
+            {
+                // A read-only drive, or one taken out mid-set: its songs are kept with the app's instead.
+                _unwritable.Add(root);
+                file.MoveTo(_system, _ => true, overwrite: true);
+                _drives.Remove(root);
+            }
+        }
+        return true;
+    }
+
     /// <summary>
     /// Makes sure the drive at <paramref name="root"/> has its own file, even with nothing to keep in it yet, after
     /// <see cref="Save"/>. Returns whether it has.
@@ -202,6 +279,9 @@ sealed class LibraryDatabase
     /// </summary>
     public void Save()
     {
+        // One going already is finished first, so the two can't write over each other, or the older land last.
+        _saving?.Wait();
+        FinishSave(out _);
         foreach (var (root, file) in _drives.ToList())
         {
             if (!file.Dirty)

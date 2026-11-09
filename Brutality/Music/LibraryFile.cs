@@ -398,25 +398,37 @@ sealed class LibraryFile
     /// full disk mid-write leaves the last good copy rather than half a file. Throws <see cref="IOException"/> or
     /// <see cref="UnauthorizedAccessException"/> if it can't.
     /// </summary>
-    public void Save()
+    public void Save() => Snapshot()();
+
+    /// <summary>
+    /// What's in it now, and how to write that out, which can be done on another thread while this carries on being
+    /// changed. Counts as saved from here on; if the writing throws, <see cref="MarkDirty"/> says it isn't.
+    /// </summary>
+    public Action Snapshot()
+    {
+        var contents = new DatabaseFile
+        {
+            Version = FILE_VERSION,
+            Tracks = Copy(_tracks),
+            Hotcues = Copy(_hotcues),
+            MemoryCues = _memoryCues.Count > 0 ? Copy(_memoryCues) : null,
+            Grids = _grids.Count > 0 ? Copy(_grids) : null,
+        };
+        Dirty = false;
+        return () => Write(contents);
+    }
+
+    public void MarkDirty() => Dirty = true;
+
+    Dictionary<string, T> Copy<T>(Dictionary<string, T> whole) => new(Kept(whole), StringComparer.OrdinalIgnoreCase);
+
+    void Write(DatabaseFile contents)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         var temporary = FilePath + ".tmp";
         using (var stream = File.Create(temporary))
-            JsonSerializer.Serialize(
-                stream,
-                new DatabaseFile
-                {
-                    Version = FILE_VERSION,
-                    Tracks = Kept(_tracks),
-                    Hotcues = Kept(_hotcues),
-                    MemoryCues = _memoryCues.Count > 0 ? Kept(_memoryCues) : null,
-                    Grids = _grids.Count > 0 ? Kept(_grids) : null,
-                },
-                JsonOptions
-            );
+            JsonSerializer.Serialize(stream, contents, JsonOptions);
         File.Move(temporary, FilePath, overwrite: true);
-        Dirty = false;
     }
 
     sealed class DatabaseFile

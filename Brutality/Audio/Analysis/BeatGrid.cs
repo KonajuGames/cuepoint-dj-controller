@@ -127,31 +127,33 @@ sealed class BeatGrid : IEquatable<BeatGrid>
     /// The tempo that covers most of the song, for showing as its tempo: for a song that drifts, the middle of its
     /// tempos, weighted by how long each lasts.
     /// </summary>
-    public double MainBpm
-    {
-        get
-        {
-            if (!IsVariable)
-                return Markers[0].Bpm;
+    public double MainBpm => _mainBpm ??= WorkOutMainBpm();
 
-            var spans = new List<(double Bpm, double Seconds)>();
-            for (var i = 0; i < Markers.Count; i++)
-            {
-                var start = i == 0 ? 0 : Markers[i].Time;
-                var end = i + 1 < Markers.Count ? Markers[i + 1].Time : Math.Max(Duration, Markers[i].Time);
-                spans.Add((Markers[i].Bpm, Math.Max(0, end - start)));
-            }
-            spans.Sort((a, b) => a.Bpm.CompareTo(b.Bpm));
-            var half = spans.Sum(span => span.Seconds) / 2;
-            var covered = 0.0;
-            foreach (var (bpm, seconds) in spans)
-            {
-                covered += seconds;
-                if (covered >= half)
-                    return bpm;
-            }
-            return spans[^1].Bpm;
+    // Asked for per row drawn and per song searched or sorted, and a grid doesn't change.
+    double? _mainBpm;
+
+    double WorkOutMainBpm()
+    {
+        if (!IsVariable)
+            return Markers[0].Bpm;
+
+        var spans = new List<(double Bpm, double Seconds)>();
+        for (var i = 0; i < Markers.Count; i++)
+        {
+            var start = i == 0 ? 0 : Markers[i].Time;
+            var end = i + 1 < Markers.Count ? Markers[i + 1].Time : Math.Max(Duration, Markers[i].Time);
+            spans.Add((Markers[i].Bpm, Math.Max(0, end - start)));
         }
+        spans.Sort((a, b) => a.Bpm.CompareTo(b.Bpm));
+        var half = spans.Sum(span => span.Seconds) / 2;
+        var covered = 0.0;
+        foreach (var (bpm, seconds) in spans)
+        {
+            covered += seconds;
+            if (covered >= half)
+                return bpm;
+        }
+        return spans[^1].Bpm;
     }
 
     /// <summary>

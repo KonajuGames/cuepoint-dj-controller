@@ -285,6 +285,8 @@ sealed class SongBrowser : Panel
             _source = value;
             if (value is not null)
                 value.SongsLoaded += SourceSongsLoaded;
+            if (value is { IsLoadedList: true })
+                value.RefreshSongs();
             _sourceSongs = value?.Songs ?? [];
             _refreshedAt = DateTime.UtcNow;
             _heading.Text = value?.Name ?? "";
@@ -297,7 +299,7 @@ sealed class SongBrowser : Panel
     void SourceSongsLoaded(LibraryNode node)
     {
         if (node == _source)
-            Reload();
+            Relist();
     }
 
     /// <summary>
@@ -305,6 +307,14 @@ sealed class SongBrowser : Panel
     /// say) or it's been renamed.
     /// </summary>
     public void Reload()
+    {
+        // A virtual folder or playlist is looked for again; what it had shows until that's in.
+        if (_source is { IsLoadedList: true } list)
+            list.RefreshSongs();
+        Relist();
+    }
+
+    void Relist()
     {
         if (_source is null)
             return;
@@ -359,7 +369,7 @@ sealed class SongBrowser : Panel
         if (total > TimeSpan.Zero)
             songs += ", " + FormatTotal(total);
         // Nothing listed yet while a folder's being looked through; it says so rather than that there's nothing there.
-        var loading = _source is { IsLoadingSongs: true };
+        var loading = _source is { IsLoadingSongs: true } && _sourceSongs.Count == 0;
         List.EmptyText = loading ? "Looking through the folder..." : "No songs here";
         var tags =
             loading ? ", looking through the folder"

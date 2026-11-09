@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Collections.Concurrent;
 using Brutality.Audio.Analysis;
 
@@ -63,6 +64,14 @@ sealed class LibraryAnalyser : IDisposable
     }
 
     readonly object _lock = new();
+
+    bool _savePending;
+    long _lastSave;
+
+    /// <summary>
+    /// The least time between saving what's been analysed.
+    /// </summary>
+    public TimeSpan SaveInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Songs waiting, the next at the end. Guarded by <see cref="_lock"/>.
@@ -302,18 +311,17 @@ sealed class LibraryAnalyser : IDisposable
             Analysed?.Invoke(song);
         }
 
+        // Saved in the background and no more often than this, as the whole file's written each time. What's not saved
+        // yet is saved as the app closes; a failed save is kept in memory, and tried again with the next result.
         if (updated > 0)
+            _savePending = true;
+        if (Database.FinishSave(out var saveError))
+            SaveError = saveError;
+        if (_savePending && !Database.IsSaving && Stopwatch.GetElapsedTime(_lastSave) >= SaveInterval)
         {
-            try
-            {
-                Database.Save();
-                SaveError = null;
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                // Kept in memory, and tried again with the next result.
-                SaveError = e.Message;
-            }
+            _savePending = false;
+            _lastSave = Stopwatch.GetTimestamp();
+            Database.BeginSave();
         }
         return updated;
     }

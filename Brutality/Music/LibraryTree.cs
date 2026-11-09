@@ -59,6 +59,9 @@ sealed class LibraryNode
     List<LibraryNode>? _loadedChildren;
     IReadOnlyList<Song>? _folderSongs;
 
+    // Whether the songs kept are out of date: a list that's changed keeps showing them until its new ones are in.
+    bool _songsStale;
+
     // How many times each has been asked for in the background, so a look begun before a refresh is passed over.
     int _songLoads;
     int _childLoads;
@@ -89,6 +92,16 @@ sealed class LibraryNode
     /// they're looked for there and then.
     /// </summary>
     public Action<Action<IReadOnlyList<Song>>>? LoadSongs { get; init; }
+
+    /// <summary>
+    /// The paths of the songs a virtual folder or imported playlist lists, whether their files are there or not.
+    /// </summary>
+    public Func<IReadOnlyList<string>>? SongPaths { get; init; }
+
+    /// <summary>
+    /// Whether it's a list that's looked for again each time it's listed, as its songs and their files can change.
+    /// </summary>
+    public bool IsLoadedList => SongPaths is not null && LoadSongs is not null;
 
     /// <summary>
     /// Looks for what's under it in the background, then hands it on, on the UI thread, for
@@ -192,7 +205,9 @@ sealed class LibraryNode
     /// </summary>
     public void RefreshSongs()
     {
-        _folderSongs = null;
+        if (!IsLoadedList)
+            _folderSongs = null;
+        _songsStale = true;
         IsLoadingSongs = false;
         _songLoads++;
     }
@@ -231,12 +246,15 @@ sealed class LibraryNode
         {
             if (_songs is null)
                 return [];
-            if (Kind is not (LibraryNodeKind.Folder or LibraryNodeKind.Drive))
+            if (Kind is not (LibraryNodeKind.Folder or LibraryNodeKind.Drive) && !IsLoadedList)
                 return _songs();
-            if (_folderSongs is not null)
+            if (_folderSongs is not null && !_songsStale)
                 return _folderSongs;
             if (LoadSongs is not { } load)
+            {
+                _songsStale = false;
                 return _folderSongs = _songs();
+            }
             if (!IsLoadingSongs)
             {
                 IsLoadingSongs = true;
@@ -245,11 +263,11 @@ sealed class LibraryNode
                 {
                     if (asked != _songLoads)
                         return;
-                    (_folderSongs, IsLoadingSongs) = (songs, false);
+                    (_folderSongs, IsLoadingSongs, _songsStale) = (songs, false, false);
                     SongsLoaded?.Invoke(this);
                 });
             }
-            return [];
+            return _folderSongs ?? [];
         }
     }
 }
@@ -292,7 +310,12 @@ static class LibraryTree
             {
                 if (!folderNodes.TryGetValue(folder, out var node))
                 {
-                    node = new LibraryNode(folder.Name, LibraryNodeKind.VirtualFolder, () => virtualFolders.SongsIn(folder)) { Folder = folder };
+                    node = new LibraryNode(folder.Name, LibraryNodeKind.VirtualFolder, () => virtualFolders.SongsIn(folder))
+                    {
+                        Folder = folder,
+                        SongPaths = () => folder.Paths,
+                        LoadSongs = done => library.LoadSongsAt(folder.Paths, done),
+                    };
                     folderNodes[folder] = node;
                 }
                 yield return node;
@@ -364,7 +387,7 @@ static class LibraryTree
     /// A "Rekordbox" node, with each collection under it and its playlists under that, and a "Serato" node, with its
     /// crates, for each that has anything.
     /// </summary>
-    static IEnumerable<LibraryNode> ImportedNodes(MusicLibrary library, ImportedLibraries? imports)
+    public static IEnumerable<LibraryNode> ImportedNodes(MusicLibrary library, ImportedLibraries? imports)
     {
         if (imports is null)
             yield break;
@@ -415,7 +438,11 @@ static class LibraryTree
     static LibraryNode RekordboxNode(MusicLibrary library, RekordboxNode node) =>
         node.IsFolder
             ? new(node.Name, LibraryNodeKind.Group, children: () => node.Children.Select(child => RekordboxNode(library, child)))
-            : new(node.Name, LibraryNodeKind.Imported, () => SongsAt(library, node.Paths));
+            : new(node.Name, LibraryNodeKind.Imported, () => SongsAt(library, node.Paths))
+            {
+                SongPaths = () => node.Paths,
+                LoadSongs = done => library.LoadSongsAt(node.Paths, done),
+            };
 
     /// <summary>
     /// The crates directly inside the crate at <paramref name="parents"/> (the top, for none), in order. One with
@@ -439,7 +466,11 @@ static class LibraryTree
                 own is null ? LibraryNodeKind.Group : LibraryNodeKind.Imported,
                 own is null ? null : () => SongsAt(library, own.Paths),
                 inside ? () => CrateNodes(library, crates, path) : null
-            );
+            )
+            {
+                SongPaths = own is null ? null : () => own.Paths,
+                LoadSongs = own is null ? null : done => library.LoadSongsAt(own.Paths, done),
+            };
         }
     }
 
