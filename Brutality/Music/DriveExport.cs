@@ -287,7 +287,7 @@ sealed class DriveExport
 
     /// <summary>
     /// Tells <paramref name="database"/> all it knows about each song about the copy on the drive: its analysis, and
-    /// its hot cues, memory cues and fixed grid unless the copy has its own there from an earlier export. A song
+    /// its hot cues, memory cues, cue point and fixed grid unless the copy has its own there from an earlier export. A song
     /// that stayed where it was is known already. UI thread only; doesn't save.
     /// </summary>
     public static void Record(LibraryDatabase database, IEnumerable<Exported> songs)
@@ -308,6 +308,8 @@ sealed class DriveExport
                 database.SetHotcues(path, hotcues);
             if (database.GetMemoryCues(path).Count == 0 && database.GetMemoryCues(source.Path) is { Count: > 0 } memoryCues)
                 database.SetMemoryCues(path, memoryCues);
+            if (database.GetCuePoint(path) is null && database.GetCuePoint(source.Path) is { } cuePoint)
+                database.SetCuePoint(path, cuePoint);
             if (!database.HasGridEdit(path) && database.GetGridEdit(source.Path, analysis?.Grid.Duration ?? 0) is { } edit)
                 database.SetGridEdit(path, edit);
         }

@@ -225,6 +225,12 @@ sealed partial class Deck : IDisposable
     float ChannelGain => VolumeTaper(_volume) * _engine.CrossfaderGain(_side);
 
     /// <summary>
+    /// Whether it's playing into the main mix: its fader up, and the crossfader not all the way from it. A deck only
+    /// being heard in the headphones isn't.
+    /// </summary>
+    public bool IsAudible => IsPlaying && ChannelGain > 0;
+
+    /// <summary>
     /// The deck's level as it comes into its mixer channel: after the automatic gain and the EQ, but before the fader
     /// and crossfader, as a DJ mixer's channel meters show it, so a deck being cued shows its level too.
     /// </summary>
@@ -865,6 +871,12 @@ sealed partial class Deck : IDisposable
     public TimeSpan CuePoint => IsLoaded ? TimeSpan.FromMilliseconds(_track.FramesToMS(_cueFrames)) : TimeSpan.Zero;
 
     /// <summary>
+    /// The cue point was moved by <see cref="CueDown"/>, so whoever keeps it for the song can save it. Not raised by
+    /// <see cref="SetMemoryCues"/>.
+    /// </summary>
+    public event Action<Deck>? CuePointChanged;
+
+    /// <summary>
     /// Cue is held down on a paused deck, so it's playing from the cue point until <see cref="CueUp"/>.
     /// </summary>
     public bool IsCuePreviewing => _previewing;
@@ -902,9 +914,12 @@ sealed partial class Deck : IDisposable
             frames = Math.Clamp(ToFrames(TimeSpan.FromSeconds(Quantizing.Snap(grid, ToTime(frames).TotalSeconds))), 0, pcm.Frames - 1);
             _track.SetPlaybackPosition(frames);
         }
+        var moved = frames != _cueFrames;
         _cueFrames = frames;
         _track.Resume();
         _previewing = true;
+        if (moved)
+            CuePointChanged?.Invoke(this);
     }
 
     /// <summary>
@@ -955,19 +970,21 @@ sealed partial class Deck : IDisposable
     public IReadOnlyList<TimeSpan> MemoryCues => _memoryCues;
 
     /// <summary>
-    /// Puts back the memory cues saved for the loaded song (any past its end are left out), the first as the cue
-    /// point; and if the deck's paused at the very start, as a song is once it's loaded, it goes there, ready to play.
+    /// Puts back the memory cues saved for the loaded song (any past its end are left out), with the cue point saved
+    /// for it, or else the first of them, as the cue point; and if the deck's paused at the very start, as a song is
+    /// once it's loaded, it goes there, ready to play.
     /// </summary>
-    public void SetMemoryCues(IReadOnlyList<TimeSpan> cues)
+    public void SetMemoryCues(IReadOnlyList<TimeSpan> cues, TimeSpan? cuePoint = null)
     {
         _memoryCues.Clear();
         if (!IsLoaded || _pcm is not { } pcm)
             return;
         _memoryCues.AddRange(cues.Where(at => at >= TimeSpan.Zero && at <= Duration).Distinct().Order());
-        if (_memoryCues.Count == 0)
+        var at = cuePoint is { } saved && saved >= TimeSpan.Zero && saved <= Duration ? saved : _memoryCues.Count > 0 ? _memoryCues[0] : (TimeSpan?)null;
+        if (at is not { } cue)
             return;
         var waitingAtStart = !IsPlaying && !_previewing && !IsLooping && !IsPlatterActive && _track.GetPlaybackPosition() <= 0;
-        _cueFrames = Math.Clamp(ToFrames(_memoryCues[0]), 0, pcm.Frames - 1);
+        _cueFrames = Math.Clamp(ToFrames(cue), 0, pcm.Frames - 1);
         if (waitingAtStart)
             PauseAt(_cueFrames);
     }

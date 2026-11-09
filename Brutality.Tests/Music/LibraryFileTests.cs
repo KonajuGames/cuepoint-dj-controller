@@ -99,6 +99,22 @@ public class LibraryFileTests
     }
 
     [Fact]
+    public void A_cue_point_is_kept_and_a_song_without_one_has_none()
+    {
+        using var folder = new TempFolder();
+        var path = folder["Music", "a.mp3"];
+        var file = LibraryFile.Load(folder["library.json"]);
+        Assert.Null(file.GetCuePoint(path));
+
+        file.SetCuePoint(path, TimeSpan.FromSeconds(12.34567));
+        file.Save();
+
+        var loaded = LibraryFile.Load(folder["library.json"]);
+        Assert.Equal(TimeSpan.FromSeconds(12.346), loaded.GetCuePoint(path));
+        Assert.False(loaded.IsEmpty);
+    }
+
+    [Fact]
     public void Memory_cues_are_kept_in_order_and_forgotten_once_cleared()
     {
         using var folder = new TempFolder();

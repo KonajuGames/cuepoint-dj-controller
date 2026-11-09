@@ -163,6 +163,10 @@ sealed class LibraryDatabase
 
     public void SetMemoryCues(string path, IReadOnlyList<TimeSpan> cues) => FileFor(path).SetMemoryCues(path, cues);
 
+    public TimeSpan? GetCuePoint(string path) => FileFor(path).GetCuePoint(path);
+
+    public void SetCuePoint(string path, TimeSpan cuePoint) => FileFor(path).SetCuePoint(path, cuePoint);
+
     public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) => FileFor(path).WithEdits(path, analysis);
 
     public GridEdit? GetGridEdit(string path, double duration) => FileFor(path).GetGridEdit(path, duration);

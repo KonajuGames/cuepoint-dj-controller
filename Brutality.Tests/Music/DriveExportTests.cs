@@ -140,6 +140,7 @@ public sealed class DriveExportTests : IDisposable
         database.Set(song, analysis);
         database.SetHotcues(song.Path, [TimeSpan.FromSeconds(12)]);
         database.SetMemoryCues(song.Path, [TimeSpan.FromSeconds(3)]);
+        database.SetCuePoint(song.Path, TimeSpan.FromSeconds(8));
         database.SetGridEdit(song.Path, new GridEdit(BeatGrid.Constant(125, 0.5, 200), []));
 
         var result = Export("Set", song).Run();
@@ -152,6 +153,7 @@ public sealed class DriveExportTests : IDisposable
         Assert.Equal(analysis.Grid, saved!.Grid);
         Assert.Equal(TimeSpan.FromSeconds(12), again.GetHotcues(copy.Path)[0]);
         Assert.Equal(new[] { TimeSpan.FromSeconds(3) }, again.GetMemoryCues(copy.Path));
+        Assert.Equal(TimeSpan.FromSeconds(8), again.GetCuePoint(copy.Path));
         Assert.Equal(125, again.GetGridEdit(copy.Path, 200)!.Grid.Markers[0].Bpm);
         // Kept relative to the drive, so it's found under any letter.
         Assert.Contains(@"Music\\Set\\a.mp3", File.ReadAllText(again.FilePath));

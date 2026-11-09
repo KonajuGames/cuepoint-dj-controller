@@ -34,6 +34,7 @@ Notes:
   "tracks":  { "<song path>": <Track>, ... },
   "hotcues": { "<song path>": [ <seconds or null>, ... ], ... },
   "memoryCues": { "<song path>": [ <seconds>, ... ], ... },
+  "cuePoints": { "<song path>": <seconds>, ... },
   "grids":   { "<song path>": <Grid>, ... }
 }
 ```
@@ -44,6 +45,7 @@ Notes:
 | `tracks` | object | The analysis of each song, or why it couldn't be analysed (see 1.3). May be empty `{}`. |
 | `hotcues` | object | Each song's hotcues (see 1.5). May be empty `{}`. Songs with no hotcues are left out. |
 | `memoryCues` | object | Each song's memory cues (see 1.5). **Left out entirely** when there are none. |
+| `cuePoints` | object | Each song's cue point in seconds, rounded to 3 decimal places, where one's been set. It takes the place of the first memory cue as where the song waits when loaded. **Left out entirely** when there are none. |
 | `grids` | object | Beat grids fixed by hand (see 1.6). **Left out entirely** when there are none. |
 
 Property names are camelCase. A property whose value would be `null` is left out rather than written as `null`; that applies to every object below. Readers should treat any missing property as its default, and ignore properties they don't know.

@@ -55,17 +55,18 @@ sealed class LibraryFile
     /// <summary>
     /// Whether it knows nothing: no analyses, hotcues, memory cues or fixed grids.
     /// </summary>
-    public bool IsEmpty => _tracks.Count == 0 && _hotcues.Count == 0 && _memoryCues.Count == 0 && _grids.Count == 0;
+    public bool IsEmpty => _tracks.Count == 0 && _hotcues.Count == 0 && _memoryCues.Count == 0 && _cuePoints.Count == 0 && _grids.Count == 0;
 
     /// <summary>
     /// Every song it knows anything about, by its full path.
     /// </summary>
     public IEnumerable<string> Paths =>
-        _tracks.Keys.Concat(_hotcues.Keys).Concat(_memoryCues.Keys).Concat(_grids.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+        _tracks.Keys.Concat(_hotcues.Keys).Concat(_memoryCues.Keys).Concat(_cuePoints.Keys).Concat(_grids.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
 
     readonly Dictionary<string, TrackRecord> _tracks;
     readonly Dictionary<string, double?[]> _hotcues;
     readonly Dictionary<string, double[]> _memoryCues;
+    readonly Dictionary<string, double> _cuePoints;
     readonly Dictionary<string, GridRecord> _grids;
 
     LibraryFile(
@@ -74,6 +75,7 @@ sealed class LibraryFile
         Dictionary<string, TrackRecord> tracks,
         Dictionary<string, double?[]> hotcues,
         Dictionary<string, double[]> memoryCues,
+        Dictionary<string, double> cuePoints,
         Dictionary<string, GridRecord> grids,
         string? loadError
     )
@@ -83,6 +85,7 @@ sealed class LibraryFile
         _tracks = Whole(tracks);
         _hotcues = Whole(hotcues);
         _memoryCues = Whole(memoryCues);
+        _cuePoints = Whole(cuePoints);
         _grids = Whole(grids);
         LoadError = loadError;
     }
@@ -136,19 +139,19 @@ sealed class LibraryFile
         if (root is not null)
             root = WithSeparator(root);
         if (!File.Exists(filePath))
-            return new LibraryFile(filePath, root, [], [], [], [], null);
+            return new LibraryFile(filePath, root, [], [], [], [], [], null);
 
         try
         {
             using var stream = File.OpenRead(filePath);
             var file = JsonSerializer.Deserialize<DatabaseFile>(stream, JsonOptions);
             if (file is null || file.Version != FILE_VERSION)
-                return new LibraryFile(filePath, root, [], [], [], [], $"Unrecognised database version {file?.Version}");
-            return new LibraryFile(filePath, root, file.Tracks ?? [], file.Hotcues ?? [], file.MemoryCues ?? [], file.Grids ?? [], null);
+                return new LibraryFile(filePath, root, [], [], [], [], [], $"Unrecognised database version {file?.Version}");
+            return new LibraryFile(filePath, root, file.Tracks ?? [], file.Hotcues ?? [], file.MemoryCues ?? [], file.CuePoints ?? [], file.Grids ?? [], null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new LibraryFile(filePath, root, [], [], [], [], e.Message);
+            return new LibraryFile(filePath, root, [], [], [], [], [], e.Message);
         }
     }
 
@@ -170,6 +173,7 @@ sealed class LibraryFile
         Move(_tracks, other._tracks);
         Move(_hotcues, other._hotcues);
         Move(_memoryCues, other._memoryCues);
+        Move(_cuePoints, other._cuePoints);
         Move(_grids, other._grids);
         if (moving.Count > 0)
             Dirty = other.Dirty = true;
@@ -327,6 +331,20 @@ sealed class LibraryFile
     }
 
     /// <summary>
+    /// The cue point set for the song at <paramref name="path"/>, if one has been.
+    /// </summary>
+    public TimeSpan? GetCuePoint(string path) => _cuePoints.TryGetValue(Path.GetFullPath(path), out var seconds) ? TimeSpan.FromSeconds(seconds) : null;
+
+    /// <summary>
+    /// Keeps <paramref name="cuePoint"/> as the cue point of the song at <paramref name="path"/>.
+    /// </summary>
+    public void SetCuePoint(string path, TimeSpan cuePoint)
+    {
+        Dirty = true;
+        _cuePoints[Path.GetFullPath(path)] = Math.Round(cuePoint.TotalSeconds, 3);
+    }
+
+    /// <summary>
     /// <paramref name="analysis"/> of the song at <paramref name="path"/>, with its beat grid as fixed by hand if it
     /// was.
     /// </summary>
@@ -412,6 +430,7 @@ sealed class LibraryFile
             Tracks = Copy(_tracks),
             Hotcues = Copy(_hotcues),
             MemoryCues = _memoryCues.Count > 0 ? Copy(_memoryCues) : null,
+            CuePoints = _cuePoints.Count > 0 ? Copy(_cuePoints) : null,
             Grids = _grids.Count > 0 ? Copy(_grids) : null,
         };
         Dirty = false;
@@ -445,6 +464,11 @@ sealed class LibraryFile
         /// Each song's memory cues in seconds, in order; songs without any are left out.
         /// </summary>
         public Dictionary<string, double[]>? MemoryCues { get; set; }
+
+        /// <summary>
+        /// Each song's cue point in seconds, where one's been set; songs without one are left out.
+        /// </summary>
+        public Dictionary<string, double>? CuePoints { get; set; }
 
         /// <summary>
         /// Each song's beat grid as fixed by hand; songs left as analysed are left out.

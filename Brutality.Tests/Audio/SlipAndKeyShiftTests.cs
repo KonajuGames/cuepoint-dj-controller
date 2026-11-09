@@ -176,6 +176,72 @@ public sealed class SlipAndKeyShiftTests : IDisposable
     }
 
     [Fact]
+    public void A_deck_is_audible_only_while_playing_into_the_main_mix()
+    {
+        Assert.False(_deck.IsAudible);
+
+        _deck.Play();
+        Assert.True(_deck.IsAudible);
+
+        _deck.Volume = 0;
+        Assert.False(_deck.IsAudible);
+        _deck.Volume = 1;
+        _deck.Pause();
+        Assert.False(_deck.IsAudible);
+    }
+
+    [Fact]
+    public void A_deck_on_the_side_the_crossfader_has_left_is_not_audible()
+    {
+        using var left = _engine.CreateDeck("L", CrossfaderSide.Left);
+        left.Load(_folder["song.wav"]);
+        left.Play();
+
+        _engine.Crossfader = 0;
+        Assert.True(left.IsAudible);
+        _engine.Crossfader = 1;
+        Assert.False(left.IsAudible);
+    }
+
+    [Fact]
+    public void Moving_the_cue_point_says_so_but_setting_it_again_where_it_is_does_not()
+    {
+        var moved = 0;
+        _deck.CuePointChanged += _ => moved++;
+        _deck.Seek(TimeSpan.FromSeconds(10));
+
+        _deck.CueDown();
+        _deck.CueUp();
+        Assert.Equal(1, moved);
+        Assert.Equal(10, _deck.CuePoint.TotalSeconds, 2);
+
+        _deck.CueDown();
+        _deck.CueUp();
+        Assert.Equal(1, moved);
+    }
+
+    [Fact]
+    public void A_saved_cue_point_goes_ahead_of_the_first_memory_cue_and_is_where_the_song_waits()
+    {
+        _deck.SetMemoryCues([TimeSpan.FromSeconds(4)], TimeSpan.FromSeconds(9));
+
+        Assert.Equal(9, _deck.CuePoint.TotalSeconds, 2);
+        Assert.Equal(9, _deck.Position.TotalSeconds, 2);
+        Assert.Equal(new[] { TimeSpan.FromSeconds(4) }, _deck.MemoryCues);
+    }
+
+    [Fact]
+    public void A_saved_cue_point_works_without_memory_cues_and_one_past_the_end_is_ignored()
+    {
+        _deck.SetMemoryCues([], TimeSpan.FromSeconds(7));
+        Assert.Equal(7, _deck.CuePoint.TotalSeconds, 2);
+
+        _deck.Load(_folder["song.wav"]);
+        _deck.SetMemoryCues([], TimeSpan.FromSeconds(99));
+        Assert.Equal(0, _deck.CuePoint.TotalSeconds, 2);
+    }
+
+    [Fact]
     public void Slip_only_starts_while_playing()
     {
         _deck.HotcueDown(0);

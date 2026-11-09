@@ -32,6 +32,11 @@ sealed class OptionsDialog : Panel
     readonly Checkbox _autoGain;
     readonly Checkbox _limiter;
 
+    /// <summary>
+    /// Whether a song can't be loaded onto a deck that's playing into the main mix.
+    /// </summary>
+    public Checkbox ProtectPlayingDecks { get; }
+
     public float2 ScreenSize { get; set; }
 
     /// <summary>
@@ -184,6 +189,15 @@ sealed class OptionsDialog : Panel
         _autoGain = gainRow.Add(new Checkbox(body));
         _autoGain.Changed += box => engine.AutoGain = box.Checked;
         _content.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
+
+        var protectRow = Row("Protect playing decks", body);
+        ProtectPlayingDecks = protectRow.Add(
+            new Checkbox(body, "Don't load over a deck being heard")
+            {
+                Checked = true,
+                Tooltip = "A song can't be loaded onto a deck that's playing into the main mix. A deck with its fader down, or only in the headphones, can still be loaded",
+            }
+        );
 
         var limiterRow = Row("Master limiter", body);
         _limiter = limiterRow.Add(new Checkbox(body));

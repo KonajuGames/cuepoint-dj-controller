@@ -666,7 +666,23 @@ static void Run()
             if (loaded.FilePath is { } file)
             {
                 loaded.SetHotcues(database.GetHotcues(file));
-                loaded.SetMemoryCues(database.GetMemoryCues(file));
+                loaded.SetMemoryCues(database.GetMemoryCues(file), database.GetCuePoint(file));
+            }
+        };
+
+        // A cue point is saved as soon as it's moved, so it's there next time the song's loaded.
+        deck.CuePointChanged += changed =>
+        {
+            if (changed.FilePath is not { } file)
+                return;
+            database.SetCuePoint(file, changed.CuePoint);
+            try
+            {
+                database.Save();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                screen.Log($"Couldn't save the cue point to {database.FilePath}: {e.Message}");
             }
         };
 
@@ -707,6 +723,12 @@ static void Run()
 
     void Load(Song song, Deck deck)
     {
+        // One stray key press or drag mustn't stop the music.
+        if (settings.ProtectPlayingDecks && deck.IsAudible)
+        {
+            screen.Log($"Deck {deck.Name} is playing, so {song.Title} wasn't loaded: pause it or turn it down first");
+            return;
+        }
         // Analysis goes to the front of the queue, so the deck has its gain and tempo as soon as possible.
         analyser.Request(song);
         deck.BeginLoad(song.Path, $"{song.Artist} - {song.Title}");
@@ -794,6 +816,12 @@ static void Run()
         settings.Save(settingsPath);
     };
 
+    screen.Options.ProtectPlayingDecks.Checked = settings.ProtectPlayingDecks;
+    screen.Options.ProtectPlayingDecks.Changed += box =>
+    {
+        settings.ProtectPlayingDecks = box.Checked;
+        SaveSettings();
+    };
     screen.Options.MasterLimiterToggled += () =>
     {
         settings.MasterLimiter = audio.Limiter.Enabled;

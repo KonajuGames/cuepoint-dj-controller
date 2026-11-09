@@ -66,6 +66,11 @@ sealed class AppSettings
     public bool MasterLimiter { get; set; } = true;
 
     /// <summary>
+    /// Whether a song can't be loaded onto a deck that's playing into the main mix.
+    /// </summary>
+    public bool ProtectPlayingDecks { get; set; } = true;
+
+    /// <summary>
     /// Lighting software to connect to as well as any found on the network, as host:port; null for none.
     /// </summary>
     public string? Os2lAddress { get; set; }
