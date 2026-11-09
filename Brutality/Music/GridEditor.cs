@@ -64,6 +64,11 @@ sealed class GridEditor
     public event Action<string>? Log;
 
     /// <summary>
+    /// A song's grid was changed: its path, and what had been fixed by hand before, for undoing; null if nothing had.
+    /// </summary>
+    public event Action<string, GridEdit?>? Edited;
+
+    /// <summary>
     /// Whether the deck's pads are grid tools rather than hotcues. The deck clicks on its beats meanwhile.
     /// </summary>
     public bool Active
@@ -137,7 +142,6 @@ sealed class GridEditor
         {
             if (!_database.HasGridEdit(path))
                 return;
-            _database.SetGridEdit(path, null);
             var analysed = song is not null && _database.TryGetAnalysed(song, out var stored, out _) && stored is not null ? stored : analysis;
             Use(path, song, analysed, null);
             Log?.Invoke($"Deck {Deck.Name}: grid back as analysed, {analysed.Grid}");
@@ -252,8 +256,10 @@ sealed class GridEditor
     /// </summary>
     void Use(string path, Song? song, TrackAnalysis analysis, GridEdit? edit)
     {
-        if (edit is not null)
-            _database.SetGridEdit(path, edit);
+        var before = _database.GetGridEdit(path, analysis.Grid.Duration);
+        _database.SetGridEdit(path, edit);
+        if (before is not null || edit is not null)
+            Edited?.Invoke(path, before);
         try
         {
             _database.Save();

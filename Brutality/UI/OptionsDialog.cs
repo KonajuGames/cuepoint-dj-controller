@@ -322,6 +322,7 @@ sealed class OptionsDialog : Panel
         foreach (var (key, action) in new[]
         {
             ("1 / 2", "Load the selected song to deck A / B"),
+            ("Ctrl + Z", "Undo the last hot cue or beat grid change"),
             ("Z X C V", "Deck A: cue, play, sync, loop"),
             ("N M , .", "Deck B: cue, play, sync, loop"),
             ("3 4 / 9 0", "Halve / double the loop, deck A / B"),

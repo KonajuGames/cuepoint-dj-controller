@@ -17,6 +17,7 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 - **Effects:** each deck has an echo, a reverb and a flanger, one at a time, chosen from the list beside its times. **FX** switches it on and off, the slider sets how much, and the arrows set its length in beats (1/8 to 16): how far apart the echoes are, or how long the flanger takes to sweep, in time with the deck's tempo. Switched off, the echo and reverb ring on and fade, as a DJ mixer's do. They can be learned to a controller's buttons and knobs too.
 - **Slip:** with a deck's **SLIP** lit (Shift + VINYL on the DDJ-SB3), a scratch, a backspin, a hotcue held down or a loop lasts only while it's held or looping. The song carries on underneath, shown as a dashed line on the overview, and when you let go the deck drops back in where it would have got to, so the mix stays in time.
 - **Hotcues:** eight per deck, kept with each song.
+- **Undo:** Ctrl + Z takes back the last hot cue or beat grid change, and again for the one before, up to 100, even after the song has left the deck.
 - **Cue points:** kept with each song too. It waits at its cue point when it's loaded.
 - **Load protection:** a song can't be loaded onto a deck that's playing into the main mix, so a stray key press or drag can't stop the music. A deck with its fader down, or only in the headphones, can still be loaded. It can be turned off in the options.
 - **Loops:** from 1/16 to 32 beats, fitted to the beat grid, with halve and double.

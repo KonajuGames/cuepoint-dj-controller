@@ -257,6 +257,11 @@ static void Run()
     var gridEditors = decks.Select(deck => new GridEditor(deck, library, database)).ToArray();
     GridEditor? GridEditorFor(Deck deck) => gridEditors.FirstOrDefault(editor => editor.Deck == deck);
 
+    // Hot cue and grid changes, to take back one at a time with Ctrl + Z.
+    var edits = new EditHistory(database, library, decks);
+    foreach (var editor in gridEditors)
+        editor.Edited += edits.RecordGrid;
+
     // And each deck's pads can roll loops instead, with them in ROLL mode.
     var rollPads = gridEditors.Select(editor => new RollPads(editor.Deck, editor)).ToArray();
     RollPads? RollPadsFor(Deck deck) => rollPads.FirstOrDefault(roll => roll.Deck == deck);
@@ -691,6 +696,7 @@ static void Run()
         {
             if (changed.FilePath is not { } file)
                 return;
+            edits.RecordHotcues(file, database.GetHotcues(file), changed.Hotcues);
             database.SetHotcues(file, changed.Hotcues);
             try
             {
@@ -951,6 +957,14 @@ static void Run()
         if (action == GlfwKeyAction.Repeat)
             return;
         var pressed = action == GlfwKeyAction.Press;
+
+        // Before the decks' keys, as Z on its own is deck A's cue.
+        if (key == GlfwKey.Z && (mods & GlfwModifier.Control) != 0)
+        {
+            if (pressed)
+                screen.Log(edits.Undo());
+            return;
+        }
 
         // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear; or in GRID mode, its tools,
         // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held; or in JUMP mode, beat jumps.
