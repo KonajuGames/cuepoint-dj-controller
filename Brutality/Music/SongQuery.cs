@@ -9,7 +9,8 @@ namespace Brutality.Music;
 /// besides them, a tempo and a key. A tempo is a range, "120-126" (BPM, either way round, with or without "bpm"), or
 /// one, "124bpm", give or take half a beat a minute. A key is on the Camelot wheel: "8A" for that key alone, or "~8A"
 /// for every key that mixes with it (itself, a step round the wheel either way, and its relative major or minor).
-/// Only songs analysed can be found by tempo or key.
+/// Only songs analysed can be found by tempo or key. Anything in double quotes is text to find as it's written, spaces
+/// and all, so "80-90" finds those characters rather than a tempo; a quote left open runs to the end.
 /// </summary>
 sealed partial record SongQuery(IReadOnlyList<string> Words, double? MinBpm, double? MaxBpm, MusicalKey? Key, bool Compatible)
 {
@@ -43,28 +44,41 @@ sealed partial record SongQuery(IReadOnlyList<string> Words, double? MinBpm, dou
     [GeneratedRegex(@"(\d)\s*[-–]\s*(\d)")]
     private static partial Regex SpacedRange();
 
+    // A quoted stretch, its closing quote optional as it's being typed; or a stretch with no quotes.
+    [GeneratedRegex("\"([^\"]*)\"?|[^\"]+")]
+    private static partial Regex QuotedOrNot();
+
     public static SongQuery Parse(string text)
     {
         var words = new List<string>();
         double? min = null, max = null;
         MusicalKey? key = null;
         var compatible = false;
-        foreach (var word in SpacedRange().Replace(text, "$1-$2").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (Match part in QuotedOrNot().Matches(text))
         {
-            if (BpmRange().Match(word) is { Success: true } range)
+            if (part.Value[0] == '"')
             {
-                var (a, b) = (Number(range.Groups[1].Value), Number(range.Groups[2].Value));
-                (min, max) = (Math.Min(a, b), Math.Max(a, b));
+                if (part.Groups[1].Value.Trim() is { Length: > 0 } quoted)
+                    words.Add(quoted);
+                continue;
             }
-            else if (OneBpm().Match(word) is { Success: true } one)
-                (min, max) = (Number(one.Groups[1].Value) - ONE_BPM_TOLERANCE, Number(one.Groups[1].Value) + ONE_BPM_TOLERANCE);
-            else if (CamelotKey().Match(word) is { Success: true } camelot)
+            foreach (var word in SpacedRange().Replace(part.Value, "$1-$2").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                key = FromCamelot(int.Parse(camelot.Groups[2].Value, CultureInfo.InvariantCulture), char.ToUpperInvariant(camelot.Groups[3].Value[0]) == 'A');
-                compatible = camelot.Groups[1].Value == "~";
+                if (BpmRange().Match(word) is { Success: true } range)
+                {
+                    var (a, b) = (Number(range.Groups[1].Value), Number(range.Groups[2].Value));
+                    (min, max) = (Math.Min(a, b), Math.Max(a, b));
+                }
+                else if (OneBpm().Match(word) is { Success: true } one)
+                    (min, max) = (Number(one.Groups[1].Value) - ONE_BPM_TOLERANCE, Number(one.Groups[1].Value) + ONE_BPM_TOLERANCE);
+                else if (CamelotKey().Match(word) is { Success: true } camelot)
+                {
+                    key = FromCamelot(int.Parse(camelot.Groups[2].Value, CultureInfo.InvariantCulture), char.ToUpperInvariant(camelot.Groups[3].Value[0]) == 'A');
+                    compatible = camelot.Groups[1].Value == "~";
+                }
+                else
+                    words.Add(word);
             }
-            else
-                words.Add(word);
         }
         return new SongQuery(words, min, max, key, compatible);
     }

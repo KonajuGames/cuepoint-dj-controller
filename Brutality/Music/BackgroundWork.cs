@@ -17,12 +17,23 @@ sealed class BackgroundWork
 
     /// <summary>
     /// Does <paramref name="work"/> in the background, then <paramref name="done"/> with what it made, on the UI thread
-    /// at the next <see cref="Apply"/> after it's finished. UI thread only.
+    /// at the next <see cref="Apply"/> after it's finished. If the work goes wrong, <paramref name="failed"/> is called
+    /// instead, for whatever's waiting on it to stop waiting, before <see cref="Apply"/> throws. UI thread only.
     /// </summary>
-    public void Start<T>(Func<T> work, Action<T> done)
+    public void Start<T>(Func<T> work, Action<T> done, Action? failed = null)
     {
         var task = Task.Run(work);
-        _pending.Add((task, () => done(task.GetAwaiter().GetResult())));
+        _pending.Add(
+            (
+                task,
+                () =>
+                {
+                    if (!task.IsCompletedSuccessfully)
+                        failed?.Invoke();
+                    done(task.GetAwaiter().GetResult());
+                }
+            )
+        );
     }
 
     /// <summary>

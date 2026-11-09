@@ -78,6 +78,32 @@ public class SongQueryTests
         Assert.False(query.Matches(Song("Funk 1999 13B", 123, EMinor)));
     }
 
+    [Theory]
+    [InlineData("\"80-90\"", "80-90")]
+    [InlineData("\"8A\"", "8A")]
+    [InlineData("\"124bpm\"", "124bpm")]
+    [InlineData("\"Back to the\"", "Back to the")]
+    [InlineData("\"80 - 90", "80 - 90")]
+    public void Text_in_quotes_is_found_as_it_s_written(string text, string word)
+    {
+        var query = SongQuery.Parse(text);
+
+        Assert.Equal(new[] { word }, query.Words);
+        Assert.False(query.NeedsAnalysis);
+    }
+
+    [Fact]
+    public void Quoted_text_goes_with_a_tempo_and_key_outside_the_quotes()
+    {
+        var query = SongQuery.Parse("disco \"80-90\" 120 - 126 ~8A \"\"");
+
+        Assert.Equal(new[] { "disco", "80-90" }, query.Words);
+        Assert.Equal((120.0, 126.0), (query.MinBpm, query.MaxBpm));
+        Assert.True(query.Compatible);
+        Assert.True(query.Matches(Song("Disco 80-90 mix", 123, EMinor)));
+        Assert.False(query.Matches(Song("Disco 80 90 mix", 123, EMinor)));
+    }
+
     [Fact]
     public void Words_alone_find_songs_analysed_or_not_by_title_artist_or_album()
     {

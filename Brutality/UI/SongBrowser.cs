@@ -136,7 +136,7 @@ sealed class SongBrowser : Panel
                 Placeholder = "Search, or 120-126 BPM, 8A, ~8A",
                 FocusColor = Theme.Focus,
                 ClearOnEscape = true,
-                Tooltip = "Words find songs by title, artist or album. 120-126 finds songs from 120 to 126 BPM, and 124bpm those at 124. 8A finds songs in that key, and ~8A those that mix with it. They go together: disco 120-126 ~8A",
+                Tooltip = "Words find songs by title, artist or album. 120-126 finds songs from 120 to 126 BPM, and 124bpm those at 124. 8A finds songs in that key, and ~8A those that mix with it. They go together: disco 120-126 ~8A. Put text in quotes to find it as written: \"80-90\"",
             }
         );
         _search.TextChanged += _ => Filter();

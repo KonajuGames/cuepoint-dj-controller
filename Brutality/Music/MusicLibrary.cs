@@ -404,7 +404,8 @@ sealed partial class MusicLibrary : IDisposable
                 foreach (var (folder, files) in found.Folders)
                     SongsIn(folder, files);
                 done(wanted.Where(found.There.Contains).Select(Find).OfType<Song>().ToList());
-            }
+            },
+            () => done([])
         );
     }
 

@@ -328,7 +328,7 @@ static class LibraryTree
             // The drives are asked whether they're ready in the background: a network drive gone quiet can take a while.
             new("Local drives", LibraryNodeKind.Group, children: () => Drives(library, isRecursive))
             {
-                LoadChildren = done => library.Background.Start(() => Drives(library, isRecursive).ToList(), done),
+                LoadChildren = done => library.Background.Start(() => Drives(library, isRecursive).ToList(), done, () => done([])),
             },
             new("Virtual folders", LibraryNodeKind.VirtualFolders, children: VirtualFolderNodes) { Path = virtualFolders.Directory },
             new(
@@ -564,9 +564,9 @@ static class LibraryTree
             {
                 // Whether it's recursive is asked now, on the UI thread; the files are listed in the background.
                 var recursive = isRecursive(path);
-                library.Background.Start(() => MusicLibrary.ListFolder(path, recursive), files => done(library.SongsIn(path, files, recursive)));
+                library.Background.Start(() => MusicLibrary.ListFolder(path, recursive), files => done(library.SongsIn(path, files, recursive)), () => done([]));
             },
-            LoadChildren = done => library.Background.Start(() => Subfolders(library, isRecursive, path).ToList(), done),
+            LoadChildren = done => library.Background.Start(() => Subfolders(library, isRecursive, path).ToList(), done, () => done([])),
         };
 
     /// <summary>

@@ -36,6 +36,35 @@ public sealed class BackgroundLoadingTests : IDisposable
     }
 
     [Fact]
+    public void Work_that_goes_wrong_tells_what_s_waiting_says_why_and_leaves_the_rest_to_come()
+    {
+        var work = new BackgroundWork();
+        var (failed, finished, other) = (false, false, false);
+        work.Start<int>(() => throw new InvalidDataException("broken"), _ => finished = true, () => failed = true);
+        work.Start(() => 1, _ => other = true);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var problems = 0;
+
+        while (work.IsBusy && watch.Elapsed.TotalSeconds < 5)
+        {
+            try
+            {
+                work.Apply();
+            }
+            catch (InvalidDataException)
+            {
+                problems++;
+            }
+            Thread.Sleep(5);
+        }
+
+        Assert.Equal(1, problems);
+        Assert.True(failed);
+        Assert.False(finished);
+        Assert.True(other);
+    }
+
+    [Fact]
     public void Songs_at_paths_are_found_in_order_those_elsewhere_included_and_those_gone_left_out()
     {
         IReadOnlyList<Song>? found = null;
