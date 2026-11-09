@@ -163,6 +163,19 @@ public sealed class SlipAndKeyShiftTests : IDisposable
     }
 
     [Fact]
+    public void The_effect_buffers_are_made_with_the_deck_not_when_it_starts_playing()
+    {
+        Assert.Equal(1, _deck.Effects.PrepareCount);
+        Assert.Equal(1, _deck.KeyLockUnit.PrepareCount);
+
+        _deck.Play();
+        Thread.Sleep(300);
+
+        Assert.Equal(1, _deck.Effects.PrepareCount);
+        Assert.Equal(1, _deck.KeyLockUnit.PrepareCount);
+    }
+
+    [Fact]
     public void Slip_only_starts_while_playing()
     {
         _deck.HotcueDown(0);

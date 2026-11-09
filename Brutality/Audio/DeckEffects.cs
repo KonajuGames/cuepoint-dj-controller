@@ -70,6 +70,11 @@ sealed unsafe class DeckEffects
     /// </summary>
     const double REVERB_TAIL_SECONDS = 6;
 
+    /// <summary>
+    /// How many times its buffers have been made, for tests.
+    /// </summary>
+    internal int PrepareCount { get; private set; }
+
     int _kind;
     int _on;
     float _level = 0.6f;
@@ -376,8 +381,13 @@ sealed unsafe class DeckEffects
         }
     }
 
-    void Prepare(int channels, int rate)
+    /// <summary>
+    /// Makes its buffers for sound of this shape. Called before the audio thread starts on it, so that thread needn't;
+    /// it does only if the shape changes, as with another sound card.
+    /// </summary>
+    internal void Prepare(int channels, int rate)
     {
+        PrepareCount++;
         (_channels, _rate) = (channels, rate);
         _echoFrames = (int)(MAX_ECHO_SECONDS * rate) + 4;
         _echo = new float[_echoFrames * channels];

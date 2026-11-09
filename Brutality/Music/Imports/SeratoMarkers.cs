@@ -48,30 +48,41 @@ static class SeratoMarkers
     /// The hot cues Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, by number; null if there
     /// are none, it's another kind of file, or it can't be read.
     /// </summary>
-    public static IReadOnlyList<TimeSpan?>? ReadHotcues(string path) => Read(path, Markers2) is { } data ? FromMarkers2(data) : null;
+    public static IReadOnlyList<TimeSpan?>? ReadHotcues(string path) => ReadAll(path).Hotcues;
 
     /// <summary>
     /// The beat grid Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, its bars counted from
     /// its first marker, if it's locked there; null if it isn't locked, it has none, it's another kind of file, or it
     /// can't be read.
     /// </summary>
-    public static BeatGrid? ReadGrid(string path) =>
-        Read(path, Markers2) is { } markers && IsBpmLocked(markers) && Read(path, BeatGridTag) is { } data ? FromBeatGrid(data) : null;
+    public static BeatGrid? ReadGrid(string path) => ReadAll(path).Grid;
 
     /// <summary>
-    /// What's in <paramref name="tag"/> in the file at <paramref name="path"/>, as an MP3 keeps it (unwrapped, from an
-    /// M4A or FLAC); null if it isn't there or can't be read.
+    /// The hot cues and locked beat grid Serato saved in the file at <paramref name="path"/>, as
+    /// <see cref="ReadHotcues"/> and <see cref="ReadGrid"/> give them, from one reading of the file.
     /// </summary>
-    static byte[]? Read(string path, Tag tag)
+    public static (IReadOnlyList<TimeSpan?>? Hotcues, BeatGrid? Grid) ReadAll(string path)
+    {
+        if (Open(path) is not { } tags || tags(Markers2) is not { } markers)
+            return (null, null);
+        var grid = IsBpmLocked(markers) && tags(BeatGridTag) is { } data ? FromBeatGrid(data) : null;
+        return (FromMarkers2(markers), grid);
+    }
+
+    /// <summary>
+    /// The file at <paramref name="path"/>'s tags, read into memory and closed again, as a way of asking for what's
+    /// in each, as an MP3 keeps it (unwrapped, from an M4A or FLAC), null if it isn't there; null if it can't be read.
+    /// </summary>
+    static Func<Tag, byte[]?>? Open(string path)
     {
         try
         {
             using var file = File.OpenRead(path);
             return Path.GetExtension(path).ToLowerInvariant() switch
             {
-                ".mp3" => FromMp3(file, tag),
-                ".m4a" or ".mp4" => FromMp4(file, tag),
-                ".flac" => FromFlac(file, tag),
+                ".mp3" => FromMp3(file),
+                ".m4a" or ".mp4" => FromMp4(file),
+                ".flac" => FromFlac(file),
                 _ => null,
             };
         }
@@ -81,21 +92,21 @@ static class SeratoMarkers
         }
     }
 
-    static byte[]? FromMp3(Stream file, Tag wanted)
+    static Func<Tag, byte[]?>? FromMp3(Stream file)
     {
-        Span<byte> header = stackalloc byte[10];
+        var header = new byte[10];
         if (file.Read(header) < 10)
             return null;
         var tag = new byte[Math.Min(Id3Size(header), MAX_TAG_BYTES)];
         file.ReadExactly(tag);
-        return FromId3(header, tag, wanted);
+        return wanted => FromId3(header, tag, wanted);
     }
 
     /// <summary>
     /// A tag in an M4A: its "moov" box read whole, wherever it is among the boxes at the top of the file (before the
     /// audio, or after it), and Serato's freeform tag found in its metadata.
     /// </summary>
-    static byte[]? FromMp4(Stream file, Tag wanted)
+    static Func<Tag, byte[]?>? FromMp4(Stream file)
     {
         Span<byte> header = stackalloc byte[16];
         while (file.Position + 8 <= file.Length)
@@ -123,7 +134,7 @@ static class SeratoMarkers
                     return null;
                 var moov = new byte[size - headerSize];
                 file.ReadExactly(moov);
-                return FromMoov(moov, wanted);
+                return wanted => FromMoov(moov, wanted);
             }
             file.Position = start + size;
         }
@@ -206,7 +217,7 @@ static class SeratoMarkers
     /// length, big-endian; the Vorbis comment, type 4, is a vendor string and then the comments, "NAME=value", each
     /// after its length, little-endian.
     /// </summary>
-    static byte[]? FromFlac(Stream file, Tag wanted)
+    static Func<Tag, byte[]?>? FromFlac(Stream file)
     {
         Span<byte> header = stackalloc byte[10];
         if (file.Read(header) < 10)
@@ -229,7 +240,7 @@ static class SeratoMarkers
             {
                 var comments = new byte[length];
                 file.ReadExactly(comments);
-                return FromVorbisComment(comments, wanted);
+                return wanted => FromVorbisComment(comments, wanted);
             }
             if (last)
                 return null;

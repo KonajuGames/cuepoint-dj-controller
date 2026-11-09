@@ -34,6 +34,11 @@ sealed unsafe class KeyLock
     const int RING_FRAMES = 1 << 15;
     const int MASK = RING_FRAMES - 1;
 
+    /// <summary>
+    /// How many times its buffers have been made, for tests.
+    /// </summary>
+    internal int PrepareCount { get; private set; }
+
     bool _enabled;
     float _shift = 1;
     float _latency;
@@ -194,8 +199,13 @@ sealed unsafe class KeyLock
         return sum;
     }
 
-    void Prepare(int channels, int rate)
+    /// <summary>
+    /// Makes its buffers for sound of this shape. Called before the audio thread starts on it, so that thread needn't;
+    /// it does only if the shape changes, as with another sound card.
+    /// </summary>
+    internal void Prepare(int channels, int rate)
     {
+        PrepareCount++;
         (_channels, _rate) = (channels, rate);
         _ring = new float[RING_FRAMES * channels];
         _minDelay = (int)(MIN_DELAY_SECONDS * rate);

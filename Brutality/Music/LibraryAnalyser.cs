@@ -164,6 +164,8 @@ sealed class LibraryAnalyser : IDisposable
     {
         lock (_lock)
         {
+            if (AlreadyFirst(songs))
+                return;
             var added = false;
             for (var i = songs.Count - 1; i >= 0; i--)
             {
@@ -181,6 +183,26 @@ sealed class LibraryAnalyser : IDisposable
             if (added)
                 Monitor.PulseAll(_lock);
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="songs"/> that need analysing are next in the queue already, in that order, as they are
+    /// from one frame to the next, so there's nothing to move. Finds that without searching the queue.
+    /// </summary>
+    bool AlreadyFirst(IReadOnlyList<Song> songs)
+    {
+        var next = _queue.Count - 1;
+        for (var i = 0; i < songs.Count; i++)
+        {
+            var song = songs[i];
+            LookUp(song);
+            if (song.Analysis is not null || song.AnalysisError is not null || _active.ContainsKey(song))
+                continue;
+            if (next < 0 || _queue[next] != song)
+                return false;
+            next--;
+        }
+        return true;
     }
 
     /// <summary>

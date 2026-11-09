@@ -445,6 +445,19 @@ public class SeratoTests
     }
 
     [Fact]
+    public void One_reading_gives_a_file_s_hot_cues_and_locked_grid_together()
+    {
+        using var folder = new TempFolder();
+        File.WriteAllBytes(folder["song.mp3"], Mp3(4, Markers2(true, (0, 1500)), BeatGridData(0.25f, 128)));
+
+        var (hotcues, grid) = SeratoMarkers.ReadAll(folder["song.mp3"]);
+
+        Assert.Equal(TimeSpan.FromSeconds(1.5), hotcues![0]);
+        Assert.Equal(128, Assert.Single(grid!.Markers).Bpm);
+        Assert.Equal((null, null), SeratoMarkers.ReadAll(folder["missing.mp3"]));
+    }
+
+    [Fact]
     public void A_Serato_grid_comes_in_for_a_song_without_one_fixed_here()
     {
         using var folder = new TempFolder();

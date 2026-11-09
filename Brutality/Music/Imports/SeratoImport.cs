@@ -41,7 +41,8 @@ static class SeratoImport
     /// </summary>
     public static IReadOnlyList<Found> Read(IEnumerable<string> paths) =>
         paths
-            .Select(path => new Found(path, SeratoMarkers.ReadHotcues(path), SeratoMarkers.ReadGrid(path)))
+            .Select(path => (Path: path, Read: SeratoMarkers.ReadAll(path)))
+            .Select(read => new Found(read.Path, read.Read.Hotcues, read.Read.Grid))
             .Where(found => found.Hotcues is not null || found.Grid is not null)
             .ToList();
 

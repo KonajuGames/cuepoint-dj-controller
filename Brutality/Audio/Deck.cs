@@ -131,6 +131,11 @@ sealed partial class Deck : IDisposable
         _self = GCHandle.Alloc(this);
         unsafe
         {
+            // Their buffers are big, so they're made here rather than on the audio thread the first time the deck plays.
+            SdlAudioSpec format;
+            engine.Mixer.GetFormat(&format);
+            _keyLock.Prepare(format.channels, format.freq);
+            Effects.Prepare(format.channels, format.freq);
             SdlMixer.PInvoke.SetTrackCookedCallback(_track, &ProcessTrack, (void*)GCHandle.ToIntPtr(_self));
         }
         ApplyGain();
@@ -253,6 +258,11 @@ sealed partial class Deck : IDisposable
     public DeckEffects Effects { get; } = new();
 
     readonly KeyLock _keyLock = new();
+
+    /// <summary>
+    /// The deck's key lock, for tests.
+    /// </summary>
+    internal KeyLock KeyLockUnit => _keyLock;
 
     /// <summary>
     /// The deck's speed for the audio thread, as the tempo fader last set it.
