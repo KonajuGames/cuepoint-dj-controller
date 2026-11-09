@@ -142,9 +142,11 @@ public sealed class DriveExportTests : IDisposable
         database.SetMemoryCues(song.Path, [TimeSpan.FromSeconds(3)]);
         database.SetCuePoint(song.Path, TimeSpan.FromSeconds(8));
         database.SetGridEdit(song.Path, new GridEdit(BeatGrid.Constant(125, 0.5, 200), []));
+        database.SetNotes(song.Path, new SongNotes(4, "Opener", "blue"));
 
         var result = Export("Set", song).Run();
         DriveExport.Record(database, result.Songs);
+        Assert.Equal(new SongNotes(4, "Opener", "blue"), database.GetNotes(result.Songs[0].Path));
         database.Save();
 
         var copy = result.Songs[0];

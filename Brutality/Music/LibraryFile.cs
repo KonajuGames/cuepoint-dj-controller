@@ -56,13 +56,18 @@ sealed class LibraryFile
     /// Whether it knows nothing: no analyses, hotcues, memory cues or fixed grids.
     /// </summary>
     public bool IsEmpty =>
-        _tracks.Count == 0 && _hotcues.Count == 0 && _memoryCues.Count == 0 && _cuePoints.Count == 0 && _hotcueDetails.Count == 0 && _memoryLoops.Count == 0 && _grids.Count == 0;
+        _tracks.Count == 0 && _hotcues.Count == 0 && _memoryCues.Count == 0 && _cuePoints.Count == 0 && _hotcueDetails.Count == 0 && _memoryLoops.Count == 0 && _grids.Count == 0 && _notes.Count == 0;
 
     /// <summary>
     /// Every song it knows anything about, by its full path.
     /// </summary>
     public IEnumerable<string> Paths =>
-        _tracks.Keys.Concat(_hotcues.Keys).Concat(_memoryCues.Keys).Concat(_cuePoints.Keys).Concat(_hotcueDetails.Keys).Concat(_memoryLoops.Keys).Concat(_grids.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+        _tracks.Keys.Concat(_hotcues.Keys).Concat(_memoryCues.Keys).Concat(_cuePoints.Keys).Concat(_hotcueDetails.Keys).Concat(_memoryLoops.Keys).Concat(_grids.Keys).Concat(_notes.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Every song it's analysed or tried to, by its full path, with the size of the file it did that from.
+    /// </summary>
+    public IEnumerable<(string Path, long Size)> Sizes => _tracks.Select(track => (track.Key, track.Value.Size));
 
     readonly Dictionary<string, TrackRecord> _tracks;
     readonly Dictionary<string, double?[]> _hotcues;
@@ -70,6 +75,7 @@ sealed class LibraryFile
     readonly Dictionary<string, double> _cuePoints;
     Dictionary<string, HotcueDetail?[]> _hotcueDetails = new(StringComparer.OrdinalIgnoreCase);
     Dictionary<string, double[][]> _memoryLoops = new(StringComparer.OrdinalIgnoreCase);
+    Dictionary<string, SongNotes> _notes = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, GridRecord> _grids;
 
     LibraryFile(
@@ -153,6 +159,7 @@ sealed class LibraryFile
             var loaded = new LibraryFile(filePath, root, file.Tracks ?? [], file.Hotcues ?? [], file.MemoryCues ?? [], file.CuePoints ?? [], file.Grids ?? [], null);
             loaded._hotcueDetails = loaded.Whole(file.HotcueDetails ?? []);
             loaded._memoryLoops = loaded.Whole(file.MemoryLoops ?? []);
+            loaded._notes = loaded.Whole(file.Notes ?? []);
             return loaded;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
@@ -183,9 +190,40 @@ sealed class LibraryFile
         Move(_hotcueDetails, other._hotcueDetails);
         Move(_memoryLoops, other._memoryLoops);
         Move(_grids, other._grids);
+        Move(_notes, other._notes);
         if (moving.Count > 0)
             Dirty = other.Dirty = true;
         return moving.Count;
+    }
+
+    /// <summary>
+    /// Takes all it knows about the song at <paramref name="from"/> to <paramref name="to"/> in <paramref name="other"/>,
+    /// as its file has moved there, with the time <paramref name="modified"/> it has now. Anything the song already has
+    /// at its new place stays. Returns whether there was anything to take.
+    /// </summary>
+    public bool MoveSong(string from, LibraryFile other, string to, DateTime modified)
+    {
+        var moved = false;
+        void Move<T>(Dictionary<string, T> here, Dictionary<string, T> there)
+        {
+            if (!here.Remove(from, out var record))
+                return;
+            there.TryAdd(to, record);
+            moved = true;
+        }
+        if (_tracks.TryGetValue(from, out var track))
+            track.Modified = modified;
+        Move(_tracks, other._tracks);
+        Move(_hotcues, other._hotcues);
+        Move(_memoryCues, other._memoryCues);
+        Move(_cuePoints, other._cuePoints);
+        Move(_hotcueDetails, other._hotcueDetails);
+        Move(_memoryLoops, other._memoryLoops);
+        Move(_grids, other._grids);
+        Move(_notes, other._notes);
+        if (moved)
+            Dirty = other.Dirty = true;
+        return moved;
     }
 
     /// <summary>
@@ -370,6 +408,21 @@ sealed class LibraryFile
     }
 
     /// <summary>
+    /// The song at <paramref name="path"/>'s rating, comment and colour.
+    /// </summary>
+    public SongNotes GetNotes(string path) => _notes.GetValueOrDefault(Path.GetFullPath(path)) ?? SongNotes.None;
+
+    public void SetNotes(string path, SongNotes notes)
+    {
+        Dirty = true;
+        path = Path.GetFullPath(path);
+        if (notes.IsEmpty)
+            _notes.Remove(path);
+        else
+            _notes[path] = notes;
+    }
+
+    /// <summary>
     /// The cue point set for the song at <paramref name="path"/>, if one has been.
     /// </summary>
     public TimeSpan? GetCuePoint(string path) => _cuePoints.TryGetValue(Path.GetFullPath(path), out var seconds) ? TimeSpan.FromSeconds(seconds) : null;
@@ -473,6 +526,7 @@ sealed class LibraryFile
             HotcueDetails = _hotcueDetails.Count > 0 ? Copy(_hotcueDetails) : null,
             MemoryLoops = _memoryLoops.Count > 0 ? Copy(_memoryLoops) : null,
             Grids = _grids.Count > 0 ? Copy(_grids) : null,
+            Notes = _notes.Count > 0 ? Copy(_notes) : null,
         };
         Dirty = false;
         return () => Write(contents);
@@ -525,6 +579,11 @@ sealed class LibraryFile
         /// Each song's beat grid as fixed by hand; songs left as analysed are left out.
         /// </summary>
         public Dictionary<string, GridRecord>? Grids { get; set; }
+
+        /// <summary>
+        /// Each song's rating, comment and colour; songs with none are left out.
+        /// </summary>
+        public Dictionary<string, SongNotes>? Notes { get; set; }
     }
 
     sealed class GridRecord

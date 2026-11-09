@@ -9,10 +9,21 @@ namespace Brutality.Music;
 /// besides them, a tempo and a key. A tempo is a range, "120-126" (BPM, either way round, with or without "bpm"), or
 /// one, "124bpm", give or take half a beat a minute. A key is on the Camelot wheel: "8A" for that key alone, or "~8A"
 /// for every key that mixes with it (itself, a step round the wheel either way, and its relative major or minor).
-/// Only songs analysed can be found by tempo or key. Anything in double quotes is text to find as it's written, spaces
+/// Only songs analysed can be found by tempo or key. "rating:4" finds songs rated 4 or more, "color:red" those tagged
+/// that colour, and "comment:word" those with the word in their comment; words on their own look in comments too.
+/// Anything in double quotes is text to find as it's written, spaces
 /// and all, so "80-90" finds those characters rather than a tempo; a quote left open runs to the end.
 /// </summary>
-sealed partial record SongQuery(IReadOnlyList<string> Words, double? MinBpm, double? MaxBpm, MusicalKey? Key, bool Compatible)
+sealed partial record SongQuery(
+    IReadOnlyList<string> Words,
+    double? MinBpm,
+    double? MaxBpm,
+    MusicalKey? Key,
+    bool Compatible,
+    int MinRating = 0,
+    string? Color = null,
+    IReadOnlyList<string>? Comments = null
+)
 {
     /// <summary>
     /// How far either side of a single tempo a song's can be and still be found.
@@ -24,12 +35,26 @@ sealed partial record SongQuery(IReadOnlyList<string> Words, double? MinBpm, dou
     /// <summary>
     /// Whether it asks for anything; a search of nothing lists every song.
     /// </summary>
-    public bool IsEmpty => Words.Count == 0 && !NeedsAnalysis;
+    public bool IsEmpty => Words.Count == 0 && !NeedsAnalysis && !NeedsNotes;
 
     /// <summary>
     /// Whether it asks for a tempo or key, which only an analysed song has.
     /// </summary>
     public bool NeedsAnalysis => MinBpm is not null || Key is not null;
+
+    /// <summary>
+    /// Whether it asks for a rating, colour or comment.
+    /// </summary>
+    public bool NeedsNotes => MinRating > 0 || Color is not null || Comments is { Count: > 0 };
+
+    [GeneratedRegex(@"^rating:([1-5])$", RegexOptions.IgnoreCase)]
+    private static partial Regex RatingWord();
+
+    [GeneratedRegex(@"^colou?r:(.+)$", RegexOptions.IgnoreCase)]
+    private static partial Regex ColorWord();
+
+    [GeneratedRegex(@"^comment:(.+)$", RegexOptions.IgnoreCase)]
+    private static partial Regex CommentWord();
 
     [GeneratedRegex(@"^(\d{2,3}(?:\.\d+)?)-(\d{2,3}(?:\.\d+)?)(?:bpm)?$", RegexOptions.IgnoreCase)]
     private static partial Regex BpmRange();
@@ -54,6 +79,9 @@ sealed partial record SongQuery(IReadOnlyList<string> Words, double? MinBpm, dou
         double? min = null, max = null;
         MusicalKey? key = null;
         var compatible = false;
+        var rating = 0;
+        string? color = null;
+        var comments = new List<string>();
         foreach (Match part in QuotedOrNot().Matches(text))
         {
             if (part.Value[0] == '"')
@@ -76,11 +104,17 @@ sealed partial record SongQuery(IReadOnlyList<string> Words, double? MinBpm, dou
                     key = FromCamelot(int.Parse(camelot.Groups[2].Value, CultureInfo.InvariantCulture), char.ToUpperInvariant(camelot.Groups[3].Value[0]) == 'A');
                     compatible = camelot.Groups[1].Value == "~";
                 }
+                else if (RatingWord().Match(word) is { Success: true } stars)
+                    rating = int.Parse(stars.Groups[1].Value, CultureInfo.InvariantCulture);
+                else if (ColorWord().Match(word) is { Success: true } tagged)
+                    color = tagged.Groups[1].Value;
+                else if (CommentWord().Match(word) is { Success: true } said)
+                    comments.Add(said.Groups[1].Value);
                 else
                     words.Add(word);
             }
         }
-        return new SongQuery(words, min, max, key, compatible);
+        return new SongQuery(words, min, max, key, compatible, rating, color, comments);
     }
 
     static double Number(string text) => double.Parse(text, CultureInfo.InvariantCulture);
@@ -107,7 +141,17 @@ sealed partial record SongQuery(IReadOnlyList<string> Words, double? MinBpm, dou
                 !song.Title.Contains(word, StringComparison.OrdinalIgnoreCase)
                 && !song.Artist.Contains(word, StringComparison.OrdinalIgnoreCase)
                 && !song.Album.Contains(word, StringComparison.OrdinalIgnoreCase)
+                && song.Notes.Comment?.Contains(word, StringComparison.OrdinalIgnoreCase) != true
             )
+                return false;
+        }
+        if (song.Notes.Rating < MinRating)
+            return false;
+        if (Color is { } color && !string.Equals(song.Notes.Color, color, StringComparison.OrdinalIgnoreCase))
+            return false;
+        foreach (var comment in Comments ?? [])
+        {
+            if (song.Notes.Comment?.Contains(comment, StringComparison.OrdinalIgnoreCase) != true)
                 return false;
         }
         if (!NeedsAnalysis)

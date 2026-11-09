@@ -25,6 +25,11 @@ enum LibraryNodeKind
     List,
 
     /// <summary>
+    /// The heading over the smart playlists, where new ones are made.
+    /// </summary>
+    SmartPlaylists,
+
+    /// <summary>
     /// The heading over the virtual folders, where new ones are made.
     /// </summary>
     VirtualFolders,
@@ -71,7 +76,7 @@ sealed class LibraryNode
     /// <summary>
     /// What it's called: for a virtual folder, whatever the folder is called now.
     /// </summary>
-    public string Name => Folder?.DisplayName ?? _name;
+    public string Name => Folder?.DisplayName ?? Smart?.Name ?? _name;
 
     public LibraryNodeKind Kind { get; }
 
@@ -79,6 +84,11 @@ sealed class LibraryNode
     /// The virtual folder, for one.
     /// </summary>
     public VirtualFolder? Folder { get; init; }
+
+    /// <summary>
+    /// The saved search, for a smart playlist.
+    /// </summary>
+    public SmartPlaylist? Smart { get; init; }
 
     /// <summary>
     /// The folder on disk, for a drive or folder.
@@ -288,13 +298,17 @@ static class LibraryTree
 
     /// <param name="isRecursive">Whether a folder lists the songs in its subfolders too, by its path.</param>
     /// <param name="imports">Other DJ software's playlists, under a node of their own for each that has any.</param>
+    /// <param name="smart">The saved searches, under a heading of their own.</param>
+    /// <param name="duplicates">The songs last found to have exact copies, for a list of them.</param>
     public static List<LibraryNode> Build(
         MusicLibrary library,
         IReadOnlyList<Deck> decks,
         IReadOnlyList<Song> history,
         VirtualFolders virtualFolders,
         Func<string, bool> isRecursive,
-        ImportedLibraries? imports = null
+        ImportedLibraries? imports = null,
+        SmartPlaylists? smart = null,
+        Func<IReadOnlyList<Song>>? duplicates = null
     )
     {
         // The library's songs as they are when asked for, since its folder can be changed.
@@ -322,6 +336,22 @@ static class LibraryTree
             }
         }
 
+        // One node for each smart playlist too, so a renamed one stays selected.
+        var smartNodes = new Dictionary<SmartPlaylist, LibraryNode>();
+        IEnumerable<LibraryNode> SmartNodes()
+        {
+            foreach (var list in smart!.All)
+            {
+                if (!smartNodes.TryGetValue(list, out var node))
+                    smartNodes[list] = node = new LibraryNode(list.Name, LibraryNodeKind.Filter, () => smart.SongsIn(list))
+                    {
+                        Smart = list,
+                        SongPaths = () => smart.SongsIn(list).Select(song => song.Path).ToList(),
+                    };
+                yield return node;
+            }
+        }
+
         var nodes = new List<LibraryNode>
         {
             new("Music library", LibraryNodeKind.Library, () => library.Songs),
@@ -342,6 +372,7 @@ static class LibraryTree
                         LibraryNodeKind.List,
                         () => library.Songs.OrderByDescending(song => song.Modified).Take(RECENTLY_ADDED).ToList()
                     ),
+                    new("Duplicates", LibraryNodeKind.List, () => duplicates?.Invoke() ?? []),
                 ]
             ),
             new(
@@ -375,6 +406,8 @@ static class LibraryTree
                 ]
             ),
         };
+        if (smart is not null)
+            nodes.Insert(nodes.FindIndex(node => node.Name == "Lists"), new("Smart playlists", LibraryNodeKind.SmartPlaylists, children: SmartNodes));
         // Other DJ software's playlists, after Cuepoint's own.
         nodes.InsertRange(nodes.FindIndex(node => node.Kind == LibraryNodeKind.VirtualFolders) + 1, ImportedNodes(library, imports));
         return nodes;

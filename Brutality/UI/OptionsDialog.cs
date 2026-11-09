@@ -37,6 +37,11 @@ sealed class OptionsDialog : Panel
     /// </summary>
     public Checkbox ProtectPlayingDecks { get; }
 
+    /// <summary>
+    /// Whether songs not analysed yet are analysed while nothing's playing.
+    /// </summary>
+    public Checkbox AnalyseWhenIdle { get; }
+
     public float2 ScreenSize { get; set; }
 
     /// <summary>
@@ -199,6 +204,15 @@ sealed class OptionsDialog : Panel
             }
         );
 
+        var idleRow = Row("Analyse when idle", body);
+        AnalyseWhenIdle = idleRow.Add(
+            new Checkbox(body, "While nothing's playing")
+            {
+                Checked = true,
+                Tooltip = "Songs in the list you're looking at, then the music library, are analysed one at a time while no deck is playing, so finding them by tempo or key works without scrolling to them first",
+            }
+        );
+
         var limiterRow = Row("Master limiter", body);
         _limiter = limiterRow.Add(new Checkbox(body));
         _limiter.Changed += box =>
@@ -322,6 +336,7 @@ sealed class OptionsDialog : Panel
         foreach (var (key, action) in new[]
         {
             ("1 / 2", "Load the selected song to deck A / B"),
+            ("Ctrl + P", "Preview the selected song in the headphones, or stop"),
             ("Ctrl + Z", "Undo the last hot cue, memory cue or beat grid change"),
             ("Alt + Z X C", "Deck A: previous memory cue, add or remove one, next"),
             ("Alt + N M ,", "Deck B: previous memory cue, add or remove one, next"),

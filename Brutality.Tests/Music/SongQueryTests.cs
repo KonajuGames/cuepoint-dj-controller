@@ -5,6 +5,69 @@ namespace Brutality.Tests.Music;
 
 public class SongQueryTests
 {
+    [Fact]
+    public void A_rating_finds_songs_rated_that_or_more()
+    {
+        var query = SongQuery.Parse("rating:4");
+        var (three, four, five) = (Song("Three"), Song("Four"), Song("Five"));
+        three.Notes = new SongNotes(3);
+        four.Notes = new SongNotes(4);
+        five.Notes = new SongNotes(5);
+
+        Assert.False(query.IsEmpty);
+        Assert.False(query.NeedsAnalysis);
+        Assert.False(query.Matches(three));
+        Assert.True(query.Matches(four));
+        Assert.True(query.Matches(five));
+    }
+
+    [Theory]
+    [InlineData("color:red")]
+    [InlineData("colour:RED")]
+    public void A_colour_finds_songs_tagged_with_it(string search)
+    {
+        var (red, blue) = (Song("Red"), Song("Blue"));
+        red.Notes = new SongNotes(Color: "red");
+        blue.Notes = new SongNotes(Color: "blue");
+
+        var query = SongQuery.Parse(search);
+
+        Assert.True(query.Matches(red));
+        Assert.False(query.Matches(blue));
+    }
+
+    [Fact]
+    public void A_comment_is_found_by_its_own_word_or_a_plain_one()
+    {
+        var song = Song("Something");
+        song.Notes = new SongNotes(Comment: "Great opener");
+
+        Assert.True(SongQuery.Parse("comment:opener").Matches(song));
+        Assert.True(SongQuery.Parse("opener").Matches(song));
+        Assert.False(SongQuery.Parse("comment:closer").Matches(song));
+        Assert.False(SongQuery.Parse("comment:something").Matches(song));
+    }
+
+    [Fact]
+    public void Notes_go_together_with_the_rest()
+    {
+        var song = Song("Disco", 124);
+        song.Notes = new SongNotes(4, Color: "red");
+
+        Assert.True(SongQuery.Parse("disco 120-126 rating:3 color:red").Matches(song));
+        Assert.False(SongQuery.Parse("disco 130-135 rating:3").Matches(song));
+        Assert.False(SongQuery.Parse("disco rating:5").Matches(song));
+    }
+
+    [Fact]
+    public void Quoted_notes_are_text_to_find()
+    {
+        var song = Song("rating:4 mix");
+
+        Assert.Equal(["rating:4"], SongQuery.Parse("\"rating:4\"").Words);
+        Assert.True(SongQuery.Parse("\"rating:4\"").Matches(song));
+    }
+
     static Song Song(string title, double? bpm = null, MusicalKey? key = null, string artist = "Artist")
     {
         var song = LibraryFileTests.Song($@"C:\Music\{title}.mp3", title: title, artist: artist);

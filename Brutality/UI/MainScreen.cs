@@ -203,6 +203,7 @@ sealed class MainScreen : Panel
             LibraryNodeKind.VirtualFolders => (icons.Playlist, Theme.Muted),
             LibraryNodeKind.VirtualFolder => (icons.Playlist, Colors.Hex(0x6CCB7A)),
             LibraryNodeKind.Filter => (icons.Filter, Colors.Hex(0xB57BE0)),
+            LibraryNodeKind.SmartPlaylists => (icons.Filter, Theme.Muted),
             LibraryNodeKind.Imported => (icons.Playlist, Colors.Hex(0xE0A35A)),
             LibraryNodeKind.Group => node.Name switch
             {

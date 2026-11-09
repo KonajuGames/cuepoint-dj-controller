@@ -527,6 +527,25 @@ sealed class VirtualFolders
         return Saved(folder);
     }
 
+    /// <summary>
+    /// Points every virtual folder listing a song in <paramref name="moved"/> (by where it was) at where it is now,
+    /// keeping its place. Returns why one couldn't be saved, if one couldn't.
+    /// </summary>
+    public string? Relocate(IReadOnlyDictionary<string, string> moved)
+    {
+        string? problem = null;
+        foreach (var folder in _folders)
+        {
+            if (!folder.Paths.Any(moved.ContainsKey))
+                continue;
+            var paths = folder.Paths.Select(path => moved.GetValueOrDefault(path, path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            folder.EditablePaths.Clear();
+            folder.EditablePaths.AddRange(paths);
+            problem ??= Saved(folder);
+        }
+        return problem;
+    }
+
     string? Saved(VirtualFolder folder)
     {
         var error = Save(folder);

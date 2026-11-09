@@ -37,7 +37,8 @@ Notes:
   "cuePoints": { "<song path>": <seconds>, ... },
   "hotcueDetails": { "<song path>": [ { "at": <seconds>, "name": <text>, "color": <0xRRGGBB>, "loopEnd": <seconds> } or null, ... ], ... },
   "memoryLoops": { "<song path>": [ [ <start seconds>, <end seconds> ], ... ], ... },
-  "grids":   { "<song path>": <Grid>, ... }
+  "grids":   { "<song path>": <Grid>, ... },
+  "notes":   { "<song path>": { "rating": <0 to 5>, "comment": <text>, "color": <colour> }, ... }
 }
 ```
 
@@ -51,6 +52,7 @@ Notes:
 | `memoryLoops` | object | Memory loops from other software: each starts at one of the song's memory cues. **Left out entirely** when there are none. |
 | `cuePoints` | object | Each song's cue point in seconds, rounded to 3 decimal places, where one's been set. It takes the place of the first memory cue as where the song waits when loaded. **Left out entirely** when there are none. |
 | `grids` | object | Beat grids fixed by hand (see 1.6). **Left out entirely** when there are none. |
+| `notes` | object | The DJ's own rating (0 for none, up to 5), comment and colour for each song. `color` is one of `red`, `orange`, `yellow`, `green`, `blue`, `purple` or `pink`; `comment` and `color` are left out where there isn't one. Songs with none of them are left out, and the property **left out entirely** when there are none. |
 
 Property names are camelCase. A property whose value would be `null` is left out rather than written as `null`; that applies to every object below. Readers should treat any missing property as its default, and ignore properties they don't know.
 

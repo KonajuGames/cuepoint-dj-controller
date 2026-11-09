@@ -40,6 +40,11 @@ sealed class SongBrowser : Panel
     readonly Button _cancelExport;
     readonly Label _exportStatus;
     const float EXPORT_ROW = 22;
+
+    // While a song's being previewed, a row under the song list: a cross, where it's got to, and what it is.
+    readonly Button _stopPreview;
+    readonly Slider _previewSeek;
+    readonly Label _previewTitle;
     readonly List<Button> _loadButtons = [];
     readonly ListHeader<Song> _header;
     readonly ScrollPanel _scroll;
@@ -53,6 +58,9 @@ sealed class SongBrowser : Panel
     readonly List<ListColumn<Song>> _columns = [];
     readonly Dictionary<ListColumn<Song>, float> _defaultWidths = [];
     readonly HashSet<ListColumn<Song>> _hidden = [];
+
+    // Those hidden until they're asked for, so the list doesn't lose its width to what most never use.
+    readonly HashSet<ListColumn<Song>> _optional = [];
     ListColumn<Song>? _sortColumn;
     bool _sortDescending;
     LibraryNode? _source;
@@ -105,6 +113,21 @@ sealed class SongBrowser : Panel
     public event Action? ExportCancelled;
 
     /// <summary>
+    /// The song being previewed in the headphones and how far through it is, from 0 to 1; null while there isn't one.
+    /// </summary>
+    public Func<(string Title, float Fraction)?> PreviewProgress { get; set; } = () => null;
+
+    /// <summary>
+    /// The preview's bar was moved, to how far through the song.
+    /// </summary>
+    public event Action<float>? PreviewSought;
+
+    /// <summary>
+    /// The cross beside the preview's bar was clicked.
+    /// </summary>
+    public event Action? PreviewStopped;
+
+    /// <summary>
     /// The column headings were right-clicked, where, for a menu of <see cref="ColumnMenu"/>.
     /// </summary>
     public event Action<float2>? ColumnMenuRequested;
@@ -136,7 +159,7 @@ sealed class SongBrowser : Panel
                 Placeholder = "Search, or 120-126 BPM, 8A, ~8A",
                 FocusColor = Theme.Focus,
                 ClearOnEscape = true,
-                Tooltip = "Words find songs by title, artist or album. 120-126 finds songs from 120 to 126 BPM, and 124bpm those at 124. 8A finds songs in that key, and ~8A those that mix with it. They go together: disco 120-126 ~8A. Put text in quotes to find it as written: \"80-90\"",
+                Tooltip = "Words find songs by title, artist or album. 120-126 finds songs from 120 to 126 BPM, and 124bpm those at 124. 8A finds songs in that key, and ~8A those that mix with it. rating:4 finds songs rated 4 or more, color:red those tagged red, comment:peak those with that in their comment. They go together: disco 120-126 ~8A. Put text in quotes to find it as written: \"80-90\"",
             }
         );
         _search.TextChanged += _ => Filter();
@@ -185,6 +208,12 @@ sealed class SongBrowser : Panel
         _cancelExport.Clicked += _ => ExportCancelled?.Invoke();
         _exportStatus = Add(new Label(body) { Color = Theme.Text, Visible = false });
 
+        _stopPreview = Cross("Stop the preview");
+        _stopPreview.Clicked += _ => PreviewStopped?.Invoke();
+        _previewSeek = Add(new Slider { Length = 240, Thickness = EXPORT_ROW, ShowFill = true, Visible = false, Tooltip = "Move through the song being previewed" });
+        _previewSeek.Changed += slider => PreviewSought?.Invoke(slider.Value);
+        _previewTitle = Add(new Label(body) { Color = Theme.Text, Visible = false });
+
         List = new ListView<Song>(body)
         {
             EmptyText = "No songs here",
@@ -219,6 +248,23 @@ sealed class SongBrowser : Panel
         _columns.Add(new ListColumn<Song>("Key", 112, FormatKey) { Color = KeyColor, SortKey = KeyOrder });
         _columns.Add(new ListColumn<Song>("Length", 80, song => Format(song.Duration)) { AlignRight = true, SortKey = song => song.Duration });
         _columns.Add(new ListColumn<Song>("BPM", 86, FormatBpm) { AlignRight = true, SortKey = song => song.Analysis?.Bpm });
+        ListColumn<Song> Optional(ListColumn<Song> column)
+        {
+            _columns.Add(column);
+            _optional.Add(column);
+            _hidden.Add(column);
+            return column;
+        }
+        Optional(new ListColumn<Song>("Rating", 86, song => new string('*', song.Notes.Rating)) { SortKey = song => song.Notes.Rating > 0 ? song.Notes.Rating : null });
+        Optional(
+            new ListColumn<Song>("Colour", 86, song => song.Notes.Color is { } color ? char.ToUpperInvariant(color[0]) + color[1..] : "")
+            {
+                Color = TagColor,
+                SortKey = song => song.Notes.Color is { } color ? SongNotes.Colors.ToList().IndexOf(color) : null,
+            }
+        );
+        Optional(new ListColumn<Song>("Comment", 220, song => song.Notes.Comment ?? "") { Color = _ => Theme.Muted, SortKey = song => song.Notes.Comment });
+        Optional(new ListColumn<Song>("Folder", 300, song => Path.GetDirectoryName(song.Path) ?? "") { Color = _ => Theme.Muted, SortKey = song => Path.GetDirectoryName(song.Path) });
         foreach (var column in _columns)
             _defaultWidths[column] = column.Width;
         ShowColumns();
@@ -287,8 +333,7 @@ sealed class SongBrowser : Panel
                 value.SongsLoaded += SourceSongsLoaded;
             if (value is { IsLoadedList: true })
                 value.RefreshSongs();
-            _sourceSongs = value?.Songs ?? [];
-            _refreshedAt = DateTime.UtcNow;
+            TakeSongs(value?.Songs ?? []);
             _heading.Text = value?.Name ?? "";
             Filter();
             _scroll.ScrollTo(float2.Zero);
@@ -318,10 +363,36 @@ sealed class SongBrowser : Panel
     {
         if (_source is null)
             return;
-        _sourceSongs = _source.Songs;
-        _refreshedAt = DateTime.UtcNow;
+        TakeSongs(_source.Songs);
         _heading.Text = _source.Name;
         Filter();
+    }
+
+    // What the database knows goes on them all now, not just as they're scrolled to, to be found by it.
+    void TakeSongs(IReadOnlyList<Song> songs)
+    {
+        _sourceSongs = songs;
+        _refreshedAt = DateTime.UtcNow;
+        _analyser.LookUp(songs);
+    }
+
+    /// <summary>
+    /// Every song in what's chosen in the folder list, whatever the search.
+    /// </summary>
+    public IReadOnlyList<Song> ListedSongs => _sourceSongs;
+
+    /// <summary>
+    /// What's typed in the search box.
+    /// </summary>
+    public string SearchText => _search.Text;
+
+    /// <summary>
+    /// Shows the column known by <paramref name="id"/>, if it was hidden.
+    /// </summary>
+    public void ShowColumn(string id)
+    {
+        if (_columns.FirstOrDefault(column => column.Id == id) is { } column && _hidden.Remove(column))
+            ShowColumns();
     }
 
     /// <summary>
@@ -337,8 +408,7 @@ sealed class SongBrowser : Panel
     {
         if (_source is { IsLive: true } live && DateTime.UtcNow - _refreshedAt >= LiveRefresh)
         {
-            _sourceSongs = live.Songs;
-            _refreshedAt = DateTime.UtcNow;
+            TakeSongs(live.Songs);
             Filter();
         }
 
@@ -358,6 +428,15 @@ sealed class SongBrowser : Panel
             _exportProgress.Fraction = exporting.Fraction;
             _exportProgress.Text = $"{exporting.Fraction * 100:0}%";
             _exportStatus.Text = exporting.Status;
+        }
+
+        var preview = PreviewProgress();
+        _stopPreview.Visible = _previewSeek.Visible = _previewTitle.Visible = preview is not null;
+        if (preview is { } previewing)
+        {
+            if (!_previewSeek.IsDragging)
+                _previewSeek.Value = previewing.Fraction;
+            _previewTitle.Text = $"Previewing in the headphones: {previewing.Title}";
         }
 
         var songs = List.Items.Count == _sourceSongs.Count ? $"{_sourceSongs.Count} songs" : $"{List.Items.Count} of {_sourceSongs.Count} songs";
@@ -466,6 +545,7 @@ sealed class SongBrowser : Panel
                 () =>
                 {
                     _hidden.Clear();
+                    _hidden.UnionWith(_optional);
                     foreach (var column in _columns)
                         column.Width = _defaultWidths[column];
                     ShowColumns();
@@ -490,7 +570,8 @@ sealed class SongBrowser : Panel
                 ColumnWidths = _columns
                     .Where(column => column.Resizable && column.Width != _defaultWidths[column])
                     .ToDictionary(column => column.Id, column => column.Width),
-                HiddenColumns = _columns.Where(_hidden.Contains).Select(column => column.Id).ToList(),
+                HiddenColumns = _columns.Where(column => _hidden.Contains(column) && !_optional.Contains(column)).Select(column => column.Id).ToList(),
+                ShownColumns = _optional.Where(column => !_hidden.Contains(column)).Select(column => column.Id).ToList(),
             };
         set
         {
@@ -504,7 +585,7 @@ sealed class SongBrowser : Panel
                     && FormerDefaultWidths.GetValueOrDefault(column.Id) != width
                         ? MathF.Max(column.MinWidth, width)
                         : _defaultWidths[column];
-                if (column != _titleColumn && value.HiddenColumns.Contains(column.Id))
+                if (_optional.Contains(column) ? !value.ShownColumns.Contains(column.Id) : column != _titleColumn && value.HiddenColumns.Contains(column.Id))
                     _hidden.Add(column);
             }
             _sortColumn = _columns.FirstOrDefault(column => column.Id == value.SortColumn && column.SortKey is not null && !_hidden.Contains(column));
@@ -546,7 +627,7 @@ sealed class SongBrowser : Panel
                 child.Measure();
         }
 
-        var listHeight = inner.Y - _search.Size.Y - 6 - _header.Size.Y - 6 - _status.Size.Y - (_exportProgress.Visible ? EXPORT_ROW + 6 : 0);
+        var listHeight = inner.Y - _search.Size.Y - 6 - _header.Size.Y - 6 - _status.Size.Y - (_exportProgress.Visible ? EXPORT_ROW + 6 : 0) - (_previewSeek.Visible ? EXPORT_ROW + 6 : 0);
         _scroll.MinSize = new float2(inner.X, listHeight);
         _scroll.MaxWidth = inner.X;
         _scroll.MaxHeight = listHeight;
@@ -610,6 +691,20 @@ sealed class SongBrowser : Panel
             Place(_exportStatus, statusLeft, y + (EXPORT_ROW - _exportStatus.Size.Y) / 2);
             y += EXPORT_ROW + 6;
         }
+
+        // And while previewing: its cross, where it's got to, and what it is.
+        if (_previewSeek.Visible)
+        {
+            _stopPreview.MinSize = new float2(EXPORT_ROW, EXPORT_ROW);
+            _stopPreview.Measure();
+            Place(_stopPreview, left, y);
+            Place(_previewSeek, left + EXPORT_ROW + 4, y);
+            var titleLeft = left + EXPORT_ROW + 4 + _previewSeek.Size.X + 8;
+            _previewTitle.MaxWidth = MathF.Max(0, right - titleLeft);
+            _previewTitle.Measure();
+            Place(_previewTitle, titleLeft, y + (EXPORT_ROW - _previewTitle.Size.Y) / 2);
+            y += EXPORT_ROW + 6;
+        }
         Place(_status, left, y);
     }
 
@@ -638,6 +733,19 @@ sealed class SongBrowser : Panel
         song.Analysis is { } analysis ? $"{analysis.Key.Camelot}  {analysis.Key.ShortName}"
         : song.AnalysisError is not null ? "–"
         : "";
+
+    static float4? TagColor(Song song) =>
+        song.Notes.Color switch
+        {
+            "red" => Colors.Hex(0xE85D5D),
+            "orange" => Colors.Hex(0xEB9238),
+            "yellow" => Colors.Hex(0xE8D04A),
+            "green" => Colors.Hex(0x5CC46E),
+            "blue" => Colors.Hex(0x5A9BEF),
+            "purple" => Colors.Hex(0xA878E8),
+            "pink" => Colors.Hex(0xEE82C0),
+            _ => null,
+        };
 
     static float4? KeyColor(Song song) =>
         song.Analysis is { } analysis ? Theme.CamelotColor(analysis.Key.CamelotNumber) : null;

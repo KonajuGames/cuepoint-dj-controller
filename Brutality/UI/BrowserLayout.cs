@@ -16,4 +16,9 @@ sealed class BrowserLayout
     public Dictionary<string, float> ColumnWidths { get; set; } = [];
 
     public List<string> HiddenColumns { get; set; } = [];
+
+    /// <summary>
+    /// The columns that start out hidden and have been shown.
+    /// </summary>
+    public List<string> ShownColumns { get; set; } = [];
 }

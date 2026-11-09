@@ -103,6 +103,9 @@ static void Run()
     using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
     Deck[] decks = [deckA, deckB];
 
+    // Hearing a song from the list in the headphones, without a deck.
+    using var preview = new SongPreview(audio);
+
     // Settings kept between runs, beside the library's database. The output goes first, as headphones on its channels
     // 3 and 4 need it there.
     var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "settings.json");
@@ -264,7 +267,14 @@ static void Run()
 
     importRecord.Save(importRecordPath);
 
-    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports);
+    // Songs found to be exact copies of each other, for the list of them, and whether a look for those or for moved
+    // songs is going on.
+    IReadOnlyList<Song> duplicates = [];
+    var repairing = false;
+    var smartPlaylists = new SmartPlaylists(settings.SmartPlaylists, library, database, analyser);
+    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports, smartPlaylists, () => duplicates);
+    var smartNode = folders.Single(node => node.Kind == LibraryNodeKind.SmartPlaylists);
+    _ = smartNode.Children;
     var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
 
     // Each deck's beat grid can be fixed by hand, with its pads in GRID mode.
@@ -869,6 +879,12 @@ static void Run()
         settings.ProtectPlayingDecks = box.Checked;
         SaveSettings();
     };
+    screen.Options.AnalyseWhenIdle.Checked = settings.AnalyseWhenIdle;
+    screen.Options.AnalyseWhenIdle.Changed += box =>
+    {
+        settings.AnalyseWhenIdle = box.Checked;
+        SaveSettings();
+    };
     screen.Options.MasterLimiterToggled += () =>
     {
         settings.MasterLimiter = audio.Limiter.Enabled;
@@ -1007,6 +1023,13 @@ static void Run()
             return;
         }
 
+        if (key == GlfwKey.P && (mods & GlfwModifier.Control) != 0)
+        {
+            if (pressed && browser.SelectedSong is { } selected)
+                TogglePreview(selected);
+            return;
+        }
+
         // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear; or in GRID mode, its tools,
         // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held; or in JUMP mode, beat jumps.
         if (HotcueKeys.For(key) is { } hotcue)
@@ -1078,6 +1101,33 @@ static void Run()
         if (browser.Source?.Kind == LibraryNodeKind.VirtualFolder)
             browser.Reload();
     };
+
+    smartPlaylists.Changed += () =>
+    {
+        smartNode.Refresh();
+        _ = smartNode.Children;
+        screen.FolderTree.Refresh();
+        SaveSettings();
+    };
+
+    // What to find, then what to call it, starting from whatever's in the search box.
+    void NewSmartPlaylist() =>
+        prompt.Show(
+            "What should the smart playlist find?",
+            browser.SearchText,
+            SmartPlaylists.CheckSearch,
+            search =>
+                afterEvents.Enqueue(() =>
+                    prompt.Show("Name the smart playlist", search, name => smartPlaylists.CheckName(name), name => screen.FolderTree.Select(SmartNodeFor(smartPlaylists.Add(name, search))))
+                )
+        );
+
+    LibraryNode SmartNodeFor(SmartPlaylist list)
+    {
+        smartNode.Refresh();
+        screen.FolderTree.SetExpanded(smartNode, true);
+        return smartNode.Children.Single(node => node.Smart == list);
+    }
 
     void NewVirtualFolder() =>
         prompt.Show(
@@ -1292,6 +1342,90 @@ static void Run()
 
     // The menu item for a list: a drive to export it to, from those it isn't kept on. Exporting over a playlist the
     // drive has of that name asks first.
+    // Looks under a folder for exact copies, in the background, and lists them.
+    MenuItem FindDuplicatesIn(string folder) =>
+        new(
+            "Find duplicates",
+            () =>
+            {
+                repairing = true;
+                screen.Log($"Looking for exact copies under {folder}...");
+                library.Background.Start(
+                    () => LibraryRepair.FindCopies(MusicLibrary.ListFolder(folder, recursive: true)),
+                    copies =>
+                        library.LoadSongsAt(
+                            copies.SelectMany(same => same).ToList(),
+                            songs =>
+                            {
+                                repairing = false;
+                                duplicates = songs;
+                                screen.Log(copies.Count == 0 ? $"No exact copies under {folder}" : $"{songs.Count} songs are exact copies of each other, in {copies.Count} {(copies.Count == 1 ? "group" : "groups")}; see Lists > Duplicates");
+                                if (copies.Count == 0)
+                                    return;
+                                browser.ShowColumn("Folder");
+                                var lists = folders.Single(node => node.Name == "Lists");
+                                screen.FolderTree.SetExpanded(lists, true);
+                                var listed = lists.Children.Single(node => node.Name == "Duplicates");
+                                if (browser.Source == listed)
+                                    browser.Reload();
+                                else
+                                    screen.FolderTree.Select(listed);
+                            }
+                        ),
+                    () =>
+                    {
+                        repairing = false;
+                        screen.Log($"Couldn't look for copies under {folder}");
+                    }
+                );
+            },
+            Enabled: !repairing
+        );
+
+    // Looks under a folder for songs the database has whose files have gone, and offers to take what's known to them.
+    MenuItem FindMovedSongsIn(string folder) =>
+        new(
+            "Find moved songs here",
+            () =>
+            {
+                repairing = true;
+                database.OpenDriveFiles(VirtualFolders.ReadyDrives().Select(drive => drive.Root));
+                var known = database.KnownSizes();
+                screen.Log($"Looking under {folder} for songs that have moved...");
+                library.Background.Start(
+                    () => LibraryRepair.FindMoved(known, MusicLibrary.ListFolder(folder, recursive: true)),
+                    found =>
+                    {
+                        repairing = false;
+                        var left = found.Ambiguous > 0 ? $" {found.Ambiguous} could be more than one file, so are left." : "";
+                        if (found.Moves.Count == 0)
+                        {
+                            screen.Log(found.Missing == 0 ? "No songs known to the database are missing" : $"None of the {found.Missing} missing songs are under {folder}.{left}");
+                            return;
+                        }
+                        confirmation.Show(
+                            $"Relocate {found.Moves.Count} of {found.Missing} missing songs?",
+                            $"Matched by file name and size. Their analyses and cues follow.{left}",
+                            "Relocate",
+                            () =>
+                            {
+                                var error = LibraryRepair.Apply(found.Moves, database, library, analyser, virtualFolders);
+                                analyser.SaveSoon();
+                                browser.Reload();
+                                screen.Log(error is not null ? $"Relocated {found.Moves.Count} songs, but couldn't save a virtual folder: {error}" : $"Relocated {found.Moves.Count} songs");
+                            }
+                        );
+                    },
+                    () =>
+                    {
+                        repairing = false;
+                        screen.Log("Couldn't look for moved songs");
+                    }
+                );
+            },
+            Enabled: !repairing
+        );
+
     MenuItem ExportFor(LibraryNode node)
     {
         var paths = node.SongPaths?.Invoke() ?? [];
@@ -1329,6 +1463,32 @@ static void Run()
     {
         if (node.Kind == LibraryNodeKind.VirtualFolders)
             menu.Show(point, [new MenuItem("New virtual folder...", NewVirtualFolder)]);
+        else if (node.Kind == LibraryNodeKind.SmartPlaylists)
+            menu.Show(point, [new MenuItem("New smart playlist...", NewSmartPlaylist)]);
+        else if (node.Smart is { } smart)
+            menu.Show(
+                point,
+                [
+                    new MenuItem("Rename...", () => prompt.Show("Rename smart playlist", smart.Name, name => smartPlaylists.CheckName(name, smart), name => smartPlaylists.Rename(smart, name))),
+                    new MenuItem("Edit search...", () => prompt.Show("What should it find?", smart.Search, SmartPlaylists.CheckSearch, search => smartPlaylists.SetSearch(smart, search))),
+                    ExportFor(node),
+                    new MenuItem(
+                        "Delete...",
+                        () =>
+                            confirmation.Show(
+                                $"Delete {smart.Name}?",
+                                "Only the saved search goes. The songs aren't touched.",
+                                "Delete",
+                                () =>
+                                {
+                                    if (browser.Source == node)
+                                        screen.FolderTree.Select(smartNode.Parent ?? folders[0]);
+                                    smartPlaylists.Delete(smart);
+                                }
+                            )
+                    ),
+                ]
+            );
         else if (node.Kind == LibraryNodeKind.Library)
             menu.Show(
                 point,
@@ -1337,6 +1497,8 @@ static void Run()
                     // Other DJ software's libraries, one format to a line, more to come.
                     new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox)), SeratoCuesFor(node, "Serato cues and grids")]),
                     new MenuItem("Export", [new MenuItem("Play history...", () => afterEvents.Enqueue(ExportHistory))]),
+                    FindDuplicatesIn(library.Root),
+                    FindMovedSongsIn(library.Root),
                 ]
             );
         else if (node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive, Path: { } path })
@@ -1350,6 +1512,8 @@ static void Run()
                     ),
                     new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node),
                     SeratoCuesFor(node),
+                    FindDuplicatesIn(path),
+                    FindMovedSongsIn(path),
                 ]
             );
         else if (node.Folder is { } folder)
@@ -1406,6 +1570,62 @@ static void Run()
         );
     };
 
+    void TogglePreview(Song song)
+    {
+        if (preview.Song == song)
+            preview.Stop();
+        else if (audio.HasHeadphones)
+            preview.Start(song);
+        else
+            screen.Log("Set up headphones to preview a song: the headphones button along the top");
+    }
+
+    browser.PreviewProgress = () => preview.Song is { } previewing ? (previewing.Title, preview.Fraction) : null;
+    browser.PreviewSought += preview.Seek;
+    browser.PreviewStopped += preview.Stop;
+    preview.Failed += (song, error) => screen.Log($"Couldn't preview {song.Title}: {error}");
+
+    // A rating, comment or colour changed on the songs chosen, and the column for it shown so it can be seen.
+    void ChangeNotes(IReadOnlyList<Song> songs, string column, Func<SongNotes, SongNotes> change)
+    {
+        foreach (var song in songs)
+        {
+            song.Notes = change(song.Notes);
+            database.SetNotes(song.Path, song.Notes);
+        }
+        analyser.SaveSoon();
+        browser.ShowColumn(column);
+        browser.Refilter();
+    }
+
+    MenuItem RatingMenu(IReadOnlyList<Song> songs) =>
+        new(
+            "Rating",
+            Enumerable
+                .Range(0, SongNotes.MAX_RATING + 1)
+                .Select(rating => new MenuItem(
+                    rating == 0 ? "None" : new string('*', rating),
+                    () => ChangeNotes(songs, "Rating", notes => notes with { Rating = rating }),
+                    Checked: songs.All(song => song.Notes.Rating == rating)
+                ))
+                .ToList(),
+            enabled: songs.Count > 0
+        );
+
+    MenuItem ColourMenu(IReadOnlyList<Song> songs) =>
+        new(
+            "Colour",
+            SongNotes
+                .Colors.Prepend(null)
+                .Select(colour => new MenuItem(
+                    colour is null ? "None" : char.ToUpperInvariant(colour[0]) + colour[1..],
+                    () => ChangeNotes(songs, "Colour", notes => notes with { Color = colour }),
+                    Checked: songs.All(song => song.Notes.Color == colour)
+                ))
+                .ToList(),
+            enabled: songs.Count > 0
+        );
+
     // A menu for songs in the list, acting on the selection.
     browser.SongsSecondaryClicked += (songs, at) =>
     {
@@ -1414,6 +1634,24 @@ static void Run()
         menu.Show(
             at,
             [
+                new MenuItem(
+                    preview.Song is { } hearing && songs.Contains(hearing) ? "Stop preview" : "Preview in headphones",
+                    () => TogglePreview(songs[0]),
+                    Enabled: songs.Count > 0 && audio.HasHeadphones
+                ),
+                RatingMenu(songs),
+                ColourMenu(songs),
+                new MenuItem(
+                    "Comment...",
+                    () =>
+                        prompt.Show(
+                            songs.Count > 1 ? $"Comment on {songs.Count} songs" : $"Comment on {songs[0].Title}",
+                            songs.Select(song => song.Notes.Comment).Distinct().Count() == 1 ? songs[0].Notes.Comment ?? "" : "",
+                            _ => null,
+                            text => ChangeNotes(songs, "Comment", notes => notes with { Comment = text.Trim() is { Length: > 0 } comment ? comment : null })
+                        ),
+                    Enabled: songs.Count > 0
+                ),
                 // The songs chosen, analysed again from scratch: after a file's been edited, say, or to try a bad grid
                 // again. A grid fixed by hand stays as it was.
                 new MenuItem(
@@ -1516,6 +1754,8 @@ static void Run()
 
     // The Rekordbox collections are looked at every few seconds, and one that's been exported afresh is read again:
     // its playlists, and hot cues for songs with none here.
+    const double IDLE_ANALYSIS_SECONDS = 1;
+    var nextIdleAnalysis = IDLE_ANALYSIS_SECONDS;
     const double REKORDBOX_CHECK_SECONDS = 5;
     var nextRekordboxCheck = REKORDBOX_CHECK_SECONDS;
     void CheckRekordbox()
@@ -1619,6 +1859,7 @@ static void Run()
             {
                 foreach (var deck in decks)
                     deck.Update();
+                preview.Update();
             }
         );
 
@@ -1694,6 +1935,20 @@ static void Run()
                     TakeInLibraryChanges();
             }
         );
+
+        // With nothing playing, songs not analysed yet are done one at a time: those listed first, then the library.
+        if (now >= nextIdleAnalysis)
+        {
+            nextIdleAnalysis = now + IDLE_ANALYSIS_SECONDS;
+            Guarded(
+                "analysing while idle",
+                () =>
+                {
+                    if (settings.AnalyseWhenIdle && export is null && !preview.IsPlaying && !decks.Any(deck => deck.IsPlaying))
+                        analyser.RequestIdle(browser.ListedSongs.Concat(library.Songs));
+                }
+            );
+        }
         if (now >= nextRekordboxCheck)
         {
             nextRekordboxCheck = now + REKORDBOX_CHECK_SECONDS;

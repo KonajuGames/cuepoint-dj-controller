@@ -46,6 +46,11 @@ sealed class Song
     /// </summary>
     public string? AnalysisError { get; internal set; }
 
+    /// <summary>
+    /// Its rating, comment and colour.
+    /// </summary>
+    public SongNotes Notes { get; internal set; } = SongNotes.None;
+
     internal Song(string path, long size, DateTime modified, string title, string artist, string album)
     {
         Path = path;

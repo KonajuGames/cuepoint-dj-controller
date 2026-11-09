@@ -129,6 +129,27 @@ sealed class LibraryAnalyser : IDisposable
     public void Request(Song song) => Request([song]);
 
     /// <summary>
+    /// With nothing being analysed or waiting, asks for the first of <paramref name="songs"/> that needs it, for one
+    /// song at a time to be done while nothing else is going on. Returns the song, if there was one.
+    /// </summary>
+    public Song? RequestIdle(IEnumerable<Song> songs)
+    {
+        if (ActiveCount > 0 || QueuedCount > 0)
+            return null;
+        foreach (var song in songs)
+        {
+            lock (_lock)
+                LookUp(song);
+            if (song.Analysis is null && song.AnalysisError is null)
+            {
+                Request(song);
+                return song;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Analyses <paramref name="songs"/> again, analysed already or not, ahead of everything waiting. Each keeps its
     /// analysis until the new one's in, and a beat grid fixed by hand stays fixed. Songs being analysed right now are
     /// left to finish. Returns how many were queued.
@@ -288,7 +309,25 @@ sealed class LibraryAnalyser : IDisposable
             song.Artist = artist ?? song.Artist;
             song.Album = album ?? song.Album;
         }
+        song.Notes = Database.GetNotes(song.Path);
     }
+
+    /// <summary>
+    /// Puts what the database knows about <paramref name="song"/> on it again, after that's changed.
+    /// </summary>
+    public void LookAgain(Song song)
+    {
+        lock (_lock)
+        {
+            _lookedUp.Remove(song);
+            LookUp(song);
+        }
+    }
+
+    /// <summary>
+    /// Has the database saved along with the next analysis results, soon, without holding anything up.
+    /// </summary>
+    public void SaveSoon() => _savePending = true;
 
     /// <summary>
     /// How far through analysing <paramref name="song"/> it is, from 0 to 1, while it's being analysed.

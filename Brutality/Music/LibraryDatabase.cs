@@ -175,6 +175,39 @@ sealed class LibraryDatabase
 
     public void SetCuePoint(string path, TimeSpan cuePoint) => FileFor(path).SetCuePoint(path, cuePoint);
 
+    public SongNotes GetNotes(string path) => FileFor(path).GetNotes(path);
+
+    public void SetNotes(string path, SongNotes notes) => FileFor(path).SetNotes(path, notes);
+
+    /// <summary>
+    /// Opens the file of each drive at <paramref name="roots"/> that has one, so its songs are known about before any
+    /// of them comes up.
+    /// </summary>
+    public void OpenDriveFiles(IEnumerable<string> roots)
+    {
+        foreach (var root in roots)
+        {
+            if (File.Exists(Path.Combine(Normal(root), DRIVE_FOLDER, FILE_NAME)))
+                FileFor(Path.Combine(Normal(root), FILE_NAME));
+        }
+    }
+
+    /// <summary>
+    /// Every song known anything about, in the files open now, by path.
+    /// </summary>
+    public IReadOnlyList<string> KnownPaths() => _system.Paths.Concat(_drives.Values.SelectMany(file => file.Paths)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>
+    /// Every song analysed or tried, in the files open now, with the size of the file then.
+    /// </summary>
+    public IReadOnlyList<(string Path, long Size)> KnownSizes() => _system.Sizes.Concat(_drives.Values.SelectMany(file => file.Sizes)).ToList();
+
+    /// <summary>
+    /// Takes all that's known about the song at <paramref name="from"/> to <paramref name="to"/>, even onto another
+    /// drive's file, as its file has moved there, with the time <paramref name="modified"/> it has now.
+    /// </summary>
+    public bool Relocate(string from, string to, DateTime modified) => FileFor(from).MoveSong(from, FileFor(to), to, modified);
+
     public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) => FileFor(path).WithEdits(path, analysis);
 
     public GridEdit? GetGridEdit(string path, double duration) => FileFor(path).GetGridEdit(path, duration);

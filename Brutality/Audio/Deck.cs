@@ -158,6 +158,16 @@ sealed partial class Deck : IDisposable
         }
     }
 
+    /// <summary>
+    /// Has its fader down from the first moment of sound, for a deck that hasn't played yet and is only ever to be
+    /// heard in the headphones, rather than easing down from full over the first block.
+    /// </summary>
+    internal void StartWithFaderDown()
+    {
+        Volume = 0;
+        _appliedChannelGain = 0;
+    }
+
     public CrossfaderSide Side
     {
         get => _side;

@@ -72,6 +72,16 @@ sealed class AppSettings
     public bool ProtectPlayingDecks { get; set; } = true;
 
     /// <summary>
+    /// Whether songs not analysed yet are analysed, one at a time, while nothing's playing.
+    /// </summary>
+    public bool AnalyseWhenIdle { get; set; } = true;
+
+    /// <summary>
+    /// The saved searches listed under Smart playlists.
+    /// </summary>
+    public List<Music.SmartPlaylist> SmartPlaylists { get; set; } = [];
+
+    /// <summary>
     /// A deck's effect as it was left: which one, how much, and each one's length in beats. It always starts off.
     /// </summary>
     public sealed class DeckEffectSettings
