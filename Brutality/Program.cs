@@ -1120,6 +1120,87 @@ static void Run()
         return new MenuItem(text, () => ImportSeratoCues(node.Name, () => listed), Enabled: listed.Count > 0);
     }
 
+    // A list copied to a removable drive to take away, one at a time, in the background. The bar and what it's doing
+    // show under the song list, with a cross to stop it. Once the songs are there, the drive gets what's known about
+    // them in its library file and a playlist of them as a virtual folder.
+    DriveExport? export = null;
+    browser.ExportProgress = () => export is { } running ? (running.Fraction, running.Status) : null;
+    browser.ExportCancelled += () => export?.Cancel();
+
+    void StartExport(string name, IReadOnlyList<Song> songs, StorageDrive drive)
+    {
+        var job = new DriveExport(name, songs, drive.Root);
+        export = job;
+        library.Background.Start(job.Run, result => FinishExport(job, drive, result));
+    }
+
+    void FinishExport(DriveExport job, StorageDrive drive, DriveExport.Result result)
+    {
+        export = null;
+        static string Songs(int count) => count == 1 ? "1 song" : $"{count} songs";
+        if (result.Cancelled)
+        {
+            screen.Log($"Stopped exporting {job.FileName}; what's been copied stays on {drive.Label}, and exporting again carries on from there");
+            return;
+        }
+        if (result.Error is { } problem)
+        {
+            screen.Log($"Couldn't export {job.FileName} to {drive.Label}: {problem}");
+            return;
+        }
+        if (result.Songs.Count == 0)
+        {
+            screen.Log($"Couldn't copy any of {job.FileName}'s songs to {drive.Label}");
+            return;
+        }
+
+        DriveExport.Record(database, result.Songs);
+        string? saving = null;
+        try
+        {
+            database.Save();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            saving = e.Message;
+        }
+        if (!database.EnsureDriveFile(drive.Root))
+            saving ??= "its library file couldn't be written";
+        if (virtualFolders.WriteToDrive(job.FileName, drive.Root, result.Songs.Select(song => song.Path).ToList()) is { } playlistError)
+            saving ??= playlistError;
+        FoldersChanged();
+        screen.Log(
+            $"Exported {Songs(result.Songs.Count)} to {job.Folder}"
+                + (result.Failed.Count > 0 ? $"; {Songs(result.Failed.Count)} couldn't be copied" : "")
+                + (saving is null ? "" : $"; {saving}")
+        );
+    }
+
+    // The menu item for a list: a drive to export it to, from those it isn't kept on. Exporting over a playlist the
+    // drive has of that name asks first.
+    MenuItem ExportFor(LibraryNode node)
+    {
+        var songs = node.Songs;
+        var drives = RemovableDrives.Writable().Where(drive => node.Folder is not { } folder || !virtualFolders.IsOn(folder, drive.Root));
+        return new MenuItem(
+            "Export to drive",
+            drives
+                .Select(drive => new MenuItem(
+                    drive.Label,
+                    () =>
+                    {
+                        var name = DriveExport.SafeName(node.Name);
+                        if (virtualFolders.IsOnDrive(name, drive.Root))
+                            confirmation.Show($"Replace {name} on {drive.Label}?", "The drive already has a playlist of that name. Its list of songs is replaced.", "Replace", () => StartExport(node.Name, songs, drive));
+                        else
+                            StartExport(node.Name, songs, drive);
+                    }
+                ))
+                .ToList(),
+            enabled: export is null && songs.Count > 0
+        );
+    }
+
     screen.FolderTree.ItemSecondaryClicked += (node, point) =>
     {
         if (node.Kind == LibraryNodeKind.VirtualFolders)
@@ -1153,6 +1234,7 @@ static void Run()
                 [
                     new MenuItem("Rename...", () => RenameVirtualFolder(folder)),
                     SeratoCuesFor(node),
+                    ExportFor(node),
                     new MenuItem(
                         "Store on drive",
                         virtualFolders
@@ -1183,7 +1265,7 @@ static void Run()
             );
         // Lists, filters, and Rekordbox's playlists and Serato's crates: the songs they list.
         else if (node.HasSongs)
-            menu.Show(point, [SeratoCuesFor(node)]);
+            menu.Show(point, node.Kind == LibraryNodeKind.Imported ? [SeratoCuesFor(node), ExportFor(node)] : [SeratoCuesFor(node)]);
     };
 
     screen.FolderTree.AcceptsDrop = (node, payload) => node.Folder is not null && payload is IReadOnlyList<Song> { Count: > 0 };
@@ -1521,6 +1603,9 @@ static void Run()
     }
 
     // Closing properly, nothing needs picking up next time.
+    // An export still going stops, so it doesn't leave half a file behind.
+    export?.Cancel();
+    export?.Wait(TimeSpan.FromSeconds(5));
     SessionState.Delete(sessionPath);
     watcher?.Dispose();
 

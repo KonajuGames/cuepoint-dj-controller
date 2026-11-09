@@ -417,6 +417,36 @@ sealed class VirtualFolders
     }
 
     /// <summary>
+    /// Whether the drive at <paramref name="root"/> has a playlist of its own called <paramref name="name"/>.
+    /// </summary>
+    public bool IsOnDrive(string name, string root) => File.Exists(Path.Combine(FolderFor(LibraryFile.WithSeparator(root)), name + EXTENSION));
+
+    /// <summary>
+    /// Writes a playlist of <paramref name="paths"/> called <paramref name="name"/> to the drive at
+    /// <paramref name="root"/>, those on the drive relative to it, as a virtual folder there: a new one, or in place
+    /// of what the one of that name had. Returns why it couldn't, if it couldn't.
+    /// </summary>
+    public string? WriteToDrive(string name, string root, IReadOnlyList<string> paths)
+    {
+        var drive = LibraryFile.WithSeparator(root);
+        var path = Path.Combine(FolderFor(drive), name + EXTENSION);
+        var known = _folders.FirstOrDefault(folder => string.Equals(folder.FilePath, path, StringComparison.OrdinalIgnoreCase));
+        var written = new VirtualFolder(name, path, [.. paths], drive);
+        if (Save(written) is { } error)
+            return error;
+        if (known is not null)
+        {
+            known.EditablePaths.Clear();
+            known.EditablePaths.AddRange(paths);
+        }
+        else
+            _folders.Add(written);
+        Sort();
+        Changed?.Invoke(null);
+        return null;
+    }
+
+    /// <summary>
     /// Deletes a virtual folder, its playlist file going to the Recycle Bin where there is one. Its songs' own files
     /// aren't touched. Throws <see cref="InvalidOperationException"/> with the reason if the file can't go.
     /// </summary>

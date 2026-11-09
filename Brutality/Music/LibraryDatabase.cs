@@ -172,6 +172,29 @@ sealed class LibraryDatabase
     public bool HasGridEdit(string path) => FileFor(path).HasGridEdit(path);
 
     /// <summary>
+    /// Makes sure the drive at <paramref name="root"/> has its own file, even with nothing to keep in it yet, after
+    /// <see cref="Save"/>. Returns whether it has.
+    /// </summary>
+    public bool EnsureDriveFile(string root)
+    {
+        var path = Path.Combine(Normal(root), DRIVE_FOLDER, FILE_NAME);
+        if (File.Exists(path))
+            return true;
+        var file = FileFor(Path.Combine(Normal(root), FILE_NAME));
+        if (file == _system)
+            return false;
+        try
+        {
+            file.Save();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+        return File.Exists(path);
+    }
+
+    /// <summary>
     /// Writes out whatever's changed: each drive's file (made, with its folder, only once there's something in it),
     /// then the app's own. A drive that can't be written to has its songs moved into the app's own file, and kept
     /// there from then on. Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> if the app's

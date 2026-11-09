@@ -34,6 +34,12 @@ sealed class SongBrowser : Panel
     readonly Button _clearSearch;
     readonly BulkProgress _bulkProgress;
     readonly Button _cancelBulk;
+
+    // While a list's being exported to a drive, a row under the song list: how far through, a cross, and what it's doing.
+    readonly BulkProgress _exportProgress;
+    readonly Button _cancelExport;
+    readonly Label _exportStatus;
+    const float EXPORT_ROW = 22;
     readonly List<Button> _loadButtons = [];
     readonly ListHeader<Song> _header;
     readonly ScrollPanel _scroll;
@@ -87,6 +93,16 @@ sealed class SongBrowser : Panel
     /// Analyse All was stopped with the cross by its progress bar: how many songs were left unanalysed.
     /// </summary>
     public event Action<int>? AnalyseAllCancelled;
+
+    /// <summary>
+    /// How far through an export to a drive is, from 0 to 1, and what it's doing; null while there isn't one.
+    /// </summary>
+    public Func<(float Fraction, string Status)?> ExportProgress { get; set; } = () => null;
+
+    /// <summary>
+    /// The cross beside the export's bar was clicked.
+    /// </summary>
+    public event Action? ExportCancelled;
 
     /// <summary>
     /// The column headings were right-clicked, where, for a menu of <see cref="ColumnMenu"/>.
@@ -146,21 +162,28 @@ sealed class SongBrowser : Panel
         };
 
         // While Analyse All runs, how far through it is, with a cross at the end to stop it.
+        Button Cross(string tooltip) =>
+            Add(
+                new Button(body, "")
+                {
+                    Icon = images.Cross,
+                    Padding = 0,
+                    Background = Colors.Transparent,
+                    HoverBackground = Colors.Hex(0xFFFFFF, 0.1f),
+                    PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
+                    TextColor = Theme.Muted,
+                    Visible = false,
+                    Tooltip = tooltip,
+                }
+            );
         _bulkProgress = Add(new BulkProgress(body) { Visible = false });
-        _cancelBulk = Add(
-            new Button(body, "")
-            {
-                Icon = images.Cross,
-                Padding = 0,
-                Background = Colors.Transparent,
-                HoverBackground = Colors.Hex(0xFFFFFF, 0.1f),
-                PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
-                TextColor = Theme.Muted,
-                Visible = false,
-                Tooltip = "Stop analysing all; songs on screen are still analysed",
-            }
-        );
+        _cancelBulk = Cross("Stop analysing all; songs on screen are still analysed");
         _cancelBulk.Clicked += _ => AnalyseAllCancelled?.Invoke(_analyser.CancelBulk());
+
+        _exportProgress = Add(new BulkProgress(body) { Visible = false });
+        _cancelExport = Cross("Stop the export. What's been copied stays on the drive, and exporting again carries on from there");
+        _cancelExport.Clicked += _ => ExportCancelled?.Invoke();
+        _exportStatus = Add(new Label(body) { Color = Theme.Text, Visible = false });
 
         List = new ListView<Song>(body)
         {
@@ -315,8 +338,17 @@ sealed class SongBrowser : Panel
             _analyser.Request(List.Items.Skip(first).Take(count).ToList());
 
         _bulkProgress.Visible = _cancelBulk.Visible = _analyser.IsBulkActive;
-        _bulkProgress.Done = _analyser.BulkDone;
-        _bulkProgress.Total = _analyser.BulkTotal;
+        _bulkProgress.Fraction = _analyser.BulkTotal > 0 ? (float)_analyser.BulkDone / _analyser.BulkTotal : 0;
+        _bulkProgress.Text = $"Analysing {_analyser.BulkDone} of {_analyser.BulkTotal}";
+
+        var export = ExportProgress();
+        _exportProgress.Visible = _cancelExport.Visible = _exportStatus.Visible = export is not null;
+        if (export is { } exporting)
+        {
+            _exportProgress.Fraction = exporting.Fraction;
+            _exportProgress.Text = $"{exporting.Fraction * 100:0}%";
+            _exportStatus.Text = exporting.Status;
+        }
 
         var songs = List.Items.Count == _sourceSongs.Count ? $"{_sourceSongs.Count} songs" : $"{List.Items.Count} of {_sourceSongs.Count} songs";
 
@@ -504,7 +536,7 @@ sealed class SongBrowser : Panel
                 child.Measure();
         }
 
-        var listHeight = inner.Y - _search.Size.Y - 6 - _header.Size.Y - 6 - _status.Size.Y;
+        var listHeight = inner.Y - _search.Size.Y - 6 - _header.Size.Y - 6 - _status.Size.Y - (_exportProgress.Visible ? EXPORT_ROW + 6 : 0);
         _scroll.MinSize = new float2(inner.X, listHeight);
         _scroll.MaxWidth = inner.X;
         _scroll.MaxHeight = listHeight;
@@ -552,6 +584,22 @@ sealed class SongBrowser : Panel
         y += _header.Size.Y;
         Place(_scroll, left, y);
         y += _scroll.Size.Y + 6;
+
+        // Under the list while exporting: the bar, its cross, and what it's doing.
+        if (_exportProgress.Visible)
+        {
+            _exportProgress.Height = EXPORT_ROW;
+            _exportProgress.Measure();
+            _cancelExport.MinSize = new float2(EXPORT_ROW, EXPORT_ROW);
+            _cancelExport.Measure();
+            Place(_exportProgress, left, y);
+            Place(_cancelExport, left + _exportProgress.Size.X + 4, y);
+            var statusLeft = left + _exportProgress.Size.X + 4 + EXPORT_ROW + 8;
+            _exportStatus.MaxWidth = MathF.Max(0, right - statusLeft);
+            _exportStatus.Measure();
+            Place(_exportStatus, statusLeft, y + (EXPORT_ROW - _exportStatus.Size.Y) / 2);
+            y += EXPORT_ROW + 6;
+        }
         Place(_status, left, y);
     }
 
@@ -592,23 +640,30 @@ sealed class BulkProgress(Font font) : Element
 {
     public float Width { get; set; } = 220;
     public float Height { get; set; } = 20;
-    public int Done { get; set; }
-    public int Total { get; set; }
+
+    /// <summary>
+    /// How much of the bar is filled, from 0 to 1.
+    /// </summary>
+    public float Fraction { get; set; }
+
+    /// <summary>
+    /// What it says, across the bar.
+    /// </summary>
+    public string Text { get; set; } = "";
 
     public override float2 Measure() => Size = new float2(Width, Height);
 
     public override void Draw(Batch batch)
     {
         batch.AddRect(ScreenPosition, Size, Theme.Well);
-        var fraction = Total > 0 ? Math.Clamp((float)Done / Total, 0, 1) : 0;
+        var fraction = Math.Clamp(Fraction, 0, 1);
         if (fraction > 0)
             batch.AddRect(ScreenPosition, new float2(MathF.Round(Size.X * fraction), Size.Y), Theme.Fade(Theme.Accent, 0.55f));
         batch.AddBorder(ScreenPosition, Size, 1, Theme.PanelBorder);
 
         // The count centred, by its capitals, so it sits in the middle of the bar.
-        var text = $"Analysing {Done} of {Total}";
-        var x = MathF.Round(ScreenPosition.X + (Size.X - font.Measure(text).X) / 2);
+        var x = MathF.Round(ScreenPosition.X + (Size.X - font.Measure(Text).X) / 2);
         var y = MathF.Round(ScreenPosition.Y + Size.Y / 2 + BeatTrackers.CapHeight(font) / 2 - font.Ascender);
-        batch.AddText(font, text, new float2(x, y), Theme.Text);
+        batch.AddText(font, Text, new float2(x, y), Theme.Text);
     }
 }
