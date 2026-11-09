@@ -30,6 +30,16 @@ sealed record RekordboxCollection(string FilePath, IReadOnlyDictionary<string, I
     public IReadOnlyDictionary<string, BeatGrid> Grids { get; init; } = new Dictionary<string, BeatGrid>();
 
     /// <summary>
+    /// Each song's hot cues' names, colours and hot loops, where it has any.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<HotcueDetail?>> HotcueDetails { get; init; } = new Dictionary<string, IReadOnlyList<HotcueDetail?>>();
+
+    /// <summary>
+    /// Each song's memory loops, where it has any.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<(TimeSpan Start, TimeSpan End)>> MemoryLoops { get; init; } = new Dictionary<string, IReadOnlyList<(TimeSpan Start, TimeSpan End)>>();
+
+    /// <summary>
     /// Every song it has hot cues, memory cues or a beat grid for.
     /// </summary>
     public IEnumerable<string> Songs => Hotcues.Keys.Concat(MemoryCues.Keys).Concat(Grids.Keys).Distinct(StringComparer.OrdinalIgnoreCase);
@@ -85,6 +95,8 @@ static class RekordboxXml
             var hotcues = new Dictionary<string, IReadOnlyList<TimeSpan?>>(StringComparer.OrdinalIgnoreCase);
             var memoryCues = new Dictionary<string, IReadOnlyList<TimeSpan>>(StringComparer.OrdinalIgnoreCase);
             var grids = new Dictionary<string, BeatGrid>(StringComparer.OrdinalIgnoreCase);
+            var details = new Dictionary<string, IReadOnlyList<HotcueDetail?>>(StringComparer.OrdinalIgnoreCase);
+            var loops = new Dictionary<string, IReadOnlyList<(TimeSpan Start, TimeSpan End)>>(StringComparer.OrdinalIgnoreCase);
             var byId = new Dictionary<string, string>();
             XElement? playlists = null;
             var inCollection = false;
@@ -111,6 +123,10 @@ static class RekordboxXml
                             memoryCues[file] = memory;
                         if (Grid(track) is { } grid)
                             grids[file] = grid;
+                        if (Details(track) is { } detail)
+                            details[file] = detail;
+                        if (MemoryLoops(track) is { } loop)
+                            loops[file] = loop;
                         break;
                     case "PLAYLISTS":
                         playlists = XElement.Load(reader.ReadSubtree());
@@ -121,7 +137,7 @@ static class RekordboxXml
             // The tree's top node is ROOT, a folder holding the rest.
             var root = playlists?.Element("NODE");
             var nodes = root is null ? [] : root.Elements("NODE").Select(node => Node(node, byId)).ToList();
-            return new RekordboxCollection(path, hotcues, nodes) { MemoryCues = memoryCues, Grids = grids };
+            return new RekordboxCollection(path, hotcues, nodes) { MemoryCues = memoryCues, Grids = grids, HotcueDetails = details, MemoryLoops = loops };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or XmlException)
         {
@@ -146,6 +162,46 @@ static class RekordboxXml
             any = true;
         }
         return any ? cues : null;
+    }
+
+    /// <summary>
+    /// A track's hot cues' names, colours (Red, Green and Blue, 0 to 255) and hot loops (Type 4, to End); null if none
+    /// of them has any.
+    /// </summary>
+    static IReadOnlyList<HotcueDetail?>? Details(XElement track)
+    {
+        var details = new HotcueDetail?[HOTCUES];
+        var any = false;
+        foreach (var mark in track.Elements("POSITION_MARK"))
+        {
+            if (!int.TryParse((string?)mark.Attribute("Num"), out var number) || number < 0 || number >= HOTCUES || Seconds(mark, "Start") is not { } start)
+                continue;
+            var name = (string?)mark.Attribute("Name") is { Length: > 0 } text ? text : null;
+            uint? color = byte.TryParse((string?)mark.Attribute("Red"), out var red) && byte.TryParse((string?)mark.Attribute("Green"), out var green) && byte.TryParse((string?)mark.Attribute("Blue"), out var blue)
+                ? (uint)(red << 16 | green << 8 | blue)
+                : null;
+            var end = (string?)mark.Attribute("Type") == "4" && Seconds(mark, "End") is { } until && until > start ? until : (double?)null;
+            if (name is null && color is null && end is null)
+                continue;
+            details[number] = new HotcueDetail(start, name, color, end);
+            any = true;
+        }
+        return any ? details : null;
+    }
+
+    /// <summary>
+    /// A track's memory loops (Type 4, numbered -1), each its start and end; null if it has none.
+    /// </summary>
+    static IReadOnlyList<(TimeSpan Start, TimeSpan End)>? MemoryLoops(XElement track)
+    {
+        var loops = track.Elements("POSITION_MARK")
+            .Where(mark => (string?)mark.Attribute("Num") == "-1" && (string?)mark.Attribute("Type") == "4")
+            .Select(mark => (Start: Seconds(mark, "Start"), End: Seconds(mark, "End")))
+            .Where(loop => loop.Start >= 0 && loop.End > loop.Start)
+            .OrderBy(loop => loop.Start)
+            .Select(loop => (TimeSpan.FromSeconds(loop.Start!.Value), TimeSpan.FromSeconds(loop.End!.Value)))
+            .ToList();
+        return loops.Count > 0 ? loops : null;
     }
 
     /// <summary>

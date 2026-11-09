@@ -47,6 +47,13 @@ public class ControllerPresetTests
     }
 
     [Fact]
+    public void VINYL_works_the_effect_and_Shift_and_KEY_LOCK_picks_the_next()
+    {
+        Assert.Equal((0, 0x17), Notes("A.fx.on").Select(binding => (binding.Channel, binding.Number)).Single());
+        Assert.Equal((1, 0x60), Notes("B.fx.next").Select(binding => (binding.Channel, binding.Number)).Single());
+    }
+
+    [Fact]
     public void No_two_controls_share_a_message()
     {
         // A control can have more than one message (the jog wheel's top and edge), but not the other way round.

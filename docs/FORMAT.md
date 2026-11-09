@@ -35,6 +35,8 @@ Notes:
   "hotcues": { "<song path>": [ <seconds or null>, ... ], ... },
   "memoryCues": { "<song path>": [ <seconds>, ... ], ... },
   "cuePoints": { "<song path>": <seconds>, ... },
+  "hotcueDetails": { "<song path>": [ { "at": <seconds>, "name": <text>, "color": <0xRRGGBB>, "loopEnd": <seconds> } or null, ... ], ... },
+  "memoryLoops": { "<song path>": [ [ <start seconds>, <end seconds> ], ... ], ... },
   "grids":   { "<song path>": <Grid>, ... }
 }
 ```
@@ -45,6 +47,8 @@ Notes:
 | `tracks` | object | The analysis of each song, or why it couldn't be analysed (see 1.3). May be empty `{}`. |
 | `hotcues` | object | Each song's hotcues (see 1.5). May be empty `{}`. Songs with no hotcues are left out. |
 | `memoryCues` | object | Each song's memory cues (see 1.5). **Left out entirely** when there are none. |
+| `hotcueDetails` | object | Names, colours and hot loops from other software, one entry for each hotcue (see 1.5) or `null`. Any of `name`, `color` and `loopEnd` can be missing. An entry only applies while the hotcue is still at `at`, to within 2 ms. **Left out entirely** when there are none. |
+| `memoryLoops` | object | Memory loops from other software: each starts at one of the song's memory cues. **Left out entirely** when there are none. |
 | `cuePoints` | object | Each song's cue point in seconds, rounded to 3 decimal places, where one's been set. It takes the place of the first memory cue as where the song waits when loaded. **Left out entirely** when there are none. |
 | `grids` | object | Beat grids fixed by hand (see 1.6). **Left out entirely** when there are none. |
 

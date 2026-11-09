@@ -165,6 +165,14 @@ sealed class LibraryDatabase
 
     public TimeSpan? GetCuePoint(string path) => FileFor(path).GetCuePoint(path);
 
+    public IReadOnlyList<HotcueDetail?> GetHotcueDetails(string path) => FileFor(path).GetHotcueDetails(path);
+
+    public void SetHotcueDetails(string path, IReadOnlyList<HotcueDetail?> details) => FileFor(path).SetHotcueDetails(path, details);
+
+    public IReadOnlyList<(TimeSpan Start, TimeSpan End)> GetMemoryLoops(string path) => FileFor(path).GetMemoryLoops(path);
+
+    public void SetMemoryLoops(string path, IReadOnlyList<(TimeSpan Start, TimeSpan End)> loops) => FileFor(path).SetMemoryLoops(path, loops);
+
     public void SetCuePoint(string path, TimeSpan cuePoint) => FileFor(path).SetCuePoint(path, cuePoint);
 
     public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) => FileFor(path).WithEdits(path, analysis);

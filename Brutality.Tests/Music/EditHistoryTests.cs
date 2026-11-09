@@ -54,6 +54,16 @@ public sealed class EditHistoryTests : IDisposable
     }
 
     [Fact]
+    public void Adding_or_removing_a_memory_cue_is_taken_back()
+    {
+        _history.RecordMemoryCues(_song.Path, [], [TimeSpan.FromSeconds(3)]);
+        _database.SetMemoryCues(_song.Path, [TimeSpan.FromSeconds(3)]);
+
+        Assert.Contains("adding a memory cue", _history.Undo());
+        Assert.Empty(_database.GetMemoryCues(_song.Path));
+    }
+
+    [Fact]
     public void With_nothing_left_it_says_so()
     {
         Assert.Equal("Nothing to undo", _history.Undo());

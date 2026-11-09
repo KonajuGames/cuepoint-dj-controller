@@ -48,14 +48,14 @@ static class SeratoMarkers
     /// The hot cues Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, by number; null if there
     /// are none, it's another kind of file, or it can't be read.
     /// </summary>
-    public static IReadOnlyList<TimeSpan?>? ReadHotcues(string path) => ReadAll(path).Hotcues;
+    public static IReadOnlyList<TimeSpan?>? ReadHotcues(string path) => ReadTags(path).Hotcues;
 
     /// <summary>
     /// The beat grid Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, its bars counted from
     /// its first marker, if it's locked there; null if it isn't locked, it has none, it's another kind of file, or it
     /// can't be read.
     /// </summary>
-    public static BeatGrid? ReadGrid(string path) => ReadAll(path).Grid;
+    public static BeatGrid? ReadGrid(string path) => ReadTags(path).Grid;
 
     /// <summary>
     /// The hot cues and locked beat grid Serato saved in the file at <paramref name="path"/>, as
@@ -63,10 +63,73 @@ static class SeratoMarkers
     /// </summary>
     public static (IReadOnlyList<TimeSpan?>? Hotcues, BeatGrid? Grid) ReadAll(string path)
     {
+        var read = ReadTags(path);
+        return (read.Hotcues, read.Grid);
+    }
+
+    /// <summary>
+    /// All that's used of what Serato saved in a file: its hot cues, its locked grid, its hot cues' names and colours,
+    /// and its saved loops.
+    /// </summary>
+    public sealed record Tags(IReadOnlyList<TimeSpan?>? Hotcues, BeatGrid? Grid, IReadOnlyList<HotcueDetail?>? Details, IReadOnlyList<(TimeSpan Start, TimeSpan End)>? Loops);
+
+    /// <summary>
+    /// What Serato saved in the file at <paramref name="path"/>, from one reading of it.
+    /// </summary>
+    public static Tags ReadTags(string path)
+    {
         if (Open(path) is not { } tags || tags(Markers2) is not { } markers)
-            return (null, null);
+            return new Tags(null, null, null, null);
         var grid = IsBpmLocked(markers) && tags(BeatGridTag) is { } data ? FromBeatGrid(data) : null;
-        return (FromMarkers2(markers), grid);
+        return new Tags(FromMarkers2(markers), grid, DetailsFrom(markers), LoopsFrom(markers));
+    }
+
+    /// <summary>
+    /// The names and colours in Serato Markers2's CUE entries: after the number and place, a zero byte, the colour as
+    /// three bytes, two zero bytes, then the name, ending in a zero byte. Null if there are no cues.
+    /// </summary>
+    internal static IReadOnlyList<HotcueDetail?>? DetailsFrom(ReadOnlySpan<byte> data)
+    {
+        var details = new HotcueDetail?[HOTCUES];
+        var any = false;
+        foreach (var (name, entry) in Entries(data))
+        {
+            if (name != "CUE" || entry.Length < 10 || entry[1] >= HOTCUES)
+                continue;
+            var seconds = BinaryPrimitives.ReadUInt32BigEndian(entry.AsSpan(2, 4)) / 1000.0;
+            var color = (uint)(entry[7] << 16 | entry[8] << 8 | entry[9]);
+            details[entry[1]] = new HotcueDetail(seconds, NameAt(entry, 12), color, null);
+            any = true;
+        }
+        return any ? details : null;
+    }
+
+    /// <summary>
+    /// The saved loops in Serato Markers2's LOOP entries: after the number, the start and end in milliseconds, four
+    /// bytes each, where 0xFFFFFFFF is an empty one. Null if there are none.
+    /// </summary>
+    internal static IReadOnlyList<(TimeSpan Start, TimeSpan End)>? LoopsFrom(ReadOnlySpan<byte> data)
+    {
+        var loops = new List<(TimeSpan, TimeSpan)>();
+        foreach (var (name, entry) in Entries(data))
+        {
+            if (name != "LOOP" || entry.Length < 10)
+                continue;
+            var start = BinaryPrimitives.ReadUInt32BigEndian(entry.AsSpan(2, 4));
+            var end = BinaryPrimitives.ReadUInt32BigEndian(entry.AsSpan(6, 4));
+            if (start != uint.MaxValue && end != uint.MaxValue && end > start)
+                loops.Add((TimeSpan.FromMilliseconds(start), TimeSpan.FromMilliseconds(end)));
+        }
+        return loops.Count > 0 ? loops.Order().ToList() : null;
+    }
+
+    static string? NameAt(byte[] entry, int start)
+    {
+        if (start >= entry.Length)
+            return null;
+        var end = Array.IndexOf(entry, (byte)0, start);
+        var name = Encoding.UTF8.GetString(entry, start, (end < 0 ? entry.Length : end) - start);
+        return name.Length > 0 ? name : null;
     }
 
     /// <summary>

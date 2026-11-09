@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Brutal.SdlApi;
 using Brutal.SdlApi.Mixer;
 using Brutality.Audio.Analysis;
+using Brutality.Music;
 
 namespace Brutality.Audio;
 
@@ -806,6 +807,8 @@ sealed partial class Deck : IDisposable
         _cueFrames = 0;
         _previewing = false;
         Array.Clear(_hotcues);
+        Array.Clear(_hotcueDetails);
+        _memoryLoops = [];
         _memoryCues.Clear();
         (_manualLoop, _loopIn, _lastLoop) = (false, null, null);
     }
@@ -974,8 +977,9 @@ sealed partial class Deck : IDisposable
     /// for it, or else the first of them, as the cue point; and if the deck's paused at the very start, as a song is
     /// once it's loaded, it goes there, ready to play.
     /// </summary>
-    public void SetMemoryCues(IReadOnlyList<TimeSpan> cues, TimeSpan? cuePoint = null)
+    public void SetMemoryCues(IReadOnlyList<TimeSpan> cues, TimeSpan? cuePoint = null, IReadOnlyList<(TimeSpan Start, TimeSpan End)>? loops = null)
     {
+        _memoryLoops = loops ?? [];
         _memoryCues.Clear();
         if (!IsLoaded || _pcm is not { } pcm)
             return;
@@ -987,6 +991,113 @@ sealed partial class Deck : IDisposable
         _cueFrames = Math.Clamp(ToFrames(cue), 0, pcm.Frames - 1);
         if (waitingAtStart)
             PauseAt(_cueFrames);
+    }
+
+    readonly HotcueDetail?[] _hotcueDetails = new HotcueDetail?[HOTCUE_COUNT];
+
+    /// <summary>
+    /// Puts back what's known of the loaded song's hotcues besides where they are: names, colours and hot loops, from
+    /// other DJ software.
+    /// </summary>
+    public void SetHotcueDetails(IReadOnlyList<HotcueDetail?> details)
+    {
+        for (var i = 0; i < HOTCUE_COUNT; i++)
+            _hotcueDetails[i] = i < details.Count ? details[i] : null;
+    }
+
+    /// <summary>
+    /// Hotcue <paramref name="index"/>'s name, colour or loop, while it's still where they were given for; a hotcue
+    /// cleared or set anew loses them, and gets them back if that's undone.
+    /// </summary>
+    public HotcueDetail? DetailOf(int index) =>
+        _hotcues[index] is { } at && _hotcueDetails[index] is { } detail && Math.Abs(detail.At - at.TotalSeconds) < 0.002 ? detail : null;
+
+    /// <summary>
+    /// How near the deck has to be to a memory cue to be at it, in seconds.
+    /// </summary>
+    const double MEMORY_CUE_NEAR = 0.05;
+
+    /// <summary>
+    /// How far past a memory cue the deck has to be for going back to go to it rather than the one before, in seconds.
+    /// </summary>
+    const double MEMORY_CUE_PAST = 0.1;
+
+    IReadOnlyList<(TimeSpan Start, TimeSpan End)> _memoryLoops = [];
+
+    /// <summary>
+    /// A memory cue was added or taken away by <see cref="ToggleMemoryCue"/>, so whoever keeps them can save them.
+    /// </summary>
+    public event Action<Deck>? MemoryCuesChanged;
+
+    int MemoryCueHere()
+    {
+        var position = Position;
+        return _memoryCues.FindIndex(cue => Math.Abs((cue - position).TotalSeconds) <= MEMORY_CUE_NEAR);
+    }
+
+    /// <summary>
+    /// Whether the deck is at one of its memory cues.
+    /// </summary>
+    public bool IsAtMemoryCue => IsLoaded && MemoryCueHere() >= 0;
+
+    /// <summary>
+    /// Takes away the memory cue the deck is at, or adds one where it is (on the nearest beat, with
+    /// <see cref="Quantize"/>).
+    /// </summary>
+    public void ToggleMemoryCue()
+    {
+        if (!IsLoaded)
+            return;
+        if (MemoryCueHere() is >= 0 and var here)
+            _memoryCues.RemoveAt(here);
+        else
+        {
+            var at = Position;
+            if (QuantizeGrid is { } grid)
+                at = TimeSpan.FromSeconds(Math.Clamp(Quantizing.Snap(grid, at.TotalSeconds), 0, Duration.TotalSeconds));
+            _memoryCues.Add(at);
+            _memoryCues.Sort();
+        }
+        MemoryCuesChanged?.Invoke(this);
+    }
+
+    /// <summary>
+    /// Puts <paramref name="cues"/> back as the memory cues, for an undo, leaving the cue point and the deck be.
+    /// </summary>
+    public void ReplaceMemoryCues(IReadOnlyList<TimeSpan> cues)
+    {
+        _memoryCues.Clear();
+        _memoryCues.AddRange(cues);
+    }
+
+    /// <summary>
+    /// Goes to the next memory cue on through the song, or for <paramref name="direction"/> below zero the last one
+    /// before where the deck is, and makes it the cue point. Playing, it lands in time, as a hotcue does. A memory
+    /// loop is then ready for reloop. Returns false, doing nothing, if there's none that way.
+    /// </summary>
+    public bool JumpMemoryCue(int direction)
+    {
+        if (!IsLoaded || _pcm is not { } pcm)
+            return false;
+        var position = Position;
+        TimeSpan? target = direction > 0
+            ? _memoryCues.Where(cue => (cue - position).TotalSeconds > MEMORY_CUE_PAST).Cast<TimeSpan?>().FirstOrDefault()
+            : _memoryCues.Where(cue => (position - cue).TotalSeconds > MEMORY_CUE_PAST).Cast<TimeSpan?>().LastOrDefault();
+        if (target is not { } cue)
+            return false;
+
+        _cueFrames = Math.Clamp(ToFrames(cue), 0, pcm.Frames - 1);
+        if (_memoryLoops.FirstOrDefault(loop => Math.Abs((loop.Start - cue).TotalSeconds) < 0.002) is { End.Ticks: > 0 } memoryLoop)
+        {
+            var (start, end) = (ToFrames(memoryLoop.Start), Math.Min(ToFrames(memoryLoop.End), pcm.Frames));
+            if (end > start)
+                _lastLoop = (start, end, true, _analysis?.Grid.BeatNumberAt(memoryLoop.Start.TotalSeconds) ?? 0);
+        }
+        var at = cue;
+        if (IsPlaying && QuantizeGrid is { } grid)
+            at = TimeSpan.FromSeconds(Quantizing.InPhase(grid, ToTime(SongFrame).TotalSeconds, cue.TotalSeconds));
+        Seek(at);
+        return true;
     }
 
     /// <summary>
@@ -1007,6 +1118,18 @@ sealed partial class Deck : IDisposable
     {
         if (!IsLoaded || index < 0 || index >= HOTCUE_COUNT)
             return;
+
+        // A hot loop jumps there and loops, as it did in the software it came from.
+        if (DetailOf(index) is { LoopEnd: { } loopEnd } hotLoop && _pcm is { } loopPcm)
+        {
+            var (start, end) = (ToFrames(TimeSpan.FromSeconds(hotLoop.At)), Math.Min(ToFrames(TimeSpan.FromSeconds(loopEnd)), loopPcm.Frames));
+            if (end > start)
+            {
+                ReleasePlatter();
+                PlaceLoopFrames(start, end, start, manual: true, _analysis?.Grid.BeatNumberAt(hotLoop.At) ?? 0);
+                return;
+            }
+        }
 
         if (_hotcues[index] is { } at)
         {

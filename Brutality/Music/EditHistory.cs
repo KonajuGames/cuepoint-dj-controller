@@ -59,6 +59,26 @@ sealed class EditHistory(LibraryDatabase database, MusicLibrary library, IReadOn
     }
 
     /// <summary>
+    /// The song at <paramref name="path"/>'s memory cues went from <paramref name="before"/> to <paramref name="after"/>.
+    /// </summary>
+    public void RecordMemoryCues(string path, IReadOnlyList<TimeSpan> before, IReadOnlyList<TimeSpan> after)
+    {
+        var kept = before.ToArray();
+        Add(
+            new Edit(
+                path,
+                after.Count > before.Count ? "adding a memory cue" : "removing a memory cue",
+                () =>
+                {
+                    database.SetMemoryCues(path, kept);
+                    foreach (var deck in DecksWith(path))
+                        deck.ReplaceMemoryCues(kept);
+                }
+            )
+        );
+    }
+
+    /// <summary>
     /// The song at <paramref name="path"/>'s beat grid was changed from <paramref name="before"/>; null if it hadn't
     /// been fixed by hand.
     /// </summary>

@@ -121,6 +121,16 @@ static void Run()
         settings.HeadphoneDevice = audio.ChosenHeadphoneDevice;
         settings.CueMix = audio.CueMix;
         settings.HeadphoneVolume = audio.HeadphoneVolume;
+        settings.Effects = decks.ToDictionary(
+            deck => deck.Name,
+            deck => new AppSettings.DeckEffectSettings
+            {
+                Kind = deck.Effects.Kind,
+                Level = deck.Effects.Level,
+                EchoBeats = deck.Effects.BeatsOf(DeckEffect.Echo),
+                FlangerBeats = deck.Effects.BeatsOf(DeckEffect.Flanger),
+            }
+        );
         settings.UnquantizedDecks = decks.Where(deck => !deck.Quantize).Select(deck => deck.Name).ToList() is { Count: > 0 } off ? off : null;
         settings.Save(settingsPath);
     }
@@ -193,11 +203,15 @@ static void Run()
             if (collection.Hotcues.TryGetValue(path, out var cues) && database.GetHotcues(path).All(cue => cue is null))
             {
                 database.SetHotcues(path, cues);
+                if (collection.HotcueDetails.TryGetValue(path, out var details))
+                    database.SetHotcueDetails(path, details);
                 hotcues++;
             }
             if (collection.MemoryCues.TryGetValue(path, out var memory) && database.GetMemoryCues(path).Count == 0)
             {
                 database.SetMemoryCues(path, memory);
+                if (collection.MemoryLoops.TryGetValue(path, out var loops))
+                    database.SetMemoryLoops(path, loops);
                 memoryCues++;
             }
             if (collection.Grids.TryGetValue(path, out var grid) && !database.HasGridEdit(path))
@@ -272,7 +286,16 @@ static void Run()
 
     // Quantise is on for each deck unless it was turned off.
     foreach (var deck in decks)
+    {
         deck.Quantize = settings.UnquantizedDecks?.Contains(deck.Name) != true;
+        if (settings.Effects?.GetValueOrDefault(deck.Name) is { } effects)
+        {
+            deck.Effects.Kind = effects.Kind;
+            deck.Effects.Level = effects.Level;
+            deck.Effects.SetBeats(DeckEffect.Echo, effects.EchoBeats);
+            deck.Effects.SetBeats(DeckEffect.Flanger, effects.FlangerBeats);
+        }
+    }
 
     var ui = new Root { TooltipFont = fonts.Body };
     var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor, JumpPadsFor));
@@ -671,7 +694,25 @@ static void Run()
             if (loaded.FilePath is { } file)
             {
                 loaded.SetHotcues(database.GetHotcues(file));
-                loaded.SetMemoryCues(database.GetMemoryCues(file), database.GetCuePoint(file));
+                loaded.SetHotcueDetails(database.GetHotcueDetails(file));
+                loaded.SetMemoryCues(database.GetMemoryCues(file), database.GetCuePoint(file), database.GetMemoryLoops(file));
+            }
+        };
+
+        // Memory cues are saved as soon as one's added or taken away, and can be undone.
+        deck.MemoryCuesChanged += changed =>
+        {
+            if (changed.FilePath is not { } file)
+                return;
+            edits.RecordMemoryCues(file, database.GetMemoryCues(file), changed.MemoryCues);
+            database.SetMemoryCues(file, changed.MemoryCues);
+            try
+            {
+                database.Save();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                screen.Log($"Couldn't save the memory cues to {database.FilePath}: {e.Message}");
             }
         };
 
@@ -1136,7 +1177,7 @@ static void Run()
             {
                 var taken = SeratoImport.Take(database, result.Found);
                 UseGrids(taken.Gridded);
-                foreach (var (path, _, _) in result.Found)
+                foreach (var path in result.Found.Select(song => song.Path))
                 {
                     // Looked in now, so not again when it's next loaded.
                     ImportRecord.IsNew(importRecord.Serato, path);
@@ -1144,7 +1185,10 @@ static void Run()
                     foreach (var deck in decks)
                     {
                         if (string.Equals(deck.FilePath, path, StringComparison.OrdinalIgnoreCase))
+                        {
                             deck.SetHotcues(database.GetHotcues(path));
+                            deck.SetHotcueDetails(database.GetHotcueDetails(path));
+                        }
                     }
                 }
                 importRecord.Save(importRecordPath);

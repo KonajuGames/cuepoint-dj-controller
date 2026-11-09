@@ -113,6 +113,25 @@ public class RekordboxXmlTests
     }
 
     [Fact]
+    public void Hot_cue_names_colours_and_hot_loops_come_too()
+    {
+        using var folder = new TempFolder();
+        var details = Load(folder).HotcueDetails[@"C:\Music\A Song.mp3"];
+
+        Assert.Equal(new HotcueDetail(64.5, "Drop", 40u << 16 | 226u << 8 | 20u, null), details[0]);
+        Assert.Equal(new HotcueDetail(120, null, null, 128), details[1]);
+        Assert.Null(details[3]);
+    }
+
+    [Fact]
+    public void Memory_loops_come_with_their_ends()
+    {
+        using var folder = new TempFolder();
+
+        Assert.Equal((TimeSpan.FromSeconds(32.5), TimeSpan.FromSeconds(36.25)), Assert.Single(Load(folder).MemoryLoops[@"C:\Music\A Song.mp3"]));
+    }
+
+    [Fact]
     public void Songs_without_hot_cues_and_songs_on_a_Mac_are_left_out()
     {
         using var folder = new TempFolder();
@@ -455,6 +474,63 @@ public class SeratoTests
         Assert.Equal(TimeSpan.FromSeconds(1.5), hotcues![0]);
         Assert.Equal(128, Assert.Single(grid!.Markers).Bpm);
         Assert.Equal((null, null), SeratoMarkers.ReadAll(folder["missing.mp3"]));
+    }
+
+    /// <summary>
+    /// Serato Markers2's data with a named, coloured hot cue on 2 and these saved loops, one empty.
+    /// </summary>
+    static byte[] NamedMarkers()
+    {
+        var entries = new List<byte> { 1, 1 };
+        void Entry(string name, byte[] data)
+        {
+            entries.AddRange(Encoding.ASCII.GetBytes(name));
+            entries.Add(0);
+            var length = new byte[4];
+            BinaryPrimitives.WriteInt32BigEndian(length, data.Length);
+            entries.AddRange(length);
+            entries.AddRange(data);
+        }
+        var cue = new byte[12 + 5];
+        cue[1] = 2;
+        BinaryPrimitives.WriteUInt32BigEndian(cue.AsSpan(2), 90_000);
+        (cue[7], cue[8], cue[9]) = (0xCC, 0x88, 0x00);
+        "Drop"u8.CopyTo(cue.AsSpan(12));
+        Entry("CUE", cue);
+        byte[] Loop(uint start, uint end)
+        {
+            var loop = new byte[21];
+            BinaryPrimitives.WriteUInt32BigEndian(loop.AsSpan(2), start);
+            BinaryPrimitives.WriteUInt32BigEndian(loop.AsSpan(6), end);
+            return loop;
+        }
+        Entry("LOOP", Loop(20_000, 24_000));
+        Entry("LOOP", Loop(uint.MaxValue, uint.MaxValue));
+        entries.Add(0);
+        return [1, 1, .. Encoding.ASCII.GetBytes(Convert.ToBase64String(entries.ToArray()).TrimEnd('=')), .. new byte[8]];
+    }
+
+    [Fact]
+    public void Serato_s_names_colours_and_saved_loops_are_read()
+    {
+        var markers = NamedMarkers();
+
+        Assert.Equal(new HotcueDetail(90, "Drop", 0xCC8800, null), SeratoMarkers.DetailsFrom(markers)![2]);
+        Assert.Equal((TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(24)), Assert.Single(SeratoMarkers.LoopsFrom(markers)!));
+    }
+
+    [Fact]
+    public void Saved_loops_come_in_as_memory_cues_with_the_hot_cue_details_for_a_song_with_none_here()
+    {
+        using var folder = new TempFolder();
+        File.WriteAllBytes(folder["a.mp3"], Mp3(4, NamedMarkers()));
+        var database = LibraryDatabase.Load(folder["library.json"], folder.Path, _ => folder.Path);
+
+        SeratoImport.Take(database, SeratoImport.Read([folder["a.mp3"]]));
+
+        Assert.Equal(TimeSpan.FromSeconds(20), Assert.Single(database.GetMemoryCues(folder["a.mp3"])));
+        Assert.Single(database.GetMemoryLoops(folder["a.mp3"]));
+        Assert.Equal("Drop", database.GetHotcueDetails(folder["a.mp3"])[2]!.Name);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Encodings.Web;
 using Brutality.UI;
+using Brutality.Audio;
 
 namespace Brutality;
 
@@ -69,6 +70,22 @@ sealed class AppSettings
     /// Whether a song can't be loaded onto a deck that's playing into the main mix.
     /// </summary>
     public bool ProtectPlayingDecks { get; set; } = true;
+
+    /// <summary>
+    /// A deck's effect as it was left: which one, how much, and each one's length in beats. It always starts off.
+    /// </summary>
+    public sealed class DeckEffectSettings
+    {
+        public DeckEffect Kind { get; set; }
+        public float Level { get; set; } = 0.6f;
+        public double EchoBeats { get; set; } = 0.5;
+        public double FlangerBeats { get; set; } = 8;
+    }
+
+    /// <summary>
+    /// Each deck's effect, by the deck's name.
+    /// </summary>
+    public Dictionary<string, DeckEffectSettings>? Effects { get; set; }
 
     /// <summary>
     /// Lighting software to connect to as well as any found on the network, as host:port; null for none.

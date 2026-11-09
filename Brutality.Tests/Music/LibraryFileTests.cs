@@ -99,6 +99,24 @@ public class LibraryFileTests
     }
 
     [Fact]
+    public void Hot_cue_details_and_memory_loops_are_kept()
+    {
+        using var folder = new TempFolder();
+        var path = folder["Music", "a.mp3"];
+        var file = LibraryFile.Load(folder["library.json"]);
+
+        file.SetHotcueDetails(path, [null, new HotcueDetail(6.5, "Drop", 0x28E214, 8.5)]);
+        file.SetMemoryLoops(path, [(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2))]);
+        file.Save();
+
+        var loaded = LibraryFile.Load(folder["library.json"]);
+        var details = loaded.GetHotcueDetails(path);
+        Assert.Null(details[0]);
+        Assert.Equal(new HotcueDetail(6.5, "Drop", 0x28E214, 8.5), details[1]);
+        Assert.Equal((TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)), Assert.Single(loaded.GetMemoryLoops(path)));
+    }
+
+    [Fact]
     public void A_cue_point_is_kept_and_a_song_without_one_has_none()
     {
         using var folder = new TempFolder();

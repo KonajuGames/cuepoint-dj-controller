@@ -14,10 +14,12 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 - **Tempo fader:** ±8%, ±16% or ±50%.
 - **Key shift:** a deck's **-** and **+** (beside its key) move the key down or up a semitone, as far as an octave, without changing the tempo, to bring a song into a key that mixes with the other deck. The key shown moves with it. Right-click either to put the key back. A new song starts in its own key.
 - **Key match:** a deck's **=** (between **-** and **+**) shifts its key as little as it takes to mix with the other deck's: to the same key, or its relative major or minor, the same number on the Camelot wheel. Key lock goes on with it, so the tempo fader doesn't pull the key away again. **=** is lit while the two decks' keys match.
-- **Effects:** each deck has an echo, a reverb and a flanger, one at a time, chosen from the list beside its times. **FX** switches it on and off, the slider sets how much, and the arrows set its length in beats (1/8 to 16): how far apart the echoes are, or how long the flanger takes to sweep, in time with the deck's tempo. Switched off, the echo and reverb ring on and fade, as a DJ mixer's do. They can be learned to a controller's buttons and knobs too.
+- **Effects:** remembered between runs, apart from being on, and on the DDJ-SB3 VINYL switches a deck's effect on and off and Shift + KEY LOCK picks the next. Each deck has an echo, a reverb and a flanger, one at a time, chosen from the list beside its times. **FX** switches it on and off, the slider sets how much, and the arrows set its length in beats (1/8 to 16): how far apart the echoes are, or how long the flanger takes to sweep, in time with the deck's tempo. Switched off, the echo and reverb ring on and fade, as a DJ mixer's do. They can be learned to a controller's buttons and knobs too.
 - **Slip:** with a deck's **SLIP** lit (Shift + VINYL on the DDJ-SB3), a scratch, a backspin, a hotcue held down or a loop lasts only while it's held or looping. The song carries on underneath, shown as a dashed line on the overview, and when you let go the deck drops back in where it would have got to, so the mix stays in time.
 - **Hotcues:** eight per deck, kept with each song.
 - **Undo:** Ctrl + Z takes back the last hot cue or beat grid change, and again for the one before, up to 100, even after the song has left the deck.
+- **Memory cues:** **MEM** adds a memory cue where the deck is, or takes away the one it's at, and the arrows beside it go to the previous or next one, making it the cue point. They show red on the overview, are kept with the song, and can be undone. A memory loop imported from Rekordbox or Serato is ready for reloop once you've jumped to it.
+- **Hot cue names, colours and hot loops:** those from Rekordbox and Serato show on the pads, and a hot loop's pad jumps there and loops.
 - **Cue points:** kept with each song too. It waits at its cue point when it's loaded.
 - **Load protection:** a song can't be loaded onto a deck that's playing into the main mix, so a stray key press or drag can't stop the music. A deck with its fader down, or only in the headphones, can still be loaded. It can be turned off in the options.
 - **Loops:** from 1/16 to 32 beats, fitted to the beat grid, with halve and double.
@@ -112,6 +114,7 @@ Each deck has its own side of the keyboard.
 | Slip | Shift + G | Shift + H |
 | Key shift down / up, put back | Alt + 5 / 6, Alt + G | Alt + 7 / 8, Alt + H |
 | Key match | Ctrl + G | Ctrl + H |
+| Previous memory cue, add or remove, next | Alt + Z X C | Alt + N M , |
 | Kill low / mid / high, reset EQ | F1 F2 F3, F4 | F9 F10 F11, F12 |
 | Low-pass / high-pass filter | F5 / F6 | F7 / F8 |
 

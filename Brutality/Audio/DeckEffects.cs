@@ -130,6 +130,20 @@ sealed unsafe class DeckEffects
     }
 
     /// <summary>
+    /// The length in beats <paramref name="kind"/> has, whichever is chosen.
+    /// </summary>
+    public double BeatsOf(DeckEffect kind) => _beats[(int)kind];
+
+    /// <summary>
+    /// Gives <paramref name="kind"/> this length in beats, the nearest there is, whichever is chosen.
+    /// </summary>
+    public void SetBeats(DeckEffect kind, double beats)
+    {
+        _beats[(int)kind] = BeatLengths.MinBy(length => Math.Abs(Math.Log(length / Math.Max(beats, 1e-6))));
+        UpdatePeriod();
+    }
+
+    /// <summary>
     /// Whether the chosen effect is timed in beats.
     /// </summary>
     public bool HasBeats => Kind != DeckEffect.Reverb;

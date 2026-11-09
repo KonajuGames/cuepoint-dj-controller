@@ -151,6 +151,12 @@ sealed class KeyboardControls
                     _decks[i].KeyShift++;
                 else if (key == Keys[i].KeyLock)
                     _decks[i].KeyShift = 0;
+                else if (key == Keys[i].Cue)
+                    _decks[i].JumpMemoryCue(-1);
+                else if (key == Keys[i].Play)
+                    _decks[i].ToggleMemoryCue();
+                else if (key == Keys[i].Sync)
+                    _decks[i].JumpMemoryCue(1);
                 else
                     continue;
                 return;

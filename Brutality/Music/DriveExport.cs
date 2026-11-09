@@ -308,6 +308,10 @@ sealed class DriveExport
                 database.SetHotcues(path, hotcues);
             if (database.GetMemoryCues(path).Count == 0 && database.GetMemoryCues(source.Path) is { Count: > 0 } memoryCues)
                 database.SetMemoryCues(path, memoryCues);
+            if (database.GetHotcueDetails(path).Count == 0 && database.GetHotcueDetails(source.Path) is { Count: > 0 } details)
+                database.SetHotcueDetails(path, details);
+            if (database.GetMemoryLoops(path).Count == 0 && database.GetMemoryLoops(source.Path) is { Count: > 0 } loops)
+                database.SetMemoryLoops(path, loops);
             if (database.GetCuePoint(path) is null && database.GetCuePoint(source.Path) is { } cuePoint)
                 database.SetCuePoint(path, cuePoint);
             if (!database.HasGridEdit(path) && database.GetGridEdit(source.Path, analysis?.Grid.Duration ?? 0) is { } edit)

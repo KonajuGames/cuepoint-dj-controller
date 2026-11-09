@@ -1,6 +1,7 @@
 using Brutal.GlfwApi;
 using Brutality.Audio;
 using Brutality.Audio.Analysis;
+using Brutality.Music;
 
 namespace Brutality.Tests.Audio;
 
@@ -239,6 +240,84 @@ public sealed class SlipAndKeyShiftTests : IDisposable
         _deck.Load(_folder["song.wav"]);
         _deck.SetMemoryCues([], TimeSpan.FromSeconds(99));
         Assert.Equal(0, _deck.CuePoint.TotalSeconds, 2);
+    }
+
+    [Fact]
+    public void A_memory_cue_is_added_where_the_deck_is_and_taken_away_there()
+    {
+        var changes = 0;
+        _deck.MemoryCuesChanged += _ => changes++;
+        _deck.Seek(TimeSpan.FromSeconds(10));
+
+        _deck.ToggleMemoryCue();
+        Assert.Equal(10, Assert.Single(_deck.MemoryCues).TotalSeconds, 2);
+        Assert.True(_deck.IsAtMemoryCue);
+
+        _deck.ToggleMemoryCue();
+        Assert.Empty(_deck.MemoryCues);
+        Assert.False(_deck.IsAtMemoryCue);
+        Assert.Equal(2, changes);
+    }
+
+    [Fact]
+    public void Jumping_goes_between_memory_cues_and_makes_each_the_cue_point()
+    {
+        _deck.SetMemoryCues([TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(12), TimeSpan.FromSeconds(20)]);
+
+        Assert.True(_deck.JumpMemoryCue(1));
+        Assert.Equal(12, _deck.Position.TotalSeconds, 2);
+        Assert.Equal(12, _deck.CuePoint.TotalSeconds, 2);
+        Assert.True(_deck.JumpMemoryCue(1));
+        Assert.Equal(20, _deck.Position.TotalSeconds, 2);
+        Assert.False(_deck.JumpMemoryCue(1));
+
+        Assert.True(_deck.JumpMemoryCue(-1));
+        Assert.Equal(12, _deck.Position.TotalSeconds, 2);
+        Assert.True(_deck.JumpMemoryCue(-1));
+        Assert.False(_deck.JumpMemoryCue(-1));
+    }
+
+    [Fact]
+    public void A_memory_loop_is_ready_for_reloop_once_it_s_been_jumped_to()
+    {
+        _deck.SetMemoryCues([TimeSpan.Zero, TimeSpan.FromSeconds(8)], null, [(TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(10))]);
+        Assert.False(_deck.CanReloop);
+
+        _deck.JumpMemoryCue(1);
+        Assert.True(_deck.CanReloop);
+        _deck.Reloop();
+
+        Assert.True(_deck.IsLooping);
+        Assert.Equal((TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(10)), _deck.Loop);
+    }
+
+    [Fact]
+    public void A_hot_loop_s_pad_jumps_there_and_loops()
+    {
+        _deck.SetHotcues([TimeSpan.FromSeconds(6)]);
+        _deck.SetHotcueDetails([new HotcueDetail(6, "Drop", 0x28E214, 8)]);
+
+        _deck.HotcueDown(0);
+
+        Assert.True(_deck.IsLooping);
+        Assert.Equal((TimeSpan.FromSeconds(6), TimeSpan.FromSeconds(8)), _deck.Loop);
+    }
+
+    [Fact]
+    public void A_hot_cue_s_name_and_colour_go_when_it_moves_and_with_another_song()
+    {
+        _deck.SetHotcues([TimeSpan.FromSeconds(6)]);
+        _deck.SetHotcueDetails([new HotcueDetail(6, "Drop", 0x28E214, null)]);
+        Assert.Equal("Drop", _deck.DetailOf(0)!.Name);
+
+        _deck.SetHotcues([TimeSpan.FromSeconds(7)]);
+        Assert.Null(_deck.DetailOf(0));
+
+        _deck.SetHotcues([TimeSpan.FromSeconds(6)]);
+        Assert.NotNull(_deck.DetailOf(0));
+        _deck.Load(_folder["song.wav"]);
+        _deck.SetHotcues([TimeSpan.FromSeconds(6)]);
+        Assert.Null(_deck.DetailOf(0));
     }
 
     [Fact]

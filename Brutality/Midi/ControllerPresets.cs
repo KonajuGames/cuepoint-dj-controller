@@ -62,6 +62,9 @@ static class ControllerPresets
             Note($"{deck}.keylock", channel, 0x1A);
             // Shift + VINYL is slip.
             Note($"{deck}.slip", channel, 0x40);
+            // VINYL has nothing else to do here, so it's the effect on and off; Shift + KEY LOCK the next effect.
+            Note($"{deck}.fx.on", channel, 0x17);
+            Note($"{deck}.fx.next", channel, 0x60);
             Note($"{deck}.loop", channel, 0x14);
             Note($"{deck}.loop.halve", channel, 0x12);
             Note($"{deck}.loop.double", channel, 0x13);

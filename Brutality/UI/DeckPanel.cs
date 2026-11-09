@@ -61,6 +61,9 @@ sealed class DeckPanel : Panel
     readonly Button _keyMatch;
     readonly Button _keyUp;
     readonly Button _slip;
+    readonly Button _memorySet;
+    readonly Button _memoryPrevious;
+    readonly Button _memoryNext;
 
     // The effect: which one, its length in beats, how much, and on or off.
     readonly Dropdown<DeckEffect> _fxKind;
@@ -106,6 +109,9 @@ sealed class DeckPanel : Panel
 
     // SLIP, and the key shift's buttons below it, beside the tempo and key.
     const float KEY_SHIFT_WIDTH = 66;
+
+    // The memory cue's buttons, beside those.
+    const float MEMORY_WIDTH = 46;
     const float TEMPO_GAP = 10;
 
     const float PAD_GAP = 4;
@@ -301,6 +307,40 @@ sealed class DeckPanel : Panel
             }
         );
         _slip.Clicked += _ => _deck.Slip = !_deck.Slip;
+
+        // Memory cues: MEM adds one where the deck is or takes away the one it's at; the arrows go between them.
+        _memorySet = Add(
+            new Button(small, "MEM")
+            {
+                MinSize = new float2(MEMORY_WIDTH, 22),
+                Padding = 3,
+                FocusColor = Theme.Focus,
+                Tooltip = "Memory cue: add one here, or take away the one the deck is at. They show red on the overview",
+            }
+        );
+        _memorySet.Clicked += _ => _deck.ToggleMemoryCue();
+        _memoryPrevious = Add(
+            new Button(small, "")
+            {
+                Icon = images?.TriangleLeft,
+                MinSize = new float2((MEMORY_WIDTH - 4) / 2, 20),
+                Padding = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "Go to the memory cue before here, and make it the cue point",
+            }
+        );
+        _memoryPrevious.Clicked += _ => _deck.JumpMemoryCue(-1);
+        _memoryNext = Add(
+            new Button(small, "")
+            {
+                Icon = images?.TriangleRight,
+                MinSize = new float2((MEMORY_WIDTH - 4) / 2, 20),
+                Padding = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "Go to the memory cue after here, and make it the cue point",
+            }
+        );
+        _memoryNext.Clicked += _ => _deck.JumpMemoryCue(1);
 
         // A loop set by hand: IN marks its start, OUT its end, looping straight back.
         _loopIn = Add(
@@ -619,6 +659,13 @@ sealed class DeckPanel : Panel
         _slip.HoverBackground = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
         _slip.TextColor = slip ? Colors.White : Theme.Muted;
 
+        var atMemoryCue = _deck.IsAtMemoryCue;
+        _memorySet.Enabled = _deck.IsLoaded;
+        _memorySet.Background = atMemoryCue ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.6f) : Colors.Hex(0x2A2A35);
+        _memorySet.HoverBackground = atMemoryCue ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.75f) : Colors.Hex(0x3A3A48);
+        _memorySet.TextColor = atMemoryCue ? Colors.White : Theme.Muted;
+        _memoryPrevious.Enabled = _memoryNext.Enabled = _deck.MemoryCues.Count > 0;
+
         var fx = _deck.Effects;
         _fxKind.Selected = fx.Kind;
         _fxBeats.Text = fx.HasBeats ? FormatFxBeats(fx.Beats) : "";
@@ -715,16 +762,20 @@ sealed class DeckPanel : Panel
             var hotcue = _deck.Hotcues[i];
             (_pads[i].Enabled, _pads[i].IsSet) = (true, rollMode ? _roll!.IsRolling(i) : hotcue is not null && !gridMode && !jumpMode);
             _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : rollMode ? RollPads.Label(i) : jumpMode ? JumpPads.Label(i) : null;
+            var detail = gridMode || rollMode || jumpMode ? null : _deck.DetailOf(i);
+            if (detail?.Name is { } name)
+                _pads[i].Text = name;
             var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : jumpMode ? JumpPads.Direction(i) : 0;
             _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
             _pads[i].IconAfter = direction > 0;
-            _pads[i].Color = gridMode ? Theme.Accent : rollMode ? Theme.Loop : jumpMode ? Theme.Focus : Theme.HotcueColor(i);
+            _pads[i].Color = gridMode ? Theme.Accent : rollMode ? Theme.Loop : jumpMode ? Theme.Focus : detail?.Color is { } color ? Colors.Hex(color) : Theme.HotcueColor(i);
             var jumpBeats = Math.Abs(JumpPads.Sizes[i]);
             _pads[i].Tooltip =
                 gridMode ? GridTooltip(GridEditor.Pads[i])
                 : rollMode ? $"Loops {RollPads.Label(i)} {(RollPads.Sizes[i] > 1 ? "beats" : "beat")} while held, then carries on from where the song would have got to"
                 : jumpMode ? $"Jump {jumpBeats:0} {(jumpBeats == 1 ? "beat" : "beats")} {(JumpPads.Sizes[i] < 0 ? "back" : "on")}, staying in time; a loop goes with it"
-                : hotcue is not null ? $"Hotcue {i + 1}: jump to it. Shift-click or right-click to clear it"
+                : detail?.LoopEnd is not null ? $"Hot loop {i + 1}{(detail.Name is { } loopName ? $", {loopName}" : "")}: jump to it and loop. Shift-click or right-click to clear it"
+                : hotcue is not null ? $"Hotcue {i + 1}{(detail?.Name is { } cueName ? $", {cueName}" : "")}: jump to it. Shift-click or right-click to clear it"
                 : $"Hotcue {i + 1}: set it here";
             if (hotcue is { } at)
                 flags.Add(((float)at.TotalSeconds, Theme.HotcueColor(i), (i + 1).ToString()));
@@ -894,7 +945,7 @@ sealed class DeckPanel : Panel
         _key.Measure();
         var right = MathF.Max(MathF.Max(_bpm.Size.X, _key.Size.X), 90);
         var content = Width - 2 * PAD - TEMPO_COLUMN - TEMPO_GAP;
-        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, content - 40 - right - 8 - KEY_SHIFT_WIDTH - 16);
+        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, content - 40 - right - 8 - KEY_SHIFT_WIDTH - 6 - MEMORY_WIDTH - 16);
         _overview.Length = content;
         // The pads share the width between them; the loading line gets what the buttons either side leave it.
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
@@ -945,6 +996,10 @@ sealed class DeckPanel : Panel
         Place(_keyDown, shiftLeft, top + _slip.Size.Y + 4);
         Place(_keyMatch, shiftLeft + (KEY_SHIFT_WIDTH - _keyMatch.Size.X) / 2, top + _slip.Size.Y + 4);
         Place(_keyUp, shiftLeft + KEY_SHIFT_WIDTH - _keyUp.Size.X, top + _slip.Size.Y + 4);
+        var memoryLeft = Mirrored ? shiftLeft + KEY_SHIFT_WIDTH + 6 : shiftLeft - 6 - MEMORY_WIDTH;
+        Place(_memorySet, memoryLeft, top);
+        Place(_memoryPrevious, memoryLeft, top + _slip.Size.Y + 4);
+        Place(_memoryNext, memoryLeft + MEMORY_WIDTH - _memoryNext.Size.X, top + _slip.Size.Y + 4);
 
         var timesY = top + 52;
         Place(_elapsed, Outer(0, _elapsed), timesY);

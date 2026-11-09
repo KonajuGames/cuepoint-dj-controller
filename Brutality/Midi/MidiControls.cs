@@ -410,6 +410,15 @@ sealed class MidiControls : IDisposable
             case "key.match":
                 deck.KeyMatch();
                 break;
+            case "memory.set":
+                deck.ToggleMemoryCue();
+                break;
+            case "memory.prev":
+                deck.JumpMemoryCue(-1);
+                break;
+            case "memory.next":
+                deck.JumpMemoryCue(1);
+                break;
             case "fx.on":
                 deck.Effects.On = !deck.Effects.On;
                 break;
@@ -615,6 +624,7 @@ sealed class MidiControls : IDisposable
             "keylock" => deck.KeyLocked,
             "slip" => deck.Slip,
             "fx.on" => deck.Effects.On,
+            "memory.set" => deck.IsAtMemoryCue,
             "key.match" => deck.CanKeyMatch && deck.IsKeyMatched,
             "loop" => deck.IsLooping,
             "grid" => IsGridMode?.Invoke(deck) == true,

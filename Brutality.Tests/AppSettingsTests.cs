@@ -5,6 +5,24 @@ namespace Brutality.Tests;
 public class AppSettingsTests
 {
     [Fact]
+    public void A_deck_s_effect_settings_are_kept()
+    {
+        using var folder = new TempFolder();
+        var settings = new AppSettings
+        {
+            Effects = new() { ["A"] = new AppSettings.DeckEffectSettings { Kind = Brutality.Audio.DeckEffect.Flanger, Level = 0.25f, EchoBeats = 1, FlangerBeats = 16 } },
+        };
+
+        settings.Save(folder["settings.json"]);
+
+        var effects = AppSettings.Load(folder["settings.json"]).Effects!["A"];
+        Assert.Equal(Brutality.Audio.DeckEffect.Flanger, effects.Kind);
+        Assert.Equal(0.25f, effects.Level);
+        Assert.Equal(1, effects.EchoBeats);
+        Assert.Equal(16, effects.FlangerBeats);
+    }
+
+    [Fact]
     public void Settings_come_back_as_they_were_saved()
     {
         using var folder = new TempFolder();

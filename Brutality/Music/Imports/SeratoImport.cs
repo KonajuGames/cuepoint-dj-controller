@@ -13,7 +13,18 @@ static class SeratoImport
     /// <summary>
     /// What Serato saved in a song's file: its hot cues, its beat grid, or both.
     /// </summary>
-    public sealed record Found(string Path, IReadOnlyList<TimeSpan?>? Hotcues, BeatGrid? Grid);
+    public sealed record Found(string Path, IReadOnlyList<TimeSpan?>? Hotcues, BeatGrid? Grid)
+    {
+        /// <summary>
+        /// Its hot cues' names and colours.
+        /// </summary>
+        public IReadOnlyList<HotcueDetail?>? Details { get; init; }
+
+        /// <summary>
+        /// Its saved loops, which come in as memory cues.
+        /// </summary>
+        public IReadOnlyList<(TimeSpan Start, TimeSpan End)>? Loops { get; init; }
+    }
 
     /// <summary>
     /// What came in: how many songs got hot cues and how many a beat grid, those that had their own of what Serato
@@ -41,9 +52,9 @@ static class SeratoImport
     /// </summary>
     public static IReadOnlyList<Found> Read(IEnumerable<string> paths) =>
         paths
-            .Select(path => (Path: path, Read: SeratoMarkers.ReadAll(path)))
-            .Select(read => new Found(read.Path, read.Read.Hotcues, read.Read.Grid))
-            .Where(found => found.Hotcues is not null || found.Grid is not null)
+            .Select(path => (Path: path, Read: SeratoMarkers.ReadTags(path)))
+            .Select(read => new Found(read.Path, read.Read.Hotcues, read.Read.Grid) { Details = read.Read.Details, Loops = read.Read.Loops })
+            .Where(found => found.Hotcues is not null || found.Grid is not null || found.Loops is not null)
             .ToList();
 
     /// <summary>
@@ -54,9 +65,15 @@ static class SeratoImport
     {
         var (hotcues, grids, kept) = (0, 0, 0);
         var gridded = new List<string>();
-        foreach (var (path, cues, grid) in found)
+        foreach (var song in found)
         {
+            var (path, cues, grid) = song;
             var keptOwn = false;
+            if (song.Loops is { } loops && database.GetMemoryCues(path).Count == 0)
+            {
+                database.SetMemoryCues(path, loops.Select(loop => loop.Start).ToList());
+                database.SetMemoryLoops(path, loops);
+            }
             if (cues is not null)
             {
                 if (database.GetHotcues(path).Any(cue => cue is not null))
@@ -64,6 +81,8 @@ static class SeratoImport
                 else
                 {
                     database.SetHotcues(path, cues);
+                    if (song.Details is { } details)
+                        database.SetHotcueDetails(path, details);
                     hotcues++;
                 }
             }

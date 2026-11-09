@@ -105,7 +105,10 @@ sealed class HotcuePad(Font font, int number) : Element
         var left = MathF.Round(ScreenPosition.X + (Size.X - extent.X - iconWidth) / 2);
         var textX = Icon is not null && !IconAfter ? left + iconWidth : left;
         var at = new float2(textX, MathF.Round(ScreenPosition.Y + (Size.Y - extent.Y) / 2));
-        batch.AddText(textFont, text, at, textColor);
+        // A name from other software can be longer than the pad.
+        batch.PushClip(ScreenPosition, Size);
+        batch.AddText(textFont, text, new float2(MathF.Max(at.X, ScreenPosition.X + 2), at.Y), textColor);
+        batch.PopClip();
         if (Icon is { } icon)
         {
             var iconX = IconAfter ? textX + extent.X + GAP : left;
