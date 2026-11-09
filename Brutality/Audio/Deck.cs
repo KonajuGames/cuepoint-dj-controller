@@ -590,37 +590,92 @@ sealed partial class Deck : IDisposable
     /// How many of the master's beats go in one of this deck's, for the two to line up: 1, or 2 for a song in half
     /// time against the master (85 against 170), or ½ for one in double time.
     /// </summary>
-    static double MasterBeatsPerBeat(double bpm, double masterBpm) =>
+    internal static double MasterBeatsPerBeat(double bpm, double masterBpm) =>
         new[] { 1.0, 2.0, 0.5 }.MinBy(k => Math.Abs(Math.Log(bpm * k / masterBpm)));
 
     /// <summary>
     /// Matches this deck to its <see cref="SyncMaster"/>: sets the tempo fader so the two play at the same tempo,
     /// in half or double time if that's closer, widening the fader's range if it has to; and if both are playing,
     /// moves this deck by less than a beat so its beats land on the master's. Returns false, changing nothing, if
-    /// there's no master or the tempo is out of the fader's reach.
+    /// there's no master or the tempo is out of the fader's reach. <paramref name="beatShift"/> lines it up that far
+    /// from the master's beats instead, for a grid known to be off from what's heard: see <see cref="TransitionPlanner"/>.
     /// </summary>
-    public bool Sync()
+    public bool Sync(double beatShift = 0)
     {
         if (!CanSync || SyncMaster is not { } master || master.Bpm is not { } masterBpm || _analysis?.Grid is not { } grid)
             return false;
 
         var position = Position.TotalSeconds;
         var songBpm = grid.BpmAt(position);
-        var masterBeats = MasterBeatsPerBeat(songBpm, masterBpm);
-        var tempo = masterBpm / (songBpm * masterBeats) - 1;
-        if (Math.Abs(tempo) > TempoRanges[^1])
+        if (!MatchTempo(songBpm, masterBpm))
             return false;
 
+        if (IsPlaying && master.IsPlaying && PhaseOff(master, beatShift) is { } off)
+            Seek(TimeSpan.FromSeconds(Position.TotalSeconds + off));
+        return true;
+    }
+
+    /// <summary>
+    /// Sets the tempo fader so a song at <paramref name="songBpm"/> plays with a master at
+    /// <paramref name="masterBpm"/>, widening its range if it has to. False if that's out of the fader's reach.
+    /// </summary>
+    bool MatchTempo(double songBpm, double masterBpm)
+    {
+        var tempo = masterBpm / (songBpm * MasterBeatsPerBeat(songBpm, masterBpm)) - 1;
+        if (Math.Abs(tempo) > TempoRanges[^1])
+            return false;
         if (Math.Abs(tempo) > _tempoRange)
             _tempoRange = TempoRanges.First(range => range >= Math.Abs(tempo));
         Tempo = tempo;
+        return true;
+    }
 
-        if (IsPlaying && master.IsPlaying && master._analysis?.Grid is { } masterGrid)
+    // How strongly a deck following another's beat is pushed, in speed per second it's out, as far as it's pushed, how
+    // small an error is left alone, and how much of each new reading is taken, as positions come in jumps of a buffer.
+    const double FOLLOW_GAIN = 1;
+    const double FOLLOW_MAX_BEND = 0.03;
+    const double FOLLOW_DEAD_SECONDS = 0.004;
+    const double FOLLOW_SMOOTHING = 0.1;
+
+    double _followError;
+
+    /// <summary>
+    /// Keeps this deck on its master's beat without a jump, for as long as it's called once a frame: the tempo fader
+    /// follows each song's tempo where it is now, and any drift is taken up by leaning on the speed, with key lock
+    /// holding the key. <see cref="StopFollowing"/> lets go.
+    /// </summary>
+    internal void FollowBeat(double beatShift)
+    {
+        if (!IsPlaying || SyncMaster is not { IsPlaying: true } master || master.Bpm is not { } masterBpm || _analysis?.Grid is not { } grid)
+        {
+            StopFollowing();
+            return;
+        }
+        MatchTempo(grid.BpmAt(Position.TotalSeconds), masterBpm);
+        _followError += ((PhaseOff(master, beatShift) ?? 0) - _followError) * FOLLOW_SMOOTHING;
+        Bend = Math.Abs(_followError) < FOLLOW_DEAD_SECONDS ? 0 : Math.Clamp(_followError * FOLLOW_GAIN, -FOLLOW_MAX_BEND, FOLLOW_MAX_BEND);
+    }
+
+    internal void StopFollowing()
+    {
+        _followError = 0;
+        Bend = 0;
+    }
+
+    /// <summary>
+    /// How many seconds further on this deck should be for its beats to land on <paramref name="master"/>'s, less than
+    /// half a beat either way; null if one of them hasn't a grid.
+    /// </summary>
+    double? PhaseOff(Deck master, double beatShift)
+    {
+        if (_analysis?.Grid is not { } grid || master._analysis?.Grid is not { } masterGrid || master.Bpm is not { } masterBpm)
+            return null;
         {
             // Phases are compared in the shorter of the two decks' beats, counted as so many to each of this deck's,
             // so in half or double time every beat of the slower deck lands on one of the faster's.
             // Both positions from the same moment of the mix, so the comparison is fair.
             double masterPosition;
+            double position;
             _engine.Mixer.Lock();
             try
             {
@@ -632,17 +687,14 @@ sealed partial class Deck : IDisposable
                 _engine.Mixer.Unlock();
             }
 
+            var songBpm = grid.BpmAt(position);
+            var masterBeats = MasterBeatsPerBeat(songBpm, masterBpm);
             var units = Math.Max(masterBeats, 1);
             var phase = Fraction(grid.BeatNumberAt(position) * units);
             var masterPhase = Fraction(masterGrid.BeatNumberAt(masterPosition) * units / masterBeats);
-            var shift = masterPhase - phase;
-            if (shift > 0.5)
-                shift -= 1;
-            else if (shift < -0.5)
-                shift += 1;
-            Seek(TimeSpan.FromSeconds(position + shift / units * 60 / songBpm));
+            var shift = Fraction(masterPhase + beatShift - phase + 0.5) - 0.5;
+            return shift / units * 60 / songBpm;
         }
-        return true;
     }
 
     static double Fraction(double value) => value - Math.Floor(value);

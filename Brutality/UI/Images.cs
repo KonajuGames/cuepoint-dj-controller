@@ -25,7 +25,8 @@ sealed record Images(
     Image Headphones,
     Image Knob,
     Image LargeKnob,
-    Image Dot
+    Image Dot,
+    Image Pause
 )
 {
     /// <summary>
@@ -47,7 +48,8 @@ sealed record Images(
             Headphones: atlas.AddImage(Read("headphones-18.png")),
             Knob: atlas.AddImage(Read("knob-18.png")),
             LargeKnob: atlas.AddImage(Read("knob-32.png")),
-            Dot: atlas.AddImage(Read("dot-8.png"))
+            Dot: atlas.AddImage(Read("dot-8.png")),
+            Pause: atlas.AddImage(Read("pause-14.png"))
         );
 
     /// <summary>

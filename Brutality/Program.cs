@@ -1342,6 +1342,69 @@ static void Run()
 
     // The menu item for a list: a drive to export it to, from those it isn't kept on. Exporting over a playlist the
     // drive has of that name asks first.
+    // Plays a list by itself on the two decks, in its own panel beside the song list.
+    var autoMix = new AutoMix(
+        [new MixDeck(deckA, 0), new MixDeck(deckB, 1)],
+        () => audio.Crossfader,
+        value => audio.Crossfader = value,
+        (song, deck) => Load(song, ((MixDeck)deck).Deck)
+    );
+    autoMix.Log += screen.Log;
+    screen.AutoMix.Mix = autoMix;
+    screen.AutoMix.PlayPressed += () =>
+    {
+        if (autoMix.IsRunning)
+            autoMix.TogglePause();
+        else if (autoMix.Start() is { } why)
+            screen.Log($"Auto-Mix: {why}");
+    };
+    screen.AutoMix.CloseRequested += () =>
+    {
+        if (autoMix.IsRunning)
+            confirmation.Show(
+                "Stop Auto-Mix?",
+                "The music keeps playing, but nothing more will be mixed.",
+                "Stop",
+                () =>
+                {
+                    autoMix.Stop("Stopped");
+                    screen.HideAutoMix();
+                }
+            );
+        else
+            screen.HideAutoMix();
+    };
+
+    void OpenInAutoMix(LibraryNode node)
+    {
+        var paths = node.SongPaths?.Invoke() ?? [];
+        void Open()
+        {
+            library.LoadSongsAt(
+                paths,
+                songs =>
+                {
+                    if (songs.Count == 0)
+                    {
+                        screen.Log($"None of {node.Name}'s songs are here to mix");
+                        return;
+                    }
+                    autoMix.Stop("Replaced");
+                    analyser.LookUp(songs);
+                    analyser.Request(songs);
+                    autoMix.Open(node.Name, songs);
+                    screen.ShowAutoMix();
+                }
+            );
+        }
+        if (autoMix.IsRunning)
+            confirmation.Show($"Mix {node.Name} instead?", "Auto-Mix stops what it's mixing. The music keeps playing.", "Mix it", Open);
+        else
+            Open();
+    }
+
+    MenuItem AutoMixFor(LibraryNode node) => new("Open in Auto-Mix", () => OpenInAutoMix(node), Enabled: (node.SongPaths?.Invoke().Count ?? 0) > 0);
+
     // Looks under a folder for exact copies, in the background, and lists them.
     MenuItem FindDuplicatesIn(string folder) =>
         new(
@@ -1472,6 +1535,7 @@ static void Run()
                     new MenuItem("Rename...", () => prompt.Show("Rename smart playlist", smart.Name, name => smartPlaylists.CheckName(name, smart), name => smartPlaylists.Rename(smart, name))),
                     new MenuItem("Edit search...", () => prompt.Show("What should it find?", smart.Search, SmartPlaylists.CheckSearch, search => smartPlaylists.SetSearch(smart, search))),
                     ExportFor(node),
+                    AutoMixFor(node),
                     new MenuItem(
                         "Delete...",
                         () =>
@@ -1521,6 +1585,7 @@ static void Run()
                 point,
                 [
                     new MenuItem("Rename...", () => RenameVirtualFolder(folder)),
+                    AutoMixFor(node),
                     SeratoCuesFor(node),
                     ExportFor(node),
                     new MenuItem(
@@ -1553,7 +1618,7 @@ static void Run()
             );
         // Lists, filters, and Rekordbox's playlists and Serato's crates: the songs they list.
         else if (node.HasSongs)
-            menu.Show(point, node.Kind == LibraryNodeKind.Imported ? [SeratoCuesFor(node), ExportFor(node)] : [SeratoCuesFor(node)]);
+            menu.Show(point, node.Kind == LibraryNodeKind.Imported ? [AutoMixFor(node), SeratoCuesFor(node), ExportFor(node)] : [SeratoCuesFor(node)]);
     };
 
     screen.FolderTree.AcceptsDrop = (node, payload) => node.Folder is not null && payload is IReadOnlyList<Song> { Count: > 0 };
@@ -1919,6 +1984,7 @@ static void Run()
                 plays.Update(decks, elapsed);
             }
         );
+        Guarded("running Auto-Mix", () => autoMix.Update(elapsed));
         Guarded("talking to the lighting software", () => lighting.Update(now));
         Guarded("working the decks from the controller", () => controllers?.Update(now, elapsed));
         Guarded("looking for drives", () => ScanDrives(now));

@@ -46,6 +46,21 @@ sealed class MainScreen : Panel
     public TitleBar TitleBar { get; }
     public TreeView<LibraryNode> FolderTree { get; }
     public SongBrowser Browser { get; }
+
+    /// <summary>
+    /// The panel that slides in to the right of the song list for an auto-mix.
+    /// </summary>
+    public AutoMixPanel AutoMix { get; }
+
+    // Whether it's open, and how much width it's taking now, as it slides.
+    bool _autoMixOpen;
+    float _autoMixWidth;
+    long _lastSlide = Environment.TickCount64;
+
+    /// <summary>
+    /// How quickly the panel slides: how much of the way it goes in a second, as an exponent.
+    /// </summary>
+    const float SLIDE_RATE = 16;
     public OptionsDialog Options { get; }
 
     /// <summary>
@@ -58,7 +73,7 @@ sealed class MainScreen : Panel
         set
         {
             _largeListText = value;
-            FolderTree.Font = Browser.List.Font = value ? _fonts.Large : _fonts.Body;
+            FolderTree.Font = Browser.List.Font = AutoMix.List.Font = value ? _fonts.Large : _fonts.Body;
             // The folder list's arrows and icons grow with its text, and the room they're given, and the indent, too.
             FolderTree.Arrows = value ? (_images.LargeTriangleRight, _images.LargeTriangleDown) : (_images.TriangleRight, _images.TriangleDown);
             FolderTree.Cell = value ? 24 : 17;
@@ -156,6 +171,8 @@ sealed class MainScreen : Panel
                 Browser.Source = node;
         };
 
+        AutoMix = Add(new AutoMixPanel(fonts.Body, fonts.Bold, images) { Visible = false });
+
         Options = Add(new OptionsDialog(engine, library.Root, databasePath, fonts.Body, fonts.Bold, fonts.Heading));
 
         // The wheel over a waveform zooms both together, as the options' slider does: up shows less of the song, closer.
@@ -170,8 +187,37 @@ sealed class MainScreen : Panel
 
     public void Log(string message) => Browser.Status = $"{DateTime.Now:HH:mm:ss}  {message}";
 
+    /// <summary>
+    /// Slides the Auto-Mix panel in, opened out.
+    /// </summary>
+    public void ShowAutoMix()
+    {
+        _autoMixOpen = AutoMix.Visible = true;
+        AutoMix.Collapsed = false;
+    }
+
+    /// <summary>
+    /// Slides the Auto-Mix panel away.
+    /// </summary>
+    public void HideAutoMix() => _autoMixOpen = false;
+
+    void SlideAutoMix()
+    {
+        var now = Environment.TickCount64;
+        var seconds = (now - _lastSlide) / 1000f;
+        _lastSlide = now;
+        var target = !_autoMixOpen ? 0 : AutoMix.Collapsed ? AutoMixPanel.TAB_WIDTH : AutoMixPanel.OPEN_WIDTH;
+        _autoMixWidth += (target - _autoMixWidth) * (1 - MathF.Exp(-SLIDE_RATE * seconds));
+        if (MathF.Abs(target - _autoMixWidth) < 1)
+            _autoMixWidth = target;
+        if (_autoMixWidth == 0 && !_autoMixOpen)
+            AutoMix.Visible = false;
+    }
+
     public void Update()
     {
+        SlideAutoMix();
+        AutoMix.Update();
         TitleBar.Update();
         foreach (var deck in _decks)
             deck.Refresh();
@@ -247,7 +293,8 @@ sealed class MainScreen : Panel
         _folderScroll.MaxWidth = folderInner.X;
         _folderScroll.MaxHeight = folderInner.Y;
         FolderTree.MinWidth = folderInner.X - _folderScroll.ScrollbarHitWidth;
-        Browser.FixedSize = new float2(width - FoldersWidth - 3 * GAP, browserHeight);
+        Browser.FixedSize = new float2(width - FoldersWidth - 3 * GAP - (_autoMixWidth > 0 ? _autoMixWidth + GAP : 0), browserHeight);
+        AutoMix.FixedSize = new float2(AutoMixPanel.OPEN_WIDTH, browserHeight);
         Options.ScreenSize = ScreenSize;
 
         foreach (var child in Children)
@@ -306,6 +353,10 @@ sealed class MainScreen : Panel
 
         _folders.Arrange(new float2(position.X + GAP, position.Y + BrowserTop));
         Browser.Arrange(new float2(position.X + GAP + FoldersWidth + GAP, position.Y + BrowserTop));
+
+        // Hanging off the right of the window for as much of it as isn't slid in yet.
+        if (AutoMix.Visible)
+            AutoMix.Arrange(new float2(MathF.Round(position.X + ScreenSize.X - GAP - _autoMixWidth), position.Y + BrowserTop));
         if (Options.Visible)
             Options.Arrange(position);
     }

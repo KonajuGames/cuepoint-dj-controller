@@ -252,6 +252,9 @@ KNOB = [
 DOT = [(circle(4, 4, 3.7), hex_colour(WHITE))]
 
 
+# Auto-Mix's pause button: two bars.
+PAUSE = [(union(polygon([(2, 1.2), (4.2, 1.2), (4.2, 8.8), (2, 8.8)]), polygon([(5.8, 1.2), (8, 1.2), (8, 8.8), (5.8, 8.8)])), hex_colour(WHITE))]
+
 # The search box's clear button: a cross.
 CROSS = [(union(segment(2.5, 2.5, 7.5, 7.5, 1.5), segment(7.5, 2.5, 2.5, 7.5, 1.5)), hex_colour(WHITE))]
 
@@ -350,6 +353,7 @@ def main():
         ("icon-filter-14.png", FUNNEL, 14, 14),
         # The folder list's arrows and icons again, larger, for its large text.
         ("triangle-right-14.png", TRIANGLE_RIGHT, 14, 10),
+        ("pause-14.png", PAUSE, 14, 10),
         ("triangle-down-14.png", TRIANGLE_DOWN, 14, 10),
         ("icon-library-20.png", NOTE, 20, 14),
         ("icon-drive-20.png", DRIVE, 20, 14),
