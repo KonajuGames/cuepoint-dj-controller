@@ -1089,6 +1089,8 @@ sealed partial class Deck : IDisposable
         if (!_track.Playing() && !_track.Paused())
             _track.Play(0);
         _track.Pause();
+        // An echo or reverb ringing on would otherwise wait, and carry on when it plays again.
+        Effects.Silence();
         _track.SetPlaybackPosition(frames);
     }
 

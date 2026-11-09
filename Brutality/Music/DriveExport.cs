@@ -51,7 +51,8 @@ sealed class DriveExport
     public DriveExport(string name, IReadOnlyList<Song> songs, string root, Func<string, long>? freeSpace = null)
     {
         FileName = SafeName(name);
-        _songs = songs;
+        // A playlist can list a song twice, but it's one file, and a virtual folder has a song at most once.
+        _songs = songs.DistinctBy(song => song.Path, StringComparer.OrdinalIgnoreCase).ToList();
         Root = LibraryFile.WithSeparator(root);
         _freeSpace = freeSpace ?? (drive => new DriveInfo(drive).AvailableFreeSpace);
     }

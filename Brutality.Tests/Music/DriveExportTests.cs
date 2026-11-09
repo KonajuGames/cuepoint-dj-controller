@@ -68,6 +68,18 @@ public sealed class DriveExportTests : IDisposable
     }
 
     [Fact]
+    public void A_song_listed_twice_is_copied_once()
+    {
+        var song = Song(@"Music\a.mp3");
+        var other = Song(@"Music\b.mp3");
+
+        var result = Export("Set", song, other, song).Run();
+
+        Assert.Equal(new[] { "a.mp3", "b.mp3" }, result.Songs.Select(exported => Path.GetFileName(exported.Path)));
+        Assert.Equal(2, Directory.GetFiles(Path.Combine(Drive, "Music", "Set")).Length);
+    }
+
+    [Fact]
     public void A_song_already_on_the_drive_stays_where_it_is()
     {
         var there = Song(@"Tunes\here.mp3", root: Drive);

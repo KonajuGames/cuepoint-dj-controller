@@ -143,6 +143,26 @@ public sealed class SlipAndKeyShiftTests : IDisposable
     }
 
     [Fact]
+    public void Cue_clears_what_an_echo_has_ringing_whenever_it_pauses_the_deck()
+    {
+        _deck.Play();
+        var before = _deck.Effects.SilenceCount;
+
+        // Playing, Cue goes back to the cue point and pauses.
+        _deck.CueDown();
+        _deck.CueUp();
+        Assert.False(_deck.IsPlaying);
+        Assert.True(_deck.Effects.SilenceCount > before);
+
+        // Paused, it plays while held, and pauses again when let go.
+        _deck.CueDown();
+        Assert.True(_deck.IsCuePreviewing);
+        before = _deck.Effects.SilenceCount;
+        _deck.CueUp();
+        Assert.True(_deck.Effects.SilenceCount > before);
+    }
+
+    [Fact]
     public void Slip_only_starts_while_playing()
     {
         _deck.HotcueDown(0);

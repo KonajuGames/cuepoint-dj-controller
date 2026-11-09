@@ -167,7 +167,16 @@ sealed unsafe class DeckEffects
     /// Stops whatever's ringing on, at once: when the deck stops, say. Asked from the UI thread; done on the audio
     /// thread at the next block.
     /// </summary>
-    public void Silence() => Volatile.Write(ref _reset, 1);
+    public void Silence()
+    {
+        Volatile.Write(ref _reset, 1);
+        SilenceCount++;
+    }
+
+    /// <summary>
+    /// How many times <see cref="Silence"/> has been asked for, for tests, as the audio thread takes each request.
+    /// </summary>
+    internal int SilenceCount { get; private set; }
 
     // Audio thread only, from here.
     int _channels;
