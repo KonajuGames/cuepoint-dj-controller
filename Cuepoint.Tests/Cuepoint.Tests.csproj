@@ -21,6 +21,11 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="Brutal" />
+    <!-- The framework's, everywhere, as if its classes were the app's own. -->
+    <Using Include="Cue.Framework" />
+    <Using Include="Cue.Framework.Rendering" />
+    <Using Include="Cue.Framework.UI" />
+    <Using Include="Cue.Framework.Window" />
   </ItemGroup>
 
 </Project>

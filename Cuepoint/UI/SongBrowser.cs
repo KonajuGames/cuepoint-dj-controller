@@ -227,7 +227,7 @@ sealed class SongBrowser : Panel
         _deckColumn = new ListColumn<Song>("", 26, song => string.Concat(DecksOf(song)))
         {
             Id = "Deck",
-            Color = song => DecksOf(song) is [var deck, ..] ? Theme.DeckColor(deck) : null,
+            Color = song => DecksOf(song) is [var deck, ..] ? AppTheme.DeckColor(deck) : null,
             SortKey = song => DecksOf(song) is { Count: > 0 } decks ? string.Concat(decks) : null,
             Resizable = false,
         };
@@ -236,7 +236,7 @@ sealed class SongBrowser : Panel
             new ListColumn<Song>("", 30, _ => "")
             {
                 Id = "Played",
-                Icon = song => IsPlayed(song) ? (images.Played, Theme.Played) : null,
+                Icon = song => IsPlayed(song) ? (images.Played, AppTheme.Played) : null,
                 SortKey = song => IsPlayed(song) ? 0 : null,
                 Resizable = false,
             }
@@ -272,7 +272,7 @@ sealed class SongBrowser : Panel
         foreach (var name in deckNames)
         {
             var button = Add(
-                new Button(body, $"Load {name}") { FocusColor = Theme.Focus, TextColor = Theme.DeckColor(name), Tooltip = $"Load the chosen song onto deck {name}" }
+                new Button(body, $"Load {name}") { FocusColor = Theme.Focus, TextColor = AppTheme.DeckColor(name), Tooltip = $"Load the chosen song onto deck {name}" }
             );
             button.Clicked += _ =>
             {
@@ -748,7 +748,7 @@ sealed class SongBrowser : Panel
         };
 
     static float4? KeyColor(Song song) =>
-        song.Analysis is { } analysis ? Theme.CamelotColor(analysis.Key.CamelotNumber) : null;
+        song.Analysis is { } analysis ? AppTheme.CamelotColor(analysis.Key.CamelotNumber) : null;
 }
 
 /// <summary>

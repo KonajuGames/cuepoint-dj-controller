@@ -207,7 +207,7 @@ sealed class DeckPanel : Panel
         _jump = jump;
         _grid = grid;
         _deck = deck;
-        _color = Theme.DeckColor(deck.Name);
+        _color = AppTheme.DeckColor(deck.Name);
         _bold = bold;
         Background = Theme.Panel;
         BorderColor = Theme.PanelBorder;
@@ -575,7 +575,7 @@ sealed class DeckPanel : Panel
             var pad = Add(
                 new HotcuePad(bold, i + 1)
                 {
-                    Color = Theme.HotcueColor(i),
+                    Color = AppTheme.HotcueColor(i),
                     FocusColor = Theme.Focus,
                     KeyHint = padKeys is not null && i < padKeys.Count ? padKeys[i] : null,
                     HintFont = small,
@@ -642,7 +642,7 @@ sealed class DeckPanel : Panel
             var (tint, amount) = mode switch
             {
                 PadMode.Grid => (Theme.Accent, 0.6f),
-                PadMode.Roll => (Theme.Loop, 0.5f),
+                PadMode.Roll => (AppTheme.Loop, 0.5f),
                 PadMode.Jump => (Theme.Focus, 0.5f),
                 _ => (Theme.PanelRaised, 0f),
             };
@@ -730,7 +730,7 @@ sealed class DeckPanel : Panel
             var key = _deck.Key ?? analysis.Key;
             _bpm.Text = $"{(analysis.Grid.IsVariable ? "~" : "")}{_deck.Bpm ?? analysis.Bpm:F2}";
             _key.Text = $"{key.Camelot}  {key.ShortName}{(_deck.KeyChange != 0 ? $"  ({_deck.KeyChange:+0;-0})" : "")}";
-            _key.Color = Theme.CamelotColor(key.CamelotNumber);
+            _key.Color = AppTheme.CamelotColor(key.CamelotNumber);
             _gain.Text = $"Auto gain {analysis.AutoGainDb:+0.0;-0.0;0.0} dB";
         }
         else
@@ -768,7 +768,7 @@ sealed class DeckPanel : Panel
             var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : jumpMode ? JumpPads.Direction(i) : 0;
             _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
             _pads[i].IconAfter = direction > 0;
-            _pads[i].Color = gridMode ? Theme.Accent : rollMode ? Theme.Loop : jumpMode ? Theme.Focus : detail?.Color is { } color ? Colors.Hex(color) : Theme.HotcueColor(i);
+            _pads[i].Color = gridMode ? Theme.Accent : rollMode ? AppTheme.Loop : jumpMode ? Theme.Focus : detail?.Color is { } color ? Colors.Hex(color) : AppTheme.HotcueColor(i);
             var jumpBeats = Math.Abs(JumpPads.Sizes[i]);
             _pads[i].Tooltip =
                 gridMode ? GridTooltip(GridEditor.Pads[i])
@@ -778,7 +778,7 @@ sealed class DeckPanel : Panel
                 : hotcue is not null ? $"Hotcue {i + 1}{(detail?.Name is { } cueName ? $", {cueName}" : "")}: jump to it. Shift-click or right-click to clear it"
                 : $"Hotcue {i + 1}: set it here";
             if (hotcue is { } at)
-                flags.Add(((float)at.TotalSeconds, Theme.HotcueColor(i), (i + 1).ToString()));
+                flags.Add(((float)at.TotalSeconds, AppTheme.HotcueColor(i), (i + 1).ToString()));
         }
         _overview.Flags = flags;
         _overview.Region = _deck.Loop is { } loop ? ((float)loop.Start.TotalSeconds, (float)loop.End.TotalSeconds) : null;
@@ -851,11 +851,11 @@ sealed class DeckPanel : Panel
         _loopIn.Enabled = _deck.IsLoaded;
         _loopOut.Enabled = _deck.IsLoaded && (_deck.LoopInPoint is not null || _deck.IsManualLoop);
         var marked = _deck.IsLoaded && _deck.LoopInPoint is not null;
-        _loopIn.Background = marked ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.35f) : Colors.Hex(0x2A2A35);
-        _loopIn.HoverBackground = marked ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.5f) : Colors.Hex(0x3A3A48);
+        _loopIn.Background = marked ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.35f) : Colors.Hex(0x2A2A35);
+        _loopIn.HoverBackground = marked ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.5f) : Colors.Hex(0x3A3A48);
 
-        _loop.Background = looping ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.6f) : Colors.Hex(0x2A2A35);
-        _loop.HoverBackground = looping ? Theme.Mix(Theme.PanelRaised, Theme.Loop, 0.75f) : Colors.Hex(0x3A3A48);
+        _loop.Background = looping ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.6f) : Colors.Hex(0x2A2A35);
+        _loop.HoverBackground = looping ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.75f) : Colors.Hex(0x3A3A48);
         _loop.TextColor = looping ? Theme.TitleBar : Theme.Text;
     }
 

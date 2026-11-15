@@ -5,74 +5,6 @@ using Cuepoint.Audio.Analysis;
 
 namespace Cuepoint.UI;
 
-enum TitleIcon
-{
-    /// <summary>
-    /// A picture, the button's <see cref="IconButton.Picture"/>: the options button's cog.
-    /// </summary>
-    Picture,
-    Minimize,
-    Maximize,
-    Restore,
-    Close,
-}
-
-/// <summary>
-/// A flat button with an icon, for the title bar: the options' cog and the window's own buttons.
-/// </summary>
-sealed class IconButton(TitleIcon icon) : Element
-{
-    public TitleIcon Icon { get; set; } = icon;
-
-    /// <summary>
-    /// The picture for <see cref="TitleIcon.Picture"/>, white for tinting with <see cref="IconColor"/>.
-    /// </summary>
-    public Image? Picture { get; init; }
-    public float2 FixedSize { get; set; } = new(46, 34);
-    public float4 IconColor { get; set; } = Theme.Text;
-    public float4 HoverBackground { get; set; } = Colors.Hex(0xFFFFFF, 0.1f);
-    public float4 PressedBackground { get; set; } = Colors.Hex(0xFFFFFF, 0.05f);
-
-    public override bool IsInteractive => true;
-    public override Cursor Cursor => Cursor.Arrow;
-
-    public override float2 Measure() => Size = FixedSize;
-
-    public override void Draw(Batch batch)
-    {
-        if (IsHovered || IsPressed)
-            batch.AddRect(ScreenPosition, Size, IsPressed && IsHovered ? PressedBackground : HoverBackground);
-
-        // A 10 pixel icon, on whole pixels so its lines stay crisp.
-        var x = MathF.Round(ScreenPosition.X + Size.X / 2 - 5);
-        var y = MathF.Round(ScreenPosition.Y + Size.Y / 2 - 5);
-        switch (Icon)
-        {
-            case TitleIcon.Picture when Picture is { } picture:
-                batch.AddImage(picture, ScreenPosition + (Size - new float2(picture.Size.X, picture.Size.Y)) / 2, IconColor);
-                break;
-            case TitleIcon.Minimize:
-                batch.AddRect(new float2(x, y + 5), new float2(10, 1), IconColor);
-                break;
-            case TitleIcon.Maximize:
-                batch.AddBorder(new float2(x, y), new float2(10, 10), 1, IconColor);
-                break;
-            case TitleIcon.Restore:
-                batch.AddBorder(new float2(x, y + 2), new float2(8, 8), 1, IconColor);
-                batch.AddRect(new float2(x + 2, y), new float2(8, 1), IconColor);
-                batch.AddRect(new float2(x + 9, y), new float2(1, 8), IconColor);
-                break;
-            case TitleIcon.Close:
-                for (var i = 0; i < 10; i++)
-                {
-                    batch.AddRect(new float2(x + i, y + i), new float2(1, 1), IconColor);
-                    batch.AddRect(new float2(x + 9 - i, y + i), new float2(1, 1), IconColor);
-                }
-                break;
-        }
-    }
-}
-
 /// <summary>
 /// Where each deck is in the bar, one deck to a row, stacked: its letter, then four boxes, one per beat, with the
 /// current one lit in the deck's colour. Dim while paused, and empty until the deck's song has a beat grid.
@@ -120,7 +52,7 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
         for (var row = 0; row < decks.Count; row++)
         {
             var deck = decks[row];
-            var color = Theme.DeckColor(deck.Name);
+            var color = AppTheme.DeckColor(deck.Name);
             var top = ScreenPosition.Y + row * (ROW + ROW_GAP);
 
             // The letter's capitals centred on the row, rather than its line box.
@@ -346,8 +278,8 @@ sealed class TitleBar : Panel
         _logo = _left.Add(new Picture(images.Logo));
         // The wordmark, in the two decks' colours as the logo is: "Cue" in A's blue, "point" in B's red, as one word.
         _wordmark = _left.Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
-        _wordmark.Add(new Label(bold, "Cue") { Color = Theme.DeckA });
-        _wordmark.Add(new Label(bold, "point") { Color = Theme.DeckB });
+        _wordmark.Add(new Label(bold, "Cue") { Color = AppTheme.DeckA });
+        _wordmark.Add(new Label(bold, "point") { Color = AppTheme.DeckB });
         _wordmarkFont = bold;
 
         // The decks' beat trackers, A over B, then a gap, then the master level and its name.
@@ -498,14 +430,4 @@ sealed class TitleBar : Panel
         batch.AddRect(ScreenPosition + new float2(0, HEIGHT - 1), new float2(Width, 1), Theme.PanelBorder);
         DrawChildren(batch);
     }
-}
-
-/// <summary>
-/// Empty space of a set width (or height, in a column), to push things apart in a row.
-/// </summary>
-sealed class Spacer(float length) : Element
-{
-    public override float2 Measure() => Size = new float2(length, length);
-
-    public override void Draw(Batch batch) { }
 }

@@ -113,7 +113,7 @@ sealed class MainScreen : Panel
         foreach (var deck in decks)
         {
             var editor = gridEditors?.Invoke(deck);
-            var waveform = Add(new ScrollingWaveform(deck, Theme.DeckColor(deck.Name), fonts.Small) { Editor = editor });
+            var waveform = Add(new ScrollingWaveform(deck, AppTheme.DeckColor(deck.Name), fonts.Small) { Editor = editor });
             _waveforms.Add(waveform);
             _gridEditors.Add(editor);
         }

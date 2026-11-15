@@ -11,32 +11,31 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Ahwoo.BRUTAL.Collections" Version="2026.10.2" />
-    <PackageReference Include="Ahwoo.BRUTAL.Core" Version="2026.10.4" />
-    <PackageReference Include="Ahwoo.BRUTAL.FreeType" Version="2026.10.2" />
-    <PackageReference Include="Ahwoo.BRUTAL.Glfw" Version="2026.10.5" />
     <PackageReference Include="Ahwoo.BRUTAL.Logging" Version="2026.10.3" />
-    <PackageReference Include="Ahwoo.BRUTAL.Memory" Version="2026.10.2" />
-    <PackageReference Include="Ahwoo.BRUTAL.Numerics" Version="2026.10.2" />
     <PackageReference Include="Ahwoo.BRUTAL.Sdl" Version="2026.10.3" />
     <PackageReference Include="Ahwoo.BRUTAL.Sdl.Mixer" Version="2026.10.3" />
-    <PackageReference Include="Ahwoo.BRUTAL.ShaderC" Version="2026.10.3" />
-    <PackageReference Include="Ahwoo.BRUTAL.Strings" Version="2026.10.2" />
-    <PackageReference Include="Ahwoo.BRUTAL.Vulkan.Abstractions" Version="2026.10.3" />
-    <PackageReference Include="Ahwoo.BRUTAL.Vulkan.Vma" Version="2026.10.3" />
     <PackageReference Include="NAudio.Wasapi" Version="3.2.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- GLSL is compiled to SPIR-V at startup, so the sources ship next to the executable. -->
-    <None Include="Shaders\**" CopyToOutputDirectory="PreserveNewest" />
     <!-- Images, by file name; Assets\draw_assets.py draws them. -->
     <EmbeddedResource Include="Assets\*.png" LogicalName="%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The window, rendering and UI code the Cue apps share (BRUTAL's GLFW, Vulkan, FreeType and the rest come with
+         it, and the UI's shaders). It's a sibling checkout: cue-framework beside this repository. -->
+    <ProjectReference Include="..\..\cue-framework\Cue.Framework\Cue.Framework.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- ByteSize, ElementCount, Ptr and friends. -->
     <Using Include="Brutal" />
+    <!-- The framework's, everywhere, as if its classes were the app's own. -->
+    <Using Include="Cue.Framework" />
+    <Using Include="Cue.Framework.Rendering" />
+    <Using Include="Cue.Framework.UI" />
+    <Using Include="Cue.Framework.Window" />
   </ItemGroup>
 
   <ItemGroup>

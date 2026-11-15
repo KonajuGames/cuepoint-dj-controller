@@ -57,7 +57,7 @@ sealed class MixerPanel : Panel
 
         foreach (var deck in decks)
         {
-            var color = Theme.DeckColor(deck.Name);
+            var color = AppTheme.DeckColor(deck.Name);
             var name = Add(new Label(bold, deck.Name) { Color = color });
 
             var eq = new Knob[EqNames.Length];
@@ -117,8 +117,8 @@ sealed class MixerPanel : Panel
             _channels.Add(new Channel(deck, name, eq, meter, fader, pfl));
         }
 
-        _crossLeft = Add(new Label(bold, decks.Count > 0 ? decks[0].Name : "") { Color = decks.Count > 0 ? Theme.DeckColor(decks[0].Name) : Theme.Muted });
-        _crossRight = Add(new Label(bold, decks.Count > 1 ? decks[^1].Name : "") { Color = decks.Count > 1 ? Theme.DeckColor(decks[^1].Name) : Theme.Muted });
+        _crossLeft = Add(new Label(bold, decks.Count > 0 ? decks[0].Name : "") { Color = decks.Count > 0 ? AppTheme.DeckColor(decks[0].Name) : Theme.Muted });
+        _crossRight = Add(new Label(bold, decks.Count > 1 ? decks[^1].Name : "") { Color = decks.Count > 1 ? AppTheme.DeckColor(decks[^1].Name) : Theme.Muted });
         _crossfader = Add(
             new Slider
             {
@@ -189,7 +189,7 @@ sealed class MixerPanel : Panel
                     channel.Eq[row].Value = GetEq(channel.Deck, row);
             }
 
-            var color = Theme.DeckColor(channel.Deck.Name);
+            var color = AppTheme.DeckColor(channel.Deck.Name);
             var cued = channel.Deck.Headphones;
             channel.Pfl.Background = cued ? Theme.Mix(Theme.PanelRaised, color, 0.6f) : Colors.Hex(0x2A2A35);
             channel.Pfl.HoverBackground = cued ? Theme.Mix(Theme.PanelRaised, color, 0.75f) : Colors.Hex(0x3A3A48);

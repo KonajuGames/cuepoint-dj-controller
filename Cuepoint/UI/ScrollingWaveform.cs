@@ -1,6 +1,5 @@
 using Brutal.Numerics;
 using Cuepoint.Audio;
-using Cuepoint.Input;
 using Cuepoint.Music;
 
 namespace Cuepoint.UI;
@@ -335,11 +334,11 @@ sealed class ScrollingWaveform : Element
         var end = MathF.Min(ScreenPosition.X + Size.X, X(loop.End));
         if (end <= start)
             return;
-        batch.AddRect(new float2(start, ScreenPosition.Y), new float2(end - start, Size.Y), Theme.Fade(Theme.Loop, 0.22f));
+        batch.AddRect(new float2(start, ScreenPosition.Y), new float2(end - start, Size.Y), Theme.Fade(AppTheme.Loop, 0.22f));
         if (X(loop.Start) >= ScreenPosition.X)
-            batch.AddRect(new float2(X(loop.Start), ScreenPosition.Y), new float2(2, Size.Y), Theme.Loop);
+            batch.AddRect(new float2(X(loop.Start), ScreenPosition.Y), new float2(2, Size.Y), AppTheme.Loop);
         if (X(loop.End) < ScreenPosition.X + Size.X)
-            batch.AddRect(new float2(X(loop.End) - 2, ScreenPosition.Y), new float2(2, Size.Y), Theme.Loop);
+            batch.AddRect(new float2(X(loop.End) - 2, ScreenPosition.Y), new float2(2, Size.Y), AppTheme.Loop);
     }
 
     void DrawHotcues(Batch batch, double position, float centre)
@@ -352,7 +351,7 @@ sealed class ScrollingWaveform : Element
             if (x < ScreenPosition.X - 20 || x >= ScreenPosition.X + Size.X)
                 continue;
 
-            var color = Theme.HotcueColor(i);
+            var color = AppTheme.HotcueColor(i);
             batch.PushClip(ScreenPosition, Size);
             batch.AddRect(new float2(x, ScreenPosition.Y), new float2(2, Size.Y), color);
             WaveformBar.DrawFlag(batch, _font, new float2(x, ScreenPosition.Y), (i + 1).ToString(), color, Theme.TitleBar);

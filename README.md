@@ -142,6 +142,8 @@ You'll need:
 - Windows 10 or later
 - the .NET 10 SDK
 - a graphics card with Vulkan support
+- [cue-framework](https://github.com/KonajuGames/cue-framework) checked out beside this repository (as
+  `..\cue-framework`): the window, rendering and UI code Cuepoint shares with Cuedeck
 
 ```
 dotnet run --project Cuepoint -c Release

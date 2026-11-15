@@ -1,5 +1,4 @@
 using Brutal.Numerics;
-using Cuepoint.Input;
 using Cuepoint.Midi;
 
 namespace Cuepoint.UI;

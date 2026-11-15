@@ -4,12 +4,10 @@ using Brutal.VulkanApi;
 using Cuepoint;
 using Cuepoint.Audio;
 using Cuepoint.Audio.Analysis;
-using Cuepoint.Input;
 using Cuepoint.Midi;
 using Cuepoint.Music;
 using Cuepoint.Music.Imports;
 using Cuepoint.Os2l;
-using Cuepoint.Rendering;
 using Cuepoint.UI;
 
 WindowsShell.AttachParentConsole();

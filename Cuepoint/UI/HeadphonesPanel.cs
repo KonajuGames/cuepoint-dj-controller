@@ -1,6 +1,5 @@
 using Brutal.Numerics;
 using Cuepoint.Audio;
-using Cuepoint.Input;
 
 namespace Cuepoint.UI;
 
