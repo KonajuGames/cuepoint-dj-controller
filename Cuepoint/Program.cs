@@ -589,8 +589,8 @@ static void Run()
                 : $"Saved {time} of the mix in {saved}"
         );
     }
-    screen.TitleBar.Recording = () => recorder?.Duration;
-    screen.TitleBar.RecordClicked += () =>
+    screen.TitleItems.Recording = () => recorder?.Duration;
+    screen.TitleItems.RecordClicked += () =>
     {
         if (recorder is null)
             StartRecording();
@@ -628,7 +628,7 @@ static void Run()
         screen.Log($"Couldn't find {settings.OutputDevice} for the main output, so it's on the system default until it's plugged in");
     if (!headphonesFound)
         screen.Log($"Couldn't find {settings.HeadphoneDevice} for the headphones; they'll go on it when it's plugged in");
-    screen.TitleBar.AudioWarning = () => audio.Missing;
+    screen.TitleItems.AudioWarning = () => audio.Missing;
     if (OperatingSystem.IsWindows())
         WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
 
@@ -891,7 +891,7 @@ static void Run()
 
     screen.Options.LightingEnabled = () => lighting.Enabled;
     screen.Options.LightingStatus = () => lighting.Status;
-    screen.TitleBar.Os2lConnected = () => lighting.Enabled ? lighting.IsConnected : null;
+    screen.TitleItems.Os2lConnected = () => lighting.Enabled ? lighting.IsConnected : null;
     screen.Options.LightingAddress.Text = settings.Os2lAddress ?? "";
     screen.Options.LightingToggled += () =>
     {
@@ -912,8 +912,8 @@ static void Run()
 
     // The headphones' settings drop down from their button on the title bar, which is lit while a deck's cued.
     var headphones = new HeadphonesPanel(audio, fonts.Small, fonts.Body, fonts.Bold, images);
-    screen.TitleBar.HeadphonesClicked += () => headphones.Toggle(screen.TitleBar.HeadphonesAnchor);
-    screen.TitleBar.Cueing = () => decks.Any(deck => deck.Headphones);
+    screen.TitleItems.HeadphonesClicked += () => headphones.Toggle(screen.TitleItems.HeadphonesAnchor);
+    screen.TitleItems.Cueing = () => decks.Any(deck => deck.Headphones);
     browser.ColumnMenuRequested += at => menu.Show(at, browser.ColumnMenu());
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);

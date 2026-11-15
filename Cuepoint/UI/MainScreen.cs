@@ -44,6 +44,11 @@ sealed class MainScreen : Panel
     public float2 ScreenSize { get; set; } = new(1280, 720);
 
     public TitleBar TitleBar { get; }
+
+    /// <summary>
+    /// Cuepoint's own widgets in the title bar: the decks' beats, the master level, recording, OS2L and headphones.
+    /// </summary>
+    public TitleBarItems TitleItems { get; }
     public TreeView<LibraryNode> FolderTree { get; }
     public SongBrowser Browser { get; }
 
@@ -108,7 +113,9 @@ sealed class MainScreen : Panel
         _fonts = fonts;
         _images = images;
 
-        TitleBar = Add(new TitleBar(engine, decks, fonts.Small, fonts.Body, fonts.Bold, images));
+        // The wordmark in the two decks' colours, as the logo is: "Cue" in A's blue, "point" in B's red.
+        TitleBar = Add(new TitleBar(fonts.Body, fonts.Bold, images.Logo, images.Cog, ("Cue", AppTheme.DeckA), ("point", AppTheme.DeckB)));
+        TitleItems = new TitleBarItems(TitleBar, engine, decks, fonts.Small, fonts.Body, fonts.Bold, images);
 
         foreach (var deck in decks)
         {
@@ -219,6 +226,7 @@ sealed class MainScreen : Panel
         SlideAutoMix();
         AutoMix.Update();
         TitleBar.Update();
+        TitleItems.Update();
         foreach (var deck in _decks)
             deck.Refresh();
         _mixer.Refresh();

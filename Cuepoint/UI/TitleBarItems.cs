@@ -167,21 +167,14 @@ sealed class RecordButton(Font font) : Element
 }
 
 /// <summary>
-/// The window's own title bar: the app's name, each deck's place in the bar stacked beside the master level, whether
-/// lighting software is connected, the CPU and the time, the options button and the window's buttons. Its empty space is where the window can be
-/// dragged from (see <see cref="IsCaption"/>). Call <see cref="Update"/> once a frame.
+/// Cuepoint's widgets in the window's title bar (the framework's <see cref="TitleBar"/>): each deck's place in the bar
+/// stacked beside the master level and the limiter's light in the middle; a missing sound card, the record button,
+/// whether lighting software is connected and the CPU before the clock; and the headphones button. Call
+/// <see cref="Update"/> once a frame, with the bar's.
 /// </summary>
-sealed class TitleBar : Panel
+sealed class TitleBarItems
 {
-    public const float HEIGHT = 34;
-
     readonly AudioEngine _engine;
-    readonly Panel _left;
-    readonly Picture _logo;
-    readonly Panel _wordmark;
-    readonly Font _wordmarkFont;
-    readonly Panel _centre;
-    readonly Panel _right;
     readonly LevelMeter _master;
     readonly Label _masterLabel;
     readonly Label _limit;
@@ -197,11 +190,9 @@ sealed class TitleBar : Panel
     /// </summary>
     const double LIMIT_LIGHT_HOLD = 0.5;
 
-    // The master meter's length, and the least it's shortened to on a crowded title bar; and the least gap between
-    // the middle and either side.
+    // The master meter's length, and the least it's shortened to on a crowded title bar.
     const float MASTER_LENGTH = 160;
     const float MIN_MASTER_LENGTH = 60;
-    const float GAP = 16;
 
     double _limitedAt = double.NegativeInfinity;
     readonly Os2lIndicator _os2l;
@@ -210,19 +201,10 @@ sealed class TitleBar : Panel
     readonly Spacer _audioWarningGap;
     readonly Spacer _os2lGap;
     readonly Label _cpu;
-    readonly Label _clock;
-    readonly IconButton _maximize;
     readonly IconButton _headphones;
     readonly Process _process = Process.GetCurrentProcess();
     readonly Stopwatch _sinceCpu = Stopwatch.StartNew();
     TimeSpan _cpuBefore;
-
-    public float Width { get; set; } = 1280;
-
-    /// <summary>
-    /// Whether the window is maximised, which the middle button shows and toggles.
-    /// </summary>
-    public Func<bool> IsMaximized { get; set; } = () => false;
 
     /// <summary>
     /// Whether lighting software is connected by OS2L; null while OS2L is off, which hides its indicator.
@@ -244,8 +226,6 @@ sealed class TitleBar : Panel
     /// </summary>
     public Func<string?> AudioWarning { get; set; } = () => null;
 
-    public event Action? OptionsClicked;
-
     /// <summary>
     /// The headphones button was clicked, to show or put away their settings below it.
     /// </summary>
@@ -262,76 +242,60 @@ sealed class TitleBar : Panel
     public float2 HeadphonesAnchor => _headphones.ScreenPosition + _headphones.Size;
 
     /// <summary>
-    /// The beat trackers and master level in the middle, and the buttons on the right, for tests.
+    /// Puts Cuepoint's widgets into <paramref name="bar"/>.
     /// </summary>
-    internal (Element Centre, Element Right) Sections => (_centre, _right);
-    public event Action? MinimizeClicked;
-    public event Action? MaximizeClicked;
-    public event Action? CloseClicked;
-
-    public TitleBar(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold, Images images)
+    public TitleBarItems(TitleBar bar, AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold, Images images)
     {
         _engine = engine;
-        Background = Theme.Panel;
-
-        _left = Add(new Panel { Direction = Direction.Horizontal, Spacing = 10 });
-        _logo = _left.Add(new Picture(images.Logo));
-        // The wordmark, in the two decks' colours as the logo is: "Cue" in A's blue, "point" in B's red, as one word.
-        _wordmark = _left.Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
-        _wordmark.Add(new Label(bold, "Cue") { Color = AppTheme.DeckA });
-        _wordmark.Add(new Label(bold, "point") { Color = AppTheme.DeckB });
-        _wordmarkFont = bold;
 
         // The decks' beat trackers, A over B, then a gap, then the master level and its name.
-        _centre = Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
-        _centre.Add(new BeatTrackers(decks, small));
-        _centre.Add(new Spacer(20));
-        _masterLabel = _centre.Add(new Label(small, "MASTER") { Color = Theme.Muted });
-        _master = _centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = MASTER_LENGTH, BarThickness = 4, BarGap = 2, Segments = 32 });
+        bar.Centre.Add(new BeatTrackers(decks, small));
+        bar.Centre.Add(new Spacer(20));
+        _masterLabel = bar.Centre.Add(new Label(small, "MASTER") { Color = Theme.Muted });
+        _master = bar.Centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = MASTER_LENGTH, BarThickness = 4, BarGap = 2, Segments = 32 });
         // Lit while the master limiter is turning the mix down: a sign the decks are too loud together.
-        _limit = _centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
+        _limit = bar.Centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
 
-        _right = Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
-        _audioWarning = _right.Add(new Label(bold) { Color = Theme.Warning, Visible = false });
-        _audioWarningGap = _right.Add(new Spacer(16) { Visible = false });
-        _record = _right.Add(new RecordButton(body));
+        _audioWarning = bar.Status.Add(new Label(bold) { Color = Theme.Warning, Visible = false });
+        _audioWarningGap = bar.Status.Add(new Spacer(16) { Visible = false });
+        _record = bar.Status.Add(new RecordButton(body));
         _record.Clicked += _ => RecordClicked?.Invoke();
-        _right.Add(new Spacer(12));
-        _os2l = _right.Add(new Os2lIndicator(bold) { Visible = false });
-        _os2lGap = _right.Add(new Spacer(16) { Visible = false });
-        _cpu = _right.Add(new Label(body) { Color = Theme.Muted });
-        _right.Add(new Spacer(16));
-        _clock = _right.Add(new Label(body) { Color = Theme.Text });
-        _right.Add(new Spacer(12));
-        _headphones = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Headphones, Tooltip = "Headphones: what they hear, and how loud" });
+        bar.Status.Add(new Spacer(12));
+        _os2l = bar.Status.Add(new Os2lIndicator(bold) { Visible = false });
+        _os2lGap = bar.Status.Add(new Spacer(16) { Visible = false });
+        _cpu = bar.Status.Add(new Label(body) { Color = Theme.Muted });
+
+        _headphones = bar.Tools.Add(new IconButton(TitleIcon.Picture) { Picture = images.Headphones, Tooltip = "Headphones: what they hear, and how loud" });
         _headphones.Clicked += _ => HeadphonesClicked?.Invoke();
-        var options = _right.Add(new IconButton(TitleIcon.Picture) { Picture = images.Cog, Tooltip = "Options" });
-        options.Clicked += _ => OptionsClicked?.Invoke();
-        _right.Add(new Spacer(8));
-        var minimize = _right.Add(new IconButton(TitleIcon.Minimize) { Tooltip = "Minimise" });
-        minimize.Clicked += _ => MinimizeClicked?.Invoke();
-        _maximize = _right.Add(new IconButton(TitleIcon.Maximize));
-        _maximize.Clicked += _ => MaximizeClicked?.Invoke();
-        var close = _right.Add(
-            new IconButton(TitleIcon.Close) { HoverBackground = Colors.Hex(0xE81123), PressedBackground = Colors.Hex(0xF1707A), Tooltip = "Close Cuepoint" }
-        );
-        close.Clicked += _ => CloseClicked?.Invoke();
+
+        // The master meter at its full length, or shorter if that's what it takes for the middle to fit between the
+        // sides once it's moved left, down to a short one.
+        bar.FitCentre = room =>
+        {
+            (_master.Length, _master.Segments) = (MASTER_LENGTH, 32);
+            bar.Centre.Measure();
+            if (bar.Centre.Size.X > room)
+            {
+                _master.Length = MathF.Max(MIN_MASTER_LENGTH, MASTER_LENGTH - (bar.Centre.Size.X - room));
+                // Segments as wide as at full length.
+                _master.Segments = (int)MathF.Round(_master.Length / MASTER_LENGTH * 32);
+            }
+        };
+        // "MASTER" and "LIMIT" centred by their capitals on the meter beside them.
+        bar.Arranged += () =>
+        {
+            var middle = _master.ScreenPosition.Y + _master.Size.Y / 2;
+            TitleBar.CentreCapitals(_masterLabel, middle);
+            TitleBar.CentreCapitals(_limit, middle);
+        };
 
         _cpuBefore = _process.TotalProcessorTime;
         _cpu.Text = "CPU –";
         Update();
     }
 
-    /// <summary>
-    /// Whether the window can be dragged from <paramref name="point"/>: inside the bar, but not on a button.
-    /// </summary>
-    public bool IsCaption(float2 point) => Contains(point) && HitTest(point) is null;
-
     public void Update()
     {
-        _clock.Text = DateTime.Now.ToString("HH:mm:ss");
-        _maximize.Icon = IsMaximized() ? TitleIcon.Restore : TitleIcon.Maximize;
-        _maximize.Tooltip = IsMaximized() ? "Restore" : "Maximise";
         _record.Recording = Recording();
         _headphones.IconColor = Cueing() ? Theme.Accent : Theme.Text;
         var warning = AudioWarning();
@@ -359,75 +323,5 @@ sealed class TitleBar : Panel
             _cpuBefore = _process.TotalProcessorTime;
             _sinceCpu.Restart();
         }
-    }
-
-    public override float2 Measure()
-    {
-        // The master meter at its full length, or shorter if that's what it takes for the middle to fit between the
-        // sides once it's moved left (see Arrange), down to a short one.
-        (_master.Length, _master.Segments) = (MASTER_LENGTH, 32);
-        MeasureChildren();
-        var room = Width - (10 + _left.Size.X + GAP) - (_right.Size.X + GAP);
-        if (_centre.Size.X > room)
-        {
-            _master.Length = MathF.Max(MIN_MASTER_LENGTH, MASTER_LENGTH - (_centre.Size.X - room));
-            // Segments as wide as at full length.
-            _master.Segments = (int)MathF.Round(_master.Length / MASTER_LENGTH * 32);
-            _centre.Measure();
-        }
-        return Size = new float2(Width, HEIGHT);
-    }
-
-    public override void Arrange(float2 position)
-    {
-        ArrangeSelf(position);
-        float Middle(Element child) => MathF.Round(position.Y + (HEIGHT - child.Size.Y) / 2);
-        _left.Arrange(new float2(position.X + 10, Middle(_left)));
-        // The beat trackers and master level in the middle, or moved left as far as they need to be to keep clear of
-        // the buttons on the right, which always show.
-        var centreMin = position.X + 10 + _left.Size.X + GAP;
-        var centreMax = position.X + Width - _right.Size.X - GAP - _centre.Size.X;
-        var centreX = Math.Clamp(position.X + (Width - _centre.Size.X) / 2, centreMin, MathF.Max(centreMin, centreMax));
-        _centre.Arrange(new float2(MathF.Round(centreX), Middle(_centre)));
-        _right.Arrange(new float2(position.X + Width - _right.Size.X, Middle(_right)));
-        AlignMiddle(_left);
-        AlignMiddle(_centre);
-        AlignMiddle(_right);
-
-        // "MASTER" and the wordmark centred by their capitals rather than their line boxes, which have room for
-        // descenders below, so they line up with the meter and the logo beside them.
-        CentreCapitals(_masterLabel, _master.ScreenPosition.Y + _master.Size.Y / 2);
-        CentreCapitals(_limit, _master.ScreenPosition.Y + _master.Size.Y / 2);
-        var logoMiddle = _logo.ScreenPosition.Y + _logo.Size.Y / 2;
-        _wordmark.Arrange(
-            new float2(_wordmark.ScreenPosition.X, MathF.Round(logoMiddle + BeatTrackers.CapHeight(_wordmarkFont) / 2 - _wordmarkFont.Ascender))
-        );
-
-        // The CPU and the time likewise, so they line up with the OS2L indicator's text.
-        var rightMiddle = _right.ScreenPosition.Y + _right.Size.Y / 2;
-        CentreCapitals(_cpu, rightMiddle);
-        CentreCapitals(_clock, rightMiddle);
-    }
-
-    /// <summary>
-    /// Puts <paramref name="label"/>'s capitals, rather than its line box, centred on <paramref name="middle"/>.
-    /// </summary>
-    static void CentreCapitals(Label label, float middle) =>
-        label.Arrange(new float2(label.ScreenPosition.X, MathF.Round(middle + BeatTrackers.CapHeight(label.Font) / 2 - label.Font.Ascender)));
-
-    /// <summary>
-    /// Centres a row's children on its middle, since a row lines them up along the top.
-    /// </summary>
-    static void AlignMiddle(Panel row)
-    {
-        foreach (var child in row.Children)
-            child.Arrange(new float2(child.ScreenPosition.X, MathF.Round(row.ScreenPosition.Y + (row.Size.Y - child.Size.Y) / 2)));
-    }
-
-    public override void Draw(Batch batch)
-    {
-        DrawFrame(batch);
-        batch.AddRect(ScreenPosition + new float2(0, HEIGHT - 1), new float2(Width, 1), Theme.PanelBorder);
-        DrawChildren(batch);
     }
 }
