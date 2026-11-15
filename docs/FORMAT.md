@@ -1,6 +1,6 @@
 # Cuepoint file formats
 
-This document describes the files Cuepoint keeps about a music library: the **library files** (`library.json`), which hold each song's analysis, hotcues, memory cues and hand-fixed beat grid, and the **virtual folders** (`.m3u8` playlists). It's written for implementing a reader. Every rule here is taken from the code that writes the files: `Brutality/Music/LibraryFile.cs`, `LibraryDatabase.cs` and `VirtualFolders.cs`.
+This document describes the files Cuepoint keeps about a music library: the **library files** (`library.json`), which hold each song's analysis, hotcues, memory cues and hand-fixed beat grid, and the **virtual folders** (`.m3u8` playlists). It's written for implementing a reader. Every rule here is taken from the code that writes the files: `Cuepoint/Music/LibraryFile.cs`, `LibraryDatabase.cs` and `VirtualFolders.cs`.
 
 All files are UTF-8 without a byte order mark. Paths use Windows separators (`\`).
 

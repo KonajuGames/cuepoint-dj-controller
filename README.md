@@ -144,18 +144,18 @@ You'll need:
 - a graphics card with Vulkan support
 
 ```
-dotnet run --project Brutality -c Release
+dotnet run --project Cuepoint -c Release
 ```
 
 The music library starts out as your Windows Music folder. To use another folder, right-click it in the folder list and choose **Use as music library**.
 
 Settings, the library's analyses, and `errors.log` for anything that went wrong are kept in `%LOCALAPPDATA%\Cuepoint`.
 
-The app's images are drawn by [Assets/draw_assets.py](Brutality/Assets/draw_assets.py), which needs only Python 3. Run it again after changing them.
+The app's images are drawn by [Assets/draw_assets.py](Cuepoint/Assets/draw_assets.py), which needs only Python 3. Run it again after changing them.
 
 ## Tests
 
-The tests in [Brutality.Tests](Brutality.Tests) cover what can go wrong without a sound card or a window:
+The tests in [Cuepoint.Tests](Cuepoint.Tests) cover what can go wrong without a sound card or a window:
 
 - **Audio:** the master limiter, mix recording, automatic gain, the headphone mix, and what to do as sound cards come and go
 - **Analysis:** beat grids, fixing them by hand, keys, quantise and beat jumps

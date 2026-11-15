@@ -1,0 +1,292 @@
+using Cuepoint.Music;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Cuepoint.Midi;
+
+/// <summary>
+/// How a control reads what it's sent.
+/// </summary>
+enum ControlKind
+{
+    /// <summary>A button: acts on the press, and some (cue) on the release too.</summary>
+    Button,
+
+    /// <summary>A fader, from one end to the other.</summary>
+    Fader,
+
+    /// <summary>A knob with a centre detent, such as an EQ: the middle is "unchanged".</summary>
+    Knob,
+
+    /// <summary>A jog wheel or endless encoder: each message is a step one way or the other.</summary>
+    Encoder,
+}
+
+/// <summary>
+/// Something a controller can work: an ID for mapping files ("A.play", "crossfader"), a name for people, and
+/// whether it has a light to keep in step.
+/// </summary>
+sealed record ControlInfo(string Id, string Name, ControlKind Kind, bool HasLight = false);
+
+static class ControlCatalog
+{
+    public const int HOTCUES = 8;
+
+    /// <summary>
+    /// Every control, for decks with these names.
+    /// </summary>
+    public static IReadOnlyList<ControlInfo> For(IEnumerable<string> deckNames)
+    {
+        var controls = new List<ControlInfo>();
+        foreach (var deck in deckNames)
+        {
+            controls.AddRange(
+                [
+                    new($"{deck}.play", $"Deck {deck} play", ControlKind.Button, HasLight: true),
+                    new($"{deck}.cue", $"Deck {deck} cue", ControlKind.Button, HasLight: true),
+                    new($"{deck}.sync", $"Deck {deck} sync", ControlKind.Button, HasLight: true),
+                    new($"{deck}.load", $"Load deck {deck}", ControlKind.Button),
+                    new($"{deck}.pfl", $"Deck {deck} headphones", ControlKind.Button, HasLight: true),
+                    new($"{deck}.keylock", $"Deck {deck} key lock", ControlKind.Button, HasLight: true),
+                    new($"{deck}.slip", $"Deck {deck} slip (scratches, held hotcues and loops drop back in where the song would be)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.key.down", $"Deck {deck} key shift down a semitone", ControlKind.Button),
+                    new($"{deck}.key.up", $"Deck {deck} key shift up a semitone", ControlKind.Button),
+                    new($"{deck}.key.reset", $"Deck {deck} key shift back to the song's key", ControlKind.Button),
+                    new($"{deck}.key.match", $"Deck {deck} key match (to mix with the other deck's key)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.memory.set", $"Deck {deck} add or remove a memory cue here", ControlKind.Button, HasLight: true),
+                    new($"{deck}.memory.prev", $"Deck {deck} previous memory cue", ControlKind.Button),
+                    new($"{deck}.memory.next", $"Deck {deck} next memory cue", ControlKind.Button),
+                    new($"{deck}.fx.on", $"Deck {deck} effect on or off", ControlKind.Button, HasLight: true),
+                    new($"{deck}.fx.next", $"Deck {deck} next effect (echo, reverb, flanger)", ControlKind.Button),
+                    new($"{deck}.fx.shorter", $"Deck {deck} effect fewer beats", ControlKind.Button),
+                    new($"{deck}.fx.longer", $"Deck {deck} effect more beats", ControlKind.Button),
+                    new($"{deck}.fx.level", $"Deck {deck} effect level", ControlKind.Knob),
+                    new($"{deck}.loop", $"Deck {deck} loop", ControlKind.Button, HasLight: true),
+                    new($"{deck}.loop.halve", $"Deck {deck} halve loop", ControlKind.Button),
+                    new($"{deck}.loop.double", $"Deck {deck} double loop", ControlKind.Button),
+                    new($"{deck}.loop.exit", $"Deck {deck} leave loop", ControlKind.Button),
+                    new($"{deck}.loop.in", $"Deck {deck} loop in (mark where a loop starts)", ControlKind.Button),
+                    new($"{deck}.loop.out", $"Deck {deck} loop out (loop from loop in to here)", ControlKind.Button),
+                    new($"{deck}.reloop", $"Deck {deck} reloop (back to the loop's start, or the last loop again)", ControlKind.Button),
+                    new($"{deck}.loop.beats1", $"Deck {deck} 1-beat loop", ControlKind.Button),
+                    new($"{deck}.loop.beats2", $"Deck {deck} 2-beat loop", ControlKind.Button),
+                    new($"{deck}.loop.beats4", $"Deck {deck} 4-beat loop", ControlKind.Button),
+                    new($"{deck}.loop.beats8", $"Deck {deck} 8-beat loop", ControlKind.Button),
+                    new($"{deck}.fxfade", $"Deck {deck} FX FADE pad (the controller plays the effect by working other controls)", ControlKind.Button),
+                    new($"{deck}.backspin.short", $"Deck {deck} short backspin", ControlKind.Button),
+                    new($"{deck}.backspin.long", $"Deck {deck} long backspin", ControlKind.Button),
+                    new($"{deck}.grid", $"Deck {deck} grid mode (pads fix the beat grid)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.roll", $"Deck {deck} roll mode (pads roll loops)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.hotcues", $"Deck {deck} hotcue mode (pads back to hotcues)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.jump", $"Deck {deck} beat jump mode (pads jump by beats)", ControlKind.Button, HasLight: true),
+                ]
+            );
+            for (var i = 1; i <= HOTCUES; i++)
+                controls.Add(new($"{deck}.roll{i}", $"Deck {deck} loop roll {RollPads.Label(i - 1)}", ControlKind.Button, HasLight: true));
+            for (var i = 1; i <= JumpPads.Sizes.Count; i++)
+                controls.Add(
+                    new(
+                        $"{deck}.jump{i}",
+                        $"Deck {deck} beat jump {JumpPads.Label(i - 1)} {(JumpPads.Direction(i - 1) < 0 ? "back" : "on")}",
+                        ControlKind.Button,
+                        HasLight: true
+                    )
+                );
+            for (var i = 1; i <= HOTCUES; i++)
+                controls.Add(new($"{deck}.hotcue{i}", $"Deck {deck} hotcue {i}", ControlKind.Button, HasLight: true));
+            for (var i = 1; i <= HOTCUES; i++)
+                controls.Add(new($"{deck}.hotcue{i}.delete", $"Deck {deck} delete hotcue {i}", ControlKind.Button, HasLight: true));
+            controls.AddRange(
+                [
+                    new($"{deck}.tempo", $"Deck {deck} tempo", ControlKind.Fader),
+                    new($"{deck}.tempo.reset", $"Deck {deck} reset tempo", ControlKind.Button),
+                    new($"{deck}.volume", $"Deck {deck} volume", ControlKind.Fader),
+                    new($"{deck}.trim", $"Deck {deck} trim", ControlKind.Knob),
+                    new($"{deck}.eq.high", $"Deck {deck} high", ControlKind.Knob),
+                    new($"{deck}.eq.mid", $"Deck {deck} mid", ControlKind.Knob),
+                    new($"{deck}.eq.low", $"Deck {deck} low", ControlKind.Knob),
+                    new($"{deck}.filter", $"Deck {deck} filter", ControlKind.Knob),
+                    new($"{deck}.jog", $"Deck {deck} jog wheel", ControlKind.Encoder),
+                    new($"{deck}.jog.touch", $"Deck {deck} jog wheel touched (holds the record to scratch)", ControlKind.Button),
+                    new($"{deck}.scratch", $"Deck {deck} scratch (the touched jog wheel moving the record)", ControlKind.Encoder),
+                    new($"{deck}.search", $"Deck {deck} fast search", ControlKind.Encoder),
+                ]
+            );
+        }
+        controls.AddRange(
+            [
+                new("crossfader", "Crossfader", ControlKind.Fader),
+                new("browse", "Browse songs", ControlKind.Encoder),
+                new("browse.folders", "Browse folders", ControlKind.Encoder),
+                new("browse.press", "Open or close folder", ControlKind.Button),
+            ]
+        );
+        return controls;
+    }
+}
+
+/// <summary>
+/// How a relative control counts its steps.
+/// </summary>
+enum StepEncoding
+{
+    /// <summary>64 is still; 65 is one step forward, 63 one back.</summary>
+    Offset64,
+
+    /// <summary>1 is one step forward, 127 one back (seven-bit two's complement).</summary>
+    TwosComplement,
+}
+
+/// <summary>
+/// One message bound to one control. A fader or knob sent at fourteen-bit resolution has its fine part on a second
+/// control number, <see cref="Fine"/> (by convention 32 above the coarse one).
+/// </summary>
+sealed record MidiBinding
+{
+    public required string Control { get; init; }
+    public MidiKind Kind { get; init; }
+
+    /// <summary>
+    /// From 0 to 15.
+    /// </summary>
+    public int Channel { get; init; }
+
+    public int Number { get; init; }
+    public int? Fine { get; init; }
+
+    /// <summary>
+    /// Whether the control's low end is this control's high end, as tempo faders often are.
+    /// </summary>
+    public bool Invert { get; init; }
+
+    public StepEncoding Steps { get; init; }
+
+    public bool Matches(MidiMessage message) =>
+        message.Kind == Kind && message.Channel == Channel && (message.Number == Number || (Kind == MidiKind.ControlChange && message.Number == Fine));
+
+    public override string ToString() =>
+        Kind == MidiKind.Note ? $"Note {Number}, ch {Channel + 1}" : $"CC {Number}{(Fine is { } fine ? $"/{fine}" : "")}, ch {Channel + 1}";
+}
+
+/// <summary>
+/// A controller's bindings, kept per device by name, with which controls were changed by hand. A device with a
+/// built-in preset gets the preset with its own changes laid over it (see <see cref="Over"/>), so controls added to
+/// the preset later still reach a controller whose mapping was changed before.
+/// </summary>
+sealed class ControllerMapping
+{
+    static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    public string Device { get; set; } = "";
+    public List<MidiBinding> Bindings { get; set; } = [];
+
+    /// <summary>
+    /// The controls bound or unbound by hand, or that lost their binding to one bound by hand: those a preset's own
+    /// bindings mustn't come back for. Null in a mapping saved before it was kept (see <see cref="Over"/>).
+    /// </summary>
+    public List<string>? Changed { get; set; }
+
+    public ControllerMapping Copy() => new() { Device = Device, Bindings = [.. Bindings], Changed = Changed is null ? null : [.. Changed] };
+
+    /// <summary>
+    /// Binds <paramref name="binding"/>'s control to its message alone: whatever else the control had, and whatever
+    /// else had the message, goes.
+    /// </summary>
+    public void Bind(MidiBinding binding)
+    {
+        var displaced = Bindings.Where(other =>
+            other.Control == binding.Control
+            || (other.Kind == binding.Kind && other.Channel == binding.Channel && (other.Number == binding.Number || other.Fine == binding.Number))
+        ).ToList();
+        Bindings.RemoveAll(displaced.Contains);
+        Bindings.Add(binding);
+        MarkChanged([binding.Control, .. displaced.Select(other => other.Control)]);
+    }
+
+    public void Unbind(string control)
+    {
+        Bindings.RemoveAll(binding => binding.Control == control);
+        MarkChanged([control]);
+    }
+
+    void MarkChanged(IEnumerable<string> controls)
+    {
+        Changed ??= [];
+        foreach (var control in controls)
+        {
+            if (!Changed.Contains(control))
+                Changed.Add(control);
+        }
+    }
+
+    /// <summary>
+    /// <paramref name="preset"/> with <paramref name="saved"/>'s own bindings in place of its: each control
+    /// <paramref name="saved"/> binds, or that was changed by hand, as <paramref name="saved"/> has it, and the rest
+    /// as the preset has them, unless their message is taken. A mapping saved before the changes were kept counts the
+    /// controls it binds as changed (a control unbound by hand back then comes back from the preset). The other
+    /// controls' preset bindings come first, then the saved ones.
+    /// </summary>
+    public static ControllerMapping Over(ControllerMapping preset, ControllerMapping saved)
+    {
+        var changed = saved.Changed ?? saved.Bindings.Select(binding => binding.Control).Distinct().ToList();
+        bool Taken(MidiBinding binding) =>
+            saved.Bindings.Any(other =>
+                other.Kind == binding.Kind
+                && other.Channel == binding.Channel
+                && (other.Number == binding.Number || other.Fine == binding.Number || (binding.Fine is { } fine && (other.Number == fine || other.Fine == fine)))
+            );
+        var fromPreset = preset.Bindings
+            .Where(binding => !changed.Contains(binding.Control) && saved.Bindings.All(other => other.Control != binding.Control) && !Taken(binding))
+            .ToList();
+        return new ControllerMapping { Device = saved.Device, Bindings = [.. fromPreset, .. saved.Bindings], Changed = [.. changed] };
+    }
+
+    public static ControllerMapping? Load(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? JsonSerializer.Deserialize<ControllerMapping>(File.ReadAllText(path), JsonOptions) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Writes the mapping to a temporary file then swaps it in. Returns why it couldn't, if it couldn't.
+    /// </summary>
+    public string? Save(string path)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var temporary = path + ".tmp";
+            File.WriteAllText(temporary, JsonSerializer.Serialize(this, JsonOptions));
+            File.Move(temporary, path, overwrite: true);
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return e.Message;
+        }
+    }
+
+    /// <summary>
+    /// Where a device's own mapping is kept in <paramref name="folder"/>: its name, with anything a file name can't
+    /// hold replaced.
+    /// </summary>
+    public static string PathFor(string folder, string device)
+    {
+        var safe = string.Concat(device.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
+        return Path.Combine(folder, (safe == "" ? "controller" : safe) + ".json");
+    }
+}

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Cuepoint/Cuepoint.csproj" />
+  <Project Path="Cuepoint.Tests/Cuepoint.Tests.csproj" />
+</Solution>
