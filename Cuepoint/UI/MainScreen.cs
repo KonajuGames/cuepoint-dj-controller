@@ -8,7 +8,9 @@ namespace Cuepoint.UI;
 /// The fonts the screen is drawn in.
 /// </summary>
 /// <param name="Large">The folder list's and song list's text when it's made large, to read from further away.</param>
-sealed record Fonts(Font Small, Font Body, Font Bold, Font Heading, Font Big, Font Large);
+/// <param name="SmallBold">The deck letters on the scrolling waveforms.</param>
+/// <param name="Badge">The deck letters in their coloured squares: as heavy as the system has.</param>
+sealed record Fonts(Font Small, Font Body, Font Bold, Font Heading, Font Big, Font Large, Font SmallBold, Font Badge);
 
 /// <summary>
 /// The whole window: the title bar across the top; each deck's waveform scrolling past beneath it; the decks either
@@ -120,7 +122,7 @@ sealed class MainScreen : Panel
         foreach (var deck in decks)
         {
             var editor = gridEditors?.Invoke(deck);
-            var waveform = Add(new ScrollingWaveform(deck, AppTheme.DeckColor(deck.Name), fonts.Small) { Editor = editor });
+            var waveform = Add(new ScrollingWaveform(deck, AppTheme.DeckColor(deck.Name), fonts.Small, fonts.SmallBold) { Editor = editor });
             _waveforms.Add(waveform);
             _gridEditors.Add(editor);
         }
@@ -128,7 +130,7 @@ sealed class MainScreen : Panel
         // Left to right: the first half of the decks, the mixer, the rest.
         // Decks right of the mixer are laid out as reflections, so each deck's mixing controls sit nearest the mixer.
         var deckPanels = decks
-            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i), gridEditors?.Invoke(deck), images, rollPads?.Invoke(deck), jumpPads?.Invoke(deck))
+            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, fonts.Badge, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i), gridEditors?.Invoke(deck), images, rollPads?.Invoke(deck), jumpPads?.Invoke(deck))
             {
                 Mirrored = i >= (decks.Count + 1) / 2,
             })

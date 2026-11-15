@@ -81,7 +81,9 @@ static void Run()
         Bold: atlas.Add(bold, 14),
         Heading: atlas.Add(bold, 18),
         Big: atlas.Add(bold, 26),
-        Large: atlas.Add(regular, 20)
+        Large: atlas.Add(regular, 20),
+        SmallBold: atlas.Add(bold, 12),
+        Badge: atlas.Add(FindHeavyFont() ?? bold, 26)
     );
     var images = Images.Load(atlas);
 
@@ -2086,6 +2088,16 @@ static void Run()
     WindowsShell.KeepAwake(false);
     if (OperatingSystem.IsWindows())
         WindowChrome.Remove();
+}
+
+// The heaviest weight of the system font, for a letter or two that must stand out; null if there's none, to fall
+// back on bold.
+static string? FindHeavyFont()
+{
+    if (!OperatingSystem.IsWindows())
+        return null;
+    var fonts = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+    return new[] { Path.Combine(fonts, "seguibl.ttf"), Path.Combine(fonts, "ariblk.ttf") }.FirstOrDefault(File.Exists);
 }
 
 static string FindFont(bool bold) =>

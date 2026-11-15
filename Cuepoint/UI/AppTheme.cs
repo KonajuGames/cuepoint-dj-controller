@@ -55,7 +55,8 @@ static class AppTheme
 }
 
 /// <summary>
-/// A solid square with a letter or two centred in it: a deck's letter, or the app's logo.
+/// A solid square with a letter or two centred in it: a deck's letter, or the app's logo. The letters' ink is what's
+/// centred, not their line box, which carries room for descenders and accents that would push them off centre.
 /// </summary>
 sealed class Badge(Font font, string text, float4 background, float4 color, float size) : Element
 {
@@ -64,8 +65,27 @@ sealed class Badge(Font font, string text, float4 background, float4 color, floa
     public override void Draw(Batch batch)
     {
         batch.AddRect(ScreenPosition, Size, background);
-        var extent = font.Measure(text);
-        batch.AddText(font, text, new float2(MathF.Round(ScreenPosition.X + (size - extent.X) / 2), MathF.Round(ScreenPosition.Y + (size - extent.Y) / 2)), color);
+
+        // The ink's bounds relative to where the text is drawn from, placed as Batch.AddText places each glyph: the
+        // pen moving right along a baseline an ascender down.
+        float penX = 0, left = float.MaxValue, right = float.MinValue, top = float.MaxValue, bottom = float.MinValue;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var glyph = font.GetGlyph(rune.Value);
+            if (glyph.Size.X > 0 && glyph.Size.Y > 0)
+            {
+                var x = MathF.Round(penX) + glyph.Bearing.X;
+                var y = font.Ascender - glyph.Bearing.Y;
+                (left, right) = (MathF.Min(left, x), MathF.Max(right, x + glyph.Size.X));
+                (top, bottom) = (MathF.Min(top, y), MathF.Max(bottom, y + glyph.Size.Y));
+            }
+            penX += glyph.Advance;
+        }
+        if (left > right)
+            return;
+
+        var origin = ScreenPosition + new float2((size - (right - left)) / 2 - left, (size - (bottom - top)) / 2 - top);
+        batch.AddText(font, text, new float2(MathF.Round(origin.X), MathF.Round(origin.Y)), color);
     }
 }
 

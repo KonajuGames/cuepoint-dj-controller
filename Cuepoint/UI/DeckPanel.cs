@@ -194,6 +194,7 @@ sealed class DeckPanel : Panel
         Font body,
         Font bold,
         Font big,
+        Font badge,
         IReadOnlyList<string>? padKeys = null,
         DeckKeyHints? keys = null,
         GridEditor? grid = null,
@@ -213,7 +214,7 @@ sealed class DeckPanel : Panel
         BorderColor = Theme.PanelBorder;
         BorderWidth = 1;
 
-        _badge = Add(new Badge(bold, deck.Name, _color, Theme.TitleBar, 30));
+        _badge = Add(new Badge(badge, deck.Name, _color, Theme.TitleBar, 30));
         _title = Add(new Label(bold) { Color = Theme.Text });
         _artist = Add(new Label(body) { Color = Theme.Muted });
         _bpm = Add(new Label(big) { Color = Theme.Text });

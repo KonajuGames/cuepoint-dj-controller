@@ -38,6 +38,7 @@ sealed class ScrollingWaveform : Element
 
     readonly Deck _deck;
     readonly Font _font;
+    readonly Font _letterFont;
     double _shown;
     double _lastStep = double.NaN;
     (float X, double Position)? _drag;
@@ -47,10 +48,12 @@ sealed class ScrollingWaveform : Element
     // jump to the pointer.
     double? _beatGrabOffset;
 
-    public ScrollingWaveform(Deck deck, float4 color, Font font)
+    /// <param name="letterFont">The deck's letter in its badge; <paramref name="font"/> if null.</param>
+    public ScrollingWaveform(Deck deck, float4 color, Font font, Font? letterFont = null)
     {
         _deck = deck;
         _font = font;
+        _letterFont = letterFont ?? font;
         Color = color;
         PressEnded += _ =>
         {
@@ -261,12 +264,12 @@ sealed class ScrollingWaveform : Element
     void DrawLabel(Batch batch)
     {
         // In the top corner, framed in the background's colour so it stands out over the waveform.
-        var letter = _font.Measure(_deck.Name);
+        var letter = _letterFont.Measure(_deck.Name);
         var badge = new float2(MathF.Max(letter.X, letter.Y) + 8, letter.Y + 4);
         var at = new float2(ScreenPosition.X + 5, ScreenPosition.Y + 5);
         batch.AddRect(at - new float2(2, 2), badge + new float2(4, 4), Background);
         batch.AddRect(at, badge, _deck.IsLoaded ? Color : Theme.Fade(Color, 0.4f));
-        batch.AddText(_font, _deck.Name, new float2(MathF.Round(at.X + (badge.X - letter.X) / 2), at.Y + 2), Theme.TitleBar);
+        batch.AddText(_letterFont, _deck.Name, new float2(MathF.Round(at.X + (badge.X - letter.X) / 2), at.Y + 2), Theme.TitleBar);
         if (!_deck.IsLoaded)
         {
             var text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "No track loaded";

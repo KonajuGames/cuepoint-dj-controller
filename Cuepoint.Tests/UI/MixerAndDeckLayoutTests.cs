@@ -194,7 +194,7 @@ public sealed class MixerAndDeckLayoutTests : IDisposable
     }
 
     DeckPanel Panel(RollPads? roll = null, JumpPads? jump = null) =>
-        new(_deck, _font, _font, _font, _font, keys: new DeckKeyHints("Z", "X", "C", "3", "V", "4", "G", "T"), images: _images, roll: roll, jump: jump);
+        new(_deck, _font, _font, _font, _font, _font, keys: new DeckKeyHints("Z", "X", "C", "3", "V", "4", "G", "T"), images: _images, roll: roll, jump: jump);
 
     [Fact]
     public void A_deck_wide_enough_keeps_its_buttons_as_they_are_in_one_row()

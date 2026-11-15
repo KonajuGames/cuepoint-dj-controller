@@ -224,10 +224,13 @@ sealed class SongBrowser : Panel
         };
         // The title takes whatever width the rest leave, so it's the one column that isn't sized by hand.
         _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title) { SortKey = song => Text(song.Title), Resizable = false };
-        _deckColumn = new ListColumn<Song>("", 26, song => string.Concat(DecksOf(song)))
+        // Each deck the song is on, as its letter in black on a square of its colour, as on the deck itself.
+        _deckColumn = new ListColumn<Song>("", 44, _ => "")
         {
             Id = "Deck",
-            Color = song => DecksOf(song) is [var deck, ..] ? AppTheme.DeckColor(deck) : null,
+            Badges = song => DecksOf(song) is { Count: > 0 } decks ? decks.Select(deck => (deck, AppTheme.DeckColor(deck))).ToList() : null,
+            BadgeFont = bold,
+            BadgeTextColor = Theme.TitleBar,
             SortKey = song => DecksOf(song) is { Count: > 0 } decks ? string.Concat(decks) : null,
             Resizable = false,
         };
