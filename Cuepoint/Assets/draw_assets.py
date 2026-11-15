@@ -152,33 +152,66 @@ def render(layers, size, units, background=None):
 
 
 # ---- The logo ----
-# A record seen from above, in the app's orange, with a white cue marker at the top and the playhead running down
-# from it to the label: a cue point set on a record.
+# The Waveform C, in the style of Cuedeck's Spotlight C, in the two decks' colours: a blue C on a dark rounded tile
+# with a faint edge, a lit spindle at its centre, and a red waveform spilling out of the C's opening, fading as it
+# goes. Drawn in a 32 unit square.
+# The title bar's 16 and 22 pixel sizes are drawn bolder, with fewer, wider bars and a bigger spindle, so they still
+# read.
 
-ORANGE_LIGHT = 0xF59A45
-ORANGE_DARK = 0xD9601A
-GROOVE = 0x7A2E08
-LABEL = 0x1B1C22
+TILE = 0x16171D
+EDGE = 0x2E3039
+DECK_A = 0x2F8FFF
+DECK_B = 0xEE4444
+SPINDLE = 0xE4E5EC
 WHITE = 0xFFFFFF
 
 
-def disc_fill(x, y):
-    # Lit from the top left.
-    t = max(0.0, min(1.0, ((x - 6) + (y - 8)) / 52))
-    a, b = hex_colour(ORANGE_LIGHT), hex_colour(ORANGE_DARK)
-    return tuple(a[i] + (b[i] - a[i]) * t for i in range(3)) + (1.0,)
+def rounded_box(x0, y0, x1, y1, radius):
+    """A rectangle with rounded corners."""
+    cx, cy, hx, hy = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+
+    def d(x, y):
+        qx, qy = abs(x - cx) - (hx - radius), abs(y - cy) - (hy - radius)
+        return math.hypot(max(qx, 0), max(qy, 0)) + min(max(qx, qy), 0) - radius
+
+    return d
 
 
-LOGO = [
-    (circle(32, 35, 27), disc_fill),
-    (ring(32, 35, 20.5, 1.6), hex_colour(GROOVE, 0.45)),
-    (ring(32, 35, 15, 1.6), hex_colour(GROOVE, 0.45)),
-    (circle(32, 35, 9), hex_colour(LABEL)),
-    (circle(32, 35, 2.2), disc_fill),
-    # The playhead, from the marker to the label, and the marker itself.
-    (segment(32, 10, 32, 26.5, 2.8), hex_colour(WHITE)),
-    (rounded(polygon([(24.5, 4), (39.5, 4), (32, 12.5)]), 1.1), hex_colour(WHITE)),
-]
+def c_shape(cx, cy, radius, stroke, gap):
+    """A thick arc open to the right by `gap` degrees either side, its ends rounded."""
+    caps = [(cx + radius * math.cos(math.radians(a)), cy + radius * math.sin(math.radians(a))) for a in (gap, -gap)]
+
+    def d(x, y):
+        if abs(math.degrees(math.atan2(y - cy, x - cx))) < gap:
+            return min(math.hypot(x - ex, y - ey) for ex, ey in caps) - stroke / 2
+        return abs(math.hypot(x - cx, y - cy) - radius) - stroke / 2
+
+    return d
+
+
+def logo(style):
+    """The logo's layers for one of the styles below."""
+    inside = rounded_box(0.6, 0.6, 31.4, 31.4, 6.4)
+    near, far = style["near"], style["far"]
+    first, last = style["bars"][0][0], style["bars"][-1][0]
+
+    def wave_fill(x, y):
+        t = max(0.0, min(1.0, (x - first) / max(1e-6, last - first)))
+        return hex_colour(DECK_B, near + (far - near) * t)
+
+    bars = union(*(rounded_box(x - style["width"] / 2, 16 - h, x + style["width"] / 2, 16 + h, style["width"] / 2) for x, h in style["bars"]))
+    return [
+        (rounded_box(0, 0, 32, 32, 7), hex_colour(EDGE)),
+        (inside, hex_colour(TILE)),
+        (intersect(bars, inside), wave_fill),
+        (c_shape(15, 16, 9, style["stroke"], style["gap"]), hex_colour(DECK_A)),
+        (circle(15, 16, style["spindle"]), hex_colour(SPINDLE)),
+    ]
+
+
+# Each bar of the waveform as (where it is across, half its height).
+LOGO = logo(dict(gap=45, stroke=4.5, spindle=2.6, width=1.5, near=0.9, far=0.35, bars=[(21.8, 2.6), (24.6, 5.0), (27.4, 3.6), (30.0, 6.0)]))
+LOGO_SMALL = logo(dict(gap=40, stroke=5.6, spindle=3.3, width=2.4, near=0.95, far=0.5, bars=[(23.0, 2.6), (26.6, 5.6), (30.0, 4.0)]))
 
 # ---- Icons ----
 # A tick, for a song played this session.
@@ -329,11 +362,11 @@ FUNNEL = [(rounded(polygon([(1.6, 2.4), (12.4, 2.4), (8.2, 7.4), (8.2, 11.8), (5
 def main():
     preview = "preview" in sys.argv[1:]
     jobs = [
-        ("logo-22.png", LOGO, 22, 64),
-        ("logo-16.png", LOGO, 16, 64),
-        ("logo-32.png", LOGO, 32, 64),
-        ("logo-48.png", LOGO, 48, 64),
-        ("logo-256.png", LOGO, 256, 64),
+        ("logo-22.png", LOGO_SMALL, 22, 32),
+        ("logo-16.png", LOGO_SMALL, 16, 32),
+        ("logo-32.png", LOGO, 32, 32),
+        ("logo-48.png", LOGO, 48, 32),
+        ("logo-256.png", LOGO, 256, 32),
         ("played-14.png", PLAYED, 14, 16),
         ("triangle-right-10.png", TRIANGLE_RIGHT, 10, 10),
         ("triangle-down-10.png", TRIANGLE_DOWN, 10, 10),
@@ -364,7 +397,7 @@ def main():
         ("icon-filter-20.png", FUNNEL, 20, 14),
     ]
     # Previews go over the title bar's colour, since the icons are white.
-    previews = [("preview-logo.png", LOGO, 512, 64), ("preview-logo-small.png", LOGO, 22, 64), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16), ("preview-headphones.png", HEADPHONES, 256, 16), ("preview-knob.png", KNOB, 200, 20)]
+    previews = [("preview-logo.png", LOGO, 512, 32), ("preview-logo-small.png", LOGO_SMALL, 22, 32), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16), ("preview-headphones.png", HEADPHONES, 256, 16), ("preview-knob.png", KNOB, 200, 20)]
     for name, layers, size, units in jobs:
         path = os.path.join(HERE, name)
         write_png(path, size, size, render(layers, size, units))

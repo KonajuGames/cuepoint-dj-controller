@@ -115,6 +115,8 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
 
     public override void Draw(Batch batch)
     {
+        // The letters share a column as wide as the widest, each centred in it, so they line up down their middles.
+        var column = decks.Max(deck => font.Advance(deck.Name));
         for (var row = 0; row < decks.Count; row++)
         {
             var deck = decks[row];
@@ -122,7 +124,8 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
             var top = ScreenPosition.Y + row * (ROW + ROW_GAP);
 
             // The letter's capitals centred on the row, rather than its line box.
-            batch.AddText(font, deck.Name, new float2(ScreenPosition.X, MathF.Round(top + ROW / 2 + CapHeight(font) / 2 - font.Ascender)), color);
+            var x = MathF.Round(ScreenPosition.X + (column - font.Advance(deck.Name)) / 2);
+            batch.AddText(font, deck.Name, new float2(x, MathF.Round(top + ROW / 2 + CapHeight(font) / 2 - font.Ascender)), color);
 
             var (beat, bar) = (-1, -1);
             if (deck.Analysis?.Grid is { } grid && deck.IsLoaded)
@@ -242,6 +245,9 @@ sealed class TitleBar : Panel
 
     readonly AudioEngine _engine;
     readonly Panel _left;
+    readonly Picture _logo;
+    readonly Panel _wordmark;
+    readonly Font _wordmarkFont;
     readonly Panel _centre;
     readonly Panel _right;
     readonly LevelMeter _master;
@@ -337,8 +343,12 @@ sealed class TitleBar : Panel
         Background = Theme.Panel;
 
         _left = Add(new Panel { Direction = Direction.Horizontal, Spacing = 10 });
-        _left.Add(new Picture(images.Logo));
-        _left.Add(new Label(bold, "Cuepoint") { Color = Theme.Text });
+        _logo = _left.Add(new Picture(images.Logo));
+        // The wordmark, in the two decks' colours as the logo is: "Cue" in A's blue, "point" in B's red, as one word.
+        _wordmark = _left.Add(new Panel { Direction = Direction.Horizontal, Spacing = 0 });
+        _wordmark.Add(new Label(bold, "Cue") { Color = Theme.DeckA });
+        _wordmark.Add(new Label(bold, "point") { Color = Theme.DeckB });
+        _wordmarkFont = bold;
 
         // The decks' beat trackers, A over B, then a gap, then the master level and its name.
         _centre = Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
@@ -452,10 +462,14 @@ sealed class TitleBar : Panel
         AlignMiddle(_centre);
         AlignMiddle(_right);
 
-        // "MASTER" centred by its capitals rather than its line box, which has room for descenders below, so it
-        // lines up with the meter beside it.
+        // "MASTER" and the wordmark centred by their capitals rather than their line boxes, which have room for
+        // descenders below, so they line up with the meter and the logo beside them.
         CentreCapitals(_masterLabel, _master.ScreenPosition.Y + _master.Size.Y / 2);
         CentreCapitals(_limit, _master.ScreenPosition.Y + _master.Size.Y / 2);
+        var logoMiddle = _logo.ScreenPosition.Y + _logo.Size.Y / 2;
+        _wordmark.Arrange(
+            new float2(_wordmark.ScreenPosition.X, MathF.Round(logoMiddle + BeatTrackers.CapHeight(_wordmarkFont) / 2 - _wordmarkFont.Ascender))
+        );
 
         // The CPU and the time likewise, so they line up with the OS2L indicator's text.
         var rightMiddle = _right.ScreenPosition.Y + _right.Size.Y / 2;
