@@ -122,6 +122,7 @@ Each deck has its own side of the keyboard.
 | Halve / double loop | 3 / 4 | 9 / 0 |
 | Loop in / out, reloop | Shift + 3 / 4, Shift + V | Shift + 9 / 0, Shift + . |
 | Tempo down / up (Shift: volume) | 5 / 6 | 7 / 8 |
+| Nudge slower / faster, while held | Ctrl + Shift + 5 / 6 | Ctrl + Shift + 7 / 8 |
 | Headphone cue, key lock | T, G | Y, H |
 | Slip | Shift + G | Shift + H |
 | Key shift down / up, put back | Alt + 5 / 6, Alt + G | Alt + 7 / 8, Alt + H |
@@ -132,6 +133,7 @@ Each deck has its own side of the keyboard.
 
 - **Hotcues:** Shift with a hotcue key clears it. In GRID, ROLL or JUMP mode, the hotcue keys work the pads instead.
 - **Faders:** they move while their keys are held, a quarter as fast with Ctrl.
+- **Nudging:** a nudge plays the deck 4% slower or faster while its key's held, to line up the beats by ear without moving the tempo. Dragging the scrolling waveform of a playing deck does the same: left of where you pressed pushes it on, right holds it back, further for more. On a stopped deck, the drag moves through the song.
 - **Crossfader:** `[` and `]` slide it, and `B` centres it.
 - **Loading songs:** `1` loads the selected song onto deck A and `2` onto deck B.
 

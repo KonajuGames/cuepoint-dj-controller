@@ -25,7 +25,7 @@ enum WaveformColours
 /// coming is to the right. Drawn in the deck's colour, darker where bass dominates and brighter where treble does,
 /// so kicks, vocals and hi-hats look different, with a lighter core showing the average level inside the peaks, the
 /// beat grid over it with a brighter line on each bar, and the deck's hotcues as numbered lines in their colours. Drag
-/// it to move through the song. While its <see cref="Editor"/> is fixing the grid, a beat's line can be grabbed and
+/// it to move through the song, or while it's playing, to push it on or hold it back, as a hand on a record does. While its <see cref="Editor"/> is fixing the grid, a beat's line can be grabbed and
 /// dragged onto the music's beat instead, pinning it there, and a pin right-clicked to take it out. Sized by whoever
 /// lays it out, with <see cref="FixedSize"/>.
 /// </summary>
@@ -36,12 +36,22 @@ sealed class ScrollingWaveform : Element
     /// </summary>
     const float GRAB = 4;
 
+    /// <summary>
+    /// How much a drag on a playing deck bends its speed for each pixel it's held from where it started, and the most
+    /// it bends: 100 pixels to the left plays 5% faster.
+    /// </summary>
+    const double BEND_PER_PIXEL = 0.0005;
+    const double MAX_DRAG_BEND = 0.2;
+
     readonly Deck _deck;
     readonly Font _font;
     readonly Font _letterFont;
     double _shown;
     double _lastStep = double.NaN;
     (float X, double Position)? _drag;
+
+    // Where a drag bending a playing deck started.
+    float? _bendFrom;
     float2? _pointer;
 
     // A beat being dragged: how far its time was from the song's under the pointer as it was grabbed, so it doesn't
@@ -58,6 +68,11 @@ sealed class ScrollingWaveform : Element
         PressEnded += _ =>
         {
             _drag = null;
+            if (_bendFrom is not null)
+            {
+                _bendFrom = null;
+                _deck.Bend = 0;
+            }
             if (_beatGrabOffset is not null)
             {
                 _beatGrabOffset = null;
@@ -165,8 +180,8 @@ sealed class ScrollingWaveform : Element
         if (!_deck.IsPlaying || _drag is not null)
             return _shown = reported;
 
-        // The song moves on at the deck's tempo, not the clock's.
-        _shown += dt * _deck.TempoRatio;
+        // The song moves on at the deck's speed, not the clock's.
+        _shown += dt * _deck.TempoRatio * (1 + _deck.Bend);
         var behind = reported - _shown;
         if (Math.Abs(behind) > 0.15)
             _shown = reported;
@@ -368,15 +383,19 @@ sealed class ScrollingWaveform : Element
     {
         _drag = null;
         _beatGrabOffset = null;
+        _bendFrom = null;
         if (BeatAt(point.X) is { } beat && Editor!.BeginDrag(beat))
             _beatGrabOffset = _deck.Analysis!.Grid.TimeOfBeat(beat) - TimeAt(point.X);
+        else if (_deck.IsPlaying)
+            _bendFrom = point.X;
         else
             _drag = (point.X, _deck.Position.TotalSeconds);
     }
 
     /// <summary>
-    /// Dragging moves the song with the pointer, as if pushing the waveform along; or, holding a beat's line, moves
-    /// the beat.
+    /// Dragging moves the song with the pointer, as if pushing the waveform along; or while it's playing, bends its
+    /// speed for as long as it's held, faster the further left of where it started and slower to the right; or,
+    /// holding a beat's line, moves the beat.
     /// </summary>
     public override void PointerDrag(float2 point)
     {
@@ -384,6 +403,11 @@ sealed class ScrollingWaveform : Element
         if (_beatGrabOffset is { } offset)
         {
             Editor?.DragTo(TimeAt(point.X) + offset);
+            return;
+        }
+        if (_bendFrom is { } from)
+        {
+            _deck.Bend = Math.Clamp((from - point.X) * BEND_PER_PIXEL, -MAX_DRAG_BEND, MAX_DRAG_BEND);
             return;
         }
         if (_drag is not { } drag)

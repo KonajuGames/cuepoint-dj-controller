@@ -6,7 +6,8 @@ namespace Cuepoint;
 
 /// <summary>
 /// One deck's keys, besides its hotcues (see <see cref="HotcueKeys"/>). Shift with the tempo keys moves the volume
-/// fader instead, and Alt with them shifts the key a semitone; Shift with halve and double loop marks loop in and out,
+/// fader instead, Ctrl and Shift together nudge the speed for as long as they're held, and Alt with them shifts the key
+/// a semitone; Shift with halve and double loop marks loop in and out,
 /// as on a Pioneer controller, and with the loop key, reloops. Shift with key lock turns slip on and off, Ctrl with it
 /// matches the key to the other deck's, and Alt with it puts the key back.
 /// </summary>
@@ -55,7 +56,8 @@ sealed record DeckKeys(
 /// B (whose filter shares F7 and F8). The crossfader slides on [ and ], and B centres it.
 ///
 /// Toggles and one-shots act on the press. The faders move while their keys are held, a full sweep in a second, or a
-/// quarter as fast with Ctrl, so call <see cref="Update"/> every frame.
+/// quarter as fast with Ctrl, so call <see cref="Update"/> every frame. A nudge lasts while its key's held, pushing or
+/// dragging the deck by <see cref="NUDGE"/>, as a hand on a record does, to bring the beats in line by ear.
 /// </summary>
 sealed class KeyboardControls
 {
@@ -109,6 +111,13 @@ sealed class KeyboardControls
     const float SWEEP_PER_SECOND = 1;
     const float FINE_SWEEP_PER_SECOND = 0.25f;
 
+    /// <summary>
+    /// How much faster or slower than its tempo a nudged deck plays, as a fraction: <see cref="Deck.Bend"/>.
+    /// </summary>
+    public const double NUDGE = 0.04;
+
+    const GlfwModifier NUDGE_MODS = GlfwModifier.Control | GlfwModifier.Shift;
+
     enum Band { Low, Mid, High }
 
     readonly IReadOnlyList<Deck> _decks;
@@ -122,6 +131,9 @@ sealed class KeyboardControls
 
     // Decks whose tempo keys were pressed together to reset, which don't slide until both come up.
     readonly HashSet<Deck> _tempoReset = [];
+
+    // Decks being nudged, to let go of when their keys come up.
+    readonly HashSet<Deck> _nudged = [];
 
     public KeyboardControls(IReadOnlyList<Deck> decks, AudioEngine engine)
     {
@@ -197,6 +209,16 @@ sealed class KeyboardControls
             }
             else if (!pressed && !_held.ContainsKey(keys.TempoDown) && !_held.ContainsKey(keys.TempoUp))
                 _tempoReset.Remove(deck);
+
+            // With Ctrl and Shift they nudge, until they come up; both together cancel out.
+            var nudge = (IsNudge(keys.TempoUp) ? NUDGE : 0) - (IsNudge(keys.TempoDown) ? NUDGE : 0);
+            if (nudge != 0)
+            {
+                _nudged.Add(deck);
+                deck.Bend = nudge;
+            }
+            else if (_nudged.Remove(deck))
+                deck.Bend = 0;
             return;
         }
 
@@ -237,6 +259,11 @@ sealed class KeyboardControls
         else if (key == keys.ResetEq)
             ResetEq(deck);
     }
+
+    /// <summary>
+    /// Whether <paramref name="key"/> is held as a nudge, having gone down with Ctrl and Shift.
+    /// </summary>
+    bool IsNudge(GlfwKey key) => _held.TryGetValue(key, out var mods) && (mods & NUDGE_MODS) == NUDGE_MODS;
 
     /// <summary>
     /// Kills a band, or brings back a killed one to where it was. A band turned all the way down by hand counts as
@@ -306,12 +333,12 @@ sealed class KeyboardControls
     /// <summary>
     /// Which way a pair of held keys pushes a fader, at its speed: negative for <paramref name="down"/>, positive for
     /// <paramref name="up"/>, nothing for both or neither. Only keys that went down with Shift if
-    /// <paramref name="shift"/>, or without it if not.
+    /// <paramref name="shift"/>, or without it if not, and not those nudging.
     /// </summary>
     float Direction(GlfwKey down, GlfwKey up, bool shift)
     {
         float Speed(GlfwKey key) =>
-            _held.TryGetValue(key, out var mods) && ((mods & GlfwModifier.Shift) != 0) == shift
+            _held.TryGetValue(key, out var mods) && (mods & NUDGE_MODS) != NUDGE_MODS && ((mods & GlfwModifier.Shift) != 0) == shift
                 ? (mods & GlfwModifier.Control) != 0 ? FINE_SWEEP_PER_SECOND : SWEEP_PER_SECOND
                 : 0;
         return Speed(up) - Speed(down);
