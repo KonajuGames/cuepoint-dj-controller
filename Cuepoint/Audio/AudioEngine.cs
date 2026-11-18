@@ -95,8 +95,14 @@ sealed unsafe class AudioEngine : IDisposable
     /// </summary>
     public IReadOnlyList<string> Decoders { get; }
 
-    public AudioEngine()
+    /// <summary>
+    /// Starts SDL's audio and opens the system's default output, asking for buffers of
+    /// <paramref name="bufferFrames"/> sample frames, or the driver's own size with null.
+    /// </summary>
+    public AudioEngine(int? bufferFrames = null)
     {
+        _bufferFrames = bufferFrames;
+        AudioOutput.RequestBufferFrames(bufferFrames);
         Sdl.Init.Initialize(SdlInitFlags.Audio);
         SdlMixer.Init();
         try
@@ -106,7 +112,7 @@ sealed unsafe class AudioEngine : IDisposable
             Mixer = SdlMixer.CreateMixer(&spec);
             _self = GCHandle.Alloc(this);
             SdlMixer.PInvoke.SetPostMixCallback(Mixer, &MixDone, (void*)GCHandle.ToIntPtr(_self));
-            _output = new AudioOutput(this, DEFAULT_PLAYBACK_DEVICE, null, null);
+            _output = new AudioOutput(this, DEFAULT_PLAYBACK_DEVICE, null, null, bufferFrames);
 
             var decoders = new string[SdlMixer.GetNumAudioDecoders()];
             for (var i = 0; i < decoders.Length; i++)
@@ -438,6 +444,64 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
+    /// The buffer sizes, in sample frames, that can be asked for: smaller is tighter under the hands, for scratching;
+    /// larger gives a busy computer more time, so it doesn't crackle.
+    /// </summary>
+    public static IReadOnlyList<int> BufferSizes { get; } = [64, 128, 256, 512, 1024, 2048];
+
+    int? _bufferFrames;
+
+    /// <summary>
+    /// The buffer size asked for, in sample frames; null for the driver's own.
+    /// </summary>
+    public int? BufferFrames => _bufferFrames;
+
+    /// <summary>
+    /// The buffer the main output actually has, which a driver can keep different from the one asked for; null if
+    /// there's no output, or SDL can't say.
+    /// </summary>
+    public (int Frames, int Rate)? OutputBuffer => _output?.Buffer;
+
+    /// <summary>
+    /// How many frames of the mix (at <see cref="AudioOutput.RATE"/>) are made ahead of the device, to make up the
+    /// buffer size asked for when the device opened with less; 0 if none are.
+    /// </summary>
+    public int OutputMixAhead => _output?.MixAheadFrames ?? 0;
+
+    /// <summary>
+    /// How many times the output, mixing ahead, has found too little waiting; for tests.
+    /// </summary>
+    internal int OutputShortfalls => _output?.Shortfalls ?? 0;
+
+    /// <summary>
+    /// How long the mix is made before it's heard, from mixing ahead, for the decks to say where they are as heard.
+    /// </summary>
+    public double MixAheadSeconds => (double)OutputMixAhead / AudioOutput.RATE;
+
+    /// <summary>
+    /// Asks for buffers of <paramref name="frames"/> sample frames, or the driver's own size with null, and opens the
+    /// main output, and the headphones on a sound card of their own, again to take it. Whatever the device falls short
+    /// of it by is mixed ahead. Returns false if the output
+    /// wouldn't open again on its device.
+    /// </summary>
+    public bool UseBufferSize(int? frames)
+    {
+        if (frames == _bufferFrames)
+            return true;
+        _bufferFrames = frames;
+        AudioOutput.RequestBufferFrames(frames);
+
+        var reopened = Find(_output?.DeviceName) is { } id && Reopen(id, _output?.DeviceName, _output?.SplitHeadphones is not null);
+        if (_headphones is SdlHeadphones { DeviceName: { } phones })
+        {
+            // Closed first, so the device is opened afresh and takes the new size.
+            Headphones = null;
+            OpenOwnHeadphones(phones);
+        }
+        return reopened;
+    }
+
+    /// <summary>
     /// Whether the output device (one chosen, not the default) can carry the headphones too, on channels 3 and 4.
     /// </summary>
     public bool OutputCanCarryHeadphones => _output is { DeviceName: not null, DeviceChannels: >= 4 };
@@ -489,7 +553,7 @@ sealed unsafe class AudioEngine : IDisposable
         _output = null;
         try
         {
-            _output = new AudioOutput(this, id, deviceName, splitHeadphones ? _headphones as ChannelHeadphones ?? new ChannelHeadphones() : null);
+            _output = new AudioOutput(this, id, deviceName, splitHeadphones ? _headphones as ChannelHeadphones ?? new ChannelHeadphones() : null, _bufferFrames);
             return true;
         }
         catch (SdlException)
@@ -497,7 +561,7 @@ sealed unsafe class AudioEngine : IDisposable
             try
             {
                 if (Find(oldName) is { } oldId)
-                    _output = new AudioOutput(this, oldId, oldName, oldSplit);
+                    _output = new AudioOutput(this, oldId, oldName, oldSplit, _bufferFrames);
             }
             catch (SdlException)
             {

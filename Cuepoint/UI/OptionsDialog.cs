@@ -75,6 +75,13 @@ sealed class OptionsDialog : Panel
     public event Action<string?>? OutputChanged;
 
     readonly Dropdown<string?> _output;
+    readonly Dropdown<int?> _bufferSize;
+    readonly Label _latency;
+
+    /// <summary>
+    /// The output's buffer size was changed here.
+    /// </summary>
+    public event Action? BufferSizeChanged;
 
     readonly Dropdown<string?> _headphones;
     readonly Label _controller;
@@ -293,6 +300,30 @@ sealed class OptionsDialog : Panel
             }
         );
 
+        var bufferRow = Row("Buffer size", body);
+        _bufferSize = bufferRow.Add(
+            new Dropdown<int?>(body)
+            {
+                Width = 300,
+                Items = () => [null, .. AudioEngine.BufferSizes.Select(frames => (int?)frames)],
+                Text = frames =>
+                    frames is { } n ? $"{n} samples ({AudioOutput.Milliseconds(n, AudioOutput.RATE):0.#} ms)" : "The driver's own",
+                Selected = engine.BufferFrames,
+            }
+        );
+        _bufferSize.Chosen += frames =>
+        {
+            engine.UseBufferSize(frames);
+            BufferSizeChanged?.Invoke();
+        };
+        _latency = Row("Latency", body).Add(new Label(body) { Color = Theme.Text, MaxWidth = 380 });
+        _content.Add(
+            new Label(body, "Smaller feels tighter under your hands when scratching; larger stops crackles on a busy laptop. A driver that keeps its own size gets the rest mixed ahead, which can make it larger but not smaller.")
+            {
+                Color = Theme.Muted,
+            }
+        );
+
         var zoomRow = Row("Waveform shows", body);
         WaveformSeconds = zoomRow.Add(
             new Slider
@@ -438,6 +469,8 @@ sealed class OptionsDialog : Panel
         _crossfaderCurve.Selected = _engine.CrossfaderCurve;
         _output.Selected = _engine.OutputDevice;
         _headphones.Selected = _engine.HeadphoneDevice;
+        _bufferSize.Selected = _engine.BufferFrames;
+        _latency.Text = LatencyText(_engine.OutputBuffer, _engine.OutputMixAhead);
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";
         var lighting = LightingEnabled?.Invoke() ?? false;
         _lighting.Checked = lighting;
@@ -464,6 +497,22 @@ sealed class OptionsDialog : Panel
             _box.ScrollToShow(top - MARGIN, top + focused.Size.Y + MARGIN);
         }
         _lastFocused = focused;
+    }
+
+    /// <summary>
+    /// What the output's buffer comes to, as said under the buffer size: the device's own, and what's mixed ahead of it
+    /// (in frames at <see cref="AudioOutput.RATE"/>) to make up the size asked for.
+    /// </summary>
+    internal static string LatencyText((int Frames, int Rate)? buffer, int mixAheadFrames = 0)
+    {
+        if (buffer is not var (frames, rate))
+            return "No output open";
+        var device = AudioOutput.Milliseconds(frames, rate);
+        var deviceText = $"{frames} samples at {rate / 1000.0:0.#} kHz";
+        if (mixAheadFrames <= 0)
+            return $"{device:0.0} ms a buffer ({deviceText})";
+        var ahead = AudioOutput.Milliseconds(mixAheadFrames, AudioOutput.RATE);
+        return $"{device + ahead:0.0} ms a buffer (the device's {device:0.0} ms, {deviceText}, and {ahead:0.0} ms mixed ahead)";
     }
 
     static Element? FocusedIn(Element element)

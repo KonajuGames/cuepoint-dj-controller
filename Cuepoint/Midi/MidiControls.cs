@@ -583,10 +583,10 @@ sealed class MidiControls : IDisposable
                 deck.Bend = bend;
                 break;
             case "jog":
-                deck.Seek(deck.Position + TimeSpan.FromSeconds(steps * SEEK_PER_STEP));
+                deck.SeekBy(TimeSpan.FromSeconds(steps * SEEK_PER_STEP));
                 break;
             case "search":
-                deck.Seek(deck.Position + TimeSpan.FromSeconds(steps * SEARCH_PER_STEP));
+                deck.SeekBy(TimeSpan.FromSeconds(steps * SEARCH_PER_STEP));
                 break;
             case "scratch":
                 deck.Scratch(steps);

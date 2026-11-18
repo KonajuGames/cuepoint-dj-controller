@@ -35,6 +35,7 @@ public class AppSettingsTests
             MusicFolder = @"F:\Music",
             LargeListText = true,
             MasterLimiter = false,
+            BufferFrames = 256,
             BrowserFolder = ["Virtual folders", "Warm up"],
             Browser = new BrowserLayout { SortColumn = "BPM", SortDescending = true, ColumnWidths = { ["Key"] = 130 }, HiddenColumns = ["Album"] },
         };
@@ -48,6 +49,7 @@ public class AppSettingsTests
         Assert.Equal(@"F:\Music", loaded.MusicFolder);
         Assert.True(loaded.LargeListText);
         Assert.False(loaded.MasterLimiter);
+        Assert.Equal(256, loaded.BufferFrames);
         Assert.Equal(new[] { "Virtual folders", "Warm up" }, loaded.BrowserFolder);
         Assert.Equal("BPM", loaded.Browser.SortColumn);
         Assert.True(loaded.Browser.SortDescending);
@@ -69,6 +71,7 @@ public class AppSettingsTests
             Assert.True(settings.Os2lEnabled);
             Assert.True(settings.MasterLimiter);
             Assert.Equal(0.8f, settings.HeadphoneVolume);
+            Assert.Null(settings.BufferFrames);
         }
     }
 

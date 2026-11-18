@@ -98,7 +98,12 @@ static void Run()
     using var gpu = new GpuContext(window, ENABLE_VALIDATION);
     using var renderer = new Renderer(gpu, window, atlas);
 
-    using var audio = new AudioEngine();
+    // Settings kept between runs, beside the library's database; read before the audio starts, which opens its
+    // devices with the buffer size kept.
+    var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "settings.json");
+    var settings = AppSettings.Load(settingsPath);
+
+    using var audio = new AudioEngine(settings.BufferFrames is { } frames && AudioEngine.BufferSizes.Contains(frames) ? frames : null);
     using var deckA = audio.CreateDeck("A", CrossfaderSide.Left);
     using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
     Deck[] decks = [deckA, deckB];
@@ -106,10 +111,7 @@ static void Run()
     // Hearing a song from the list in the headphones, without a deck.
     using var preview = new SongPreview(audio);
 
-    // Settings kept between runs, beside the library's database. The output goes first, as headphones on its channels
-    // 3 and 4 need it there.
-    var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "settings.json");
-    var settings = AppSettings.Load(settingsPath);
+    // The output goes first, as headphones on its channels 3 and 4 need it there.
     audio.CueMix = settings.CueMix;
     audio.HeadphoneVolume = settings.HeadphoneVolume;
     audio.Limiter.Enabled = settings.MasterLimiter;
@@ -889,6 +891,11 @@ static void Run()
     screen.Options.MasterLimiterToggled += () =>
     {
         settings.MasterLimiter = audio.Limiter.Enabled;
+        settings.Save(settingsPath);
+    };
+    screen.Options.BufferSizeChanged += () =>
+    {
+        settings.BufferFrames = audio.BufferFrames;
         settings.Save(settingsPath);
     };
     screen.Options.CrossfaderCurveChanged += () =>

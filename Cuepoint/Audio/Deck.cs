@@ -611,7 +611,7 @@ sealed partial class Deck : IDisposable
             return false;
 
         if (IsPlaying && master.IsPlaying && PhaseOff(master, beatShift) is { } off)
-            Seek(TimeSpan.FromSeconds(Position.TotalSeconds + off));
+            SeekBy(TimeSpan.FromSeconds(off));
         return true;
     }
 
@@ -722,12 +722,25 @@ sealed partial class Deck : IDisposable
 
     /// <summary>
     /// Where playback is, as heard, from SDL_mixer's audio thread, so it moves on between calls while playing. With
-    /// <see cref="KeyLocked"/> on or the key shifted, that's a little behind the track, by the key lock's delay.
+    /// <see cref="KeyLocked"/> on or the key shifted, that's a little behind the track, by the key lock's delay; and
+    /// while playing with the output mixing ahead, behind by that too, as the song has been mixed that far ahead of
+    /// what's come out.
     /// </summary>
     public TimeSpan Position =>
         !IsLoaded || _pcm is null ? TimeSpan.Zero
         : IsPlatterActive ? TimeSpan.FromSeconds(Volatile.Read(ref _platterHead) / SampleRate)
-        : TimeSpan.FromTicks(Math.Max(0, (ToTime(SongFrame) - TimeSpan.FromSeconds(_keyLock.LatencySeconds)).Ticks));
+        : TimeSpan.FromTicks(Math.Max(0, (ToTime(SongFrame) - TimeSpan.FromSeconds(_keyLock.LatencySeconds + MixAheadSongSeconds)).Ticks));
+
+    /// <summary>
+    /// How much of the song the output's mix ahead holds, while it's playing: the mix ahead's time at this speed.
+    /// </summary>
+    double MixAheadSongSeconds => IsPlaying ? _engine.MixAheadSeconds * Volatile.Read(ref _speed) : 0;
+
+    /// <summary>
+    /// Moves <paramref name="by"/> from where the track is, rather than from what's heard, which the key lock and the
+    /// output's mix ahead hold back a little, so repeated moves don't slip back by that each time.
+    /// </summary>
+    public void SeekBy(TimeSpan by) => Seek((IsPlatterActive || !IsLoaded ? Position : ToTime(SongFrame)) + by);
 
     /// <summary>
     /// Where playback is in the song, in frames: the track's position, plus the loop's start while it's playing the

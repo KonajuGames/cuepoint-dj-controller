@@ -37,6 +37,11 @@ sealed class AppSettings
     public float HeadphoneVolume { get; set; } = 0.8f;
 
     /// <summary>
+    /// The output's buffer size asked for, in sample frames; null for the driver's own.
+    /// </summary>
+    public int? BufferFrames { get; set; }
+
+    /// <summary>
     /// Whether to find lighting software and tell it what the decks are doing, by OS2L.
     /// </summary>
     public bool Os2lEnabled { get; set; } = true;
