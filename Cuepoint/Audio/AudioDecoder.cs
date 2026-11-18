@@ -3,8 +3,8 @@ using Brutal.SdlApi;
 namespace Cuepoint.Audio;
 
 /// <summary>
-/// Decodes any song a deck can play: SDL_mixer for MP3, WAV, FLAC and OGG, and Windows' Media Foundation for what it
-/// can't (AAC in .m4a, chiefly), when on Windows.
+/// Decodes any song a deck can play: <see cref="Aiff"/> for AIFF, SDL_mixer for MP3, WAV, FLAC and OGG, and Windows'
+/// Media Foundation for what it can't (AAC in .m4a, chiefly), when on Windows.
 /// </summary>
 static class AudioDecoder
 {
@@ -25,6 +25,18 @@ static class AudioDecoder
     public static (string? Title, string? Artist) Stream(string path, IPcmSink sink)
     {
         var started = new StartWatch(sink);
+        if (Aiff.IsAiff(path))
+        {
+            try
+            {
+                return Aiff.Stream(path, started);
+            }
+            catch (NotSupportedException) when (!started.HasStarted)
+            {
+                // A compressed AIFF-C (μ-law and the like), which SDL_mixer may know.
+            }
+        }
+
         try
         {
             return SdlPcmDecoder.Stream(path, started);

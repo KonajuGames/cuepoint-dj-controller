@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using Cuepoint.Audio;
 using Cuepoint.Audio.Analysis;
 
 namespace Cuepoint.Music.Imports;
@@ -45,13 +46,13 @@ static class SeratoMarkers
     static readonly Tag BeatGridTag = new("Serato BeatGrid", "beatgrid", "SERATO_BEATGRID");
 
     /// <summary>
-    /// The hot cues Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, by number; null if there
+    /// The hot cues Serato saved in the file at <paramref name="path"/>, an MP3, M4A, FLAC or AIFF, by number; null if there
     /// are none, it's another kind of file, or it can't be read.
     /// </summary>
     public static IReadOnlyList<TimeSpan?>? ReadHotcues(string path) => ReadTags(path).Hotcues;
 
     /// <summary>
-    /// The beat grid Serato saved in the file at <paramref name="path"/>, an MP3, M4A or FLAC, its bars counted from
+    /// The beat grid Serato saved in the file at <paramref name="path"/>, an MP3, M4A, FLAC or AIFF, its bars counted from
     /// its first marker, if it's locked there; null if it isn't locked, it has none, it's another kind of file, or it
     /// can't be read.
     /// </summary>
@@ -146,6 +147,8 @@ static class SeratoMarkers
                 ".mp3" => FromMp3(file),
                 ".m4a" or ".mp4" => FromMp4(file),
                 ".flac" => FromFlac(file),
+                // An AIFF keeps an ID3 tag in a chunk of its own, as an MP3 keeps it at the start.
+                ".aif" or ".aiff" or ".aifc" => Aiff.ReadId3(path) is { } id3 ? wanted => FromId3(id3.AsSpan(0, 10), id3.AsSpan(10), wanted) : null,
                 _ => null,
             };
         }

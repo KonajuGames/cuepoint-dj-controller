@@ -679,7 +679,7 @@ static void Run()
             plays.Restart(loaded);
             screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
 
-            // Hot cues and a beat grid Serato kept in the file (an MP3, M4A or FLAC) come in the first time it's loaded
+            // Hot cues and a beat grid Serato kept in the file (an MP3, M4A, FLAC or AIFF) come in the first time it's loaded
             // (and again if it changes), if it has none of its own here.
             if (loaded.FilePath is { } loadedPath && ImportRecord.IsNew(importRecord.Serato, loadedPath))
             {

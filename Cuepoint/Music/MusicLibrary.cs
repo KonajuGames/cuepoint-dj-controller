@@ -71,10 +71,10 @@ sealed class Song
 sealed partial class MusicLibrary : IDisposable
 {
     /// <summary>
-    /// What a deck can decode: SDL_mixer's formats, plus what Media Foundation adds on Windows.
+    /// What a deck can decode: SDL_mixer's formats, AIFF, and what Media Foundation adds on Windows.
     /// </summary>
     public static readonly IReadOnlySet<string> Extensions = new HashSet<string>(
-        [".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".wma"],
+        [".mp3", ".m4a", ".aac", ".wav", ".aif", ".aiff", ".aifc", ".flac", ".ogg", ".wma"],
         StringComparer.OrdinalIgnoreCase
     );
 
@@ -285,7 +285,8 @@ sealed partial class MusicLibrary : IDisposable
             {
                 _toTag.Wait(stop);
                 if (_browsedToTag.TryDequeue(out var song) || _libraryToTag.TryDequeue(out song))
-                    _readTags.Enqueue((song, WindowsTags.Read(song.Path)));
+                    // Windows has no tags or length for an AIFF, so it's read here.
+                    _readTags.Enqueue((song, Aiff.IsAiff(song.Path) ? Aiff.ReadTags(song.Path) : WindowsTags.Read(song.Path)));
             }
         }
         catch (OperationCanceledException)
