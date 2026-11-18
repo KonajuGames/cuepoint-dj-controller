@@ -113,6 +113,7 @@ static void Run()
     audio.CueMix = settings.CueMix;
     audio.HeadphoneVolume = settings.HeadphoneVolume;
     audio.Limiter.Enabled = settings.MasterLimiter;
+    audio.CrossfaderCurve = Enum.TryParse<CrossfaderCurve>(settings.CrossfaderCurve, out var curve) ? curve : CrossfaderCurve.Smooth;
     var outputFound = audio.UseOutputDevice(settings.OutputDevice);
     var headphonesFound = audio.UseHeadphoneDevice(settings.HeadphoneDevice);
     // Those not plugged in are still the ones chosen, gone to as soon as they are.
@@ -888,6 +889,11 @@ static void Run()
     screen.Options.MasterLimiterToggled += () =>
     {
         settings.MasterLimiter = audio.Limiter.Enabled;
+        settings.Save(settingsPath);
+    };
+    screen.Options.CrossfaderCurveChanged += () =>
+    {
+        settings.CrossfaderCurve = audio.CrossfaderCurve.ToString();
         settings.Save(settingsPath);
     };
 
@@ -1984,7 +1990,17 @@ static void Run()
                 plays.Update(decks, elapsed);
             }
         );
-        Guarded("running Auto-Mix", () => autoMix.Update(elapsed));
+        Guarded(
+            "running Auto-Mix",
+            () =>
+            {
+                autoMix.Update(elapsed);
+                // Its blends are planned as gradual fades, so it mixes on the smooth curve whatever's chosen. Both
+                // curves agree at the ends, where it starts and stops, so nothing jumps when it takes the curve over or
+                // gives it back there.
+                audio.CrossfaderCurveOverride = autoMix.IsRunning ? CrossfaderCurve.Smooth : null;
+            }
+        );
         Guarded("talking to the lighting software", () => lighting.Update(now));
         Guarded("working the decks from the controller", () => controllers?.Update(now, elapsed));
         Guarded("looking for drives", () => ScanDrives(now));

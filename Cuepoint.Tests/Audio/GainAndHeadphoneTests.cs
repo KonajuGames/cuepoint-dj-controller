@@ -67,4 +67,46 @@ public class GainAndHeadphoneTests
 
         Assert.Equal(new[] { 1f, 1f, 0f, 0f }, output);
     }
+
+    [Theory]
+    [InlineData("Smooth")]
+    [InlineData("Sharp")]
+    public void Each_curve_has_one_side_alone_at_each_end(string name)
+    {
+        var curve = Enum.Parse<CrossfaderCurve>(name);
+        Assert.Equal(1, AudioEngine.CrossfaderGain(curve, 0, CrossfaderSide.Left), 4);
+        Assert.Equal(0, AudioEngine.CrossfaderGain(curve, 0, CrossfaderSide.Right), 4);
+        Assert.Equal(0, AudioEngine.CrossfaderGain(curve, 1, CrossfaderSide.Left), 4);
+        Assert.Equal(1, AudioEngine.CrossfaderGain(curve, 1, CrossfaderSide.Right), 4);
+        Assert.Equal(1, AudioEngine.CrossfaderGain(curve, 0.3f, CrossfaderSide.None));
+    }
+
+    [Fact]
+    public void The_smooth_curve_keeps_constant_power()
+    {
+        for (var position = 0f; position <= 1; position += 0.1f)
+        {
+            var left = AudioEngine.CrossfaderGain(CrossfaderCurve.Smooth, position, CrossfaderSide.Left);
+            var right = AudioEngine.CrossfaderGain(CrossfaderCurve.Smooth, position, CrossfaderSide.Right);
+            Assert.Equal(1, left * left + right * right, 4);
+        }
+    }
+
+    [Theory]
+    [InlineData(0.05f)]
+    [InlineData(0.5f)]
+    [InlineData(0.95f)]
+    public void The_sharp_curve_has_both_sides_at_full_away_from_the_ends(float position)
+    {
+        Assert.Equal(1, AudioEngine.CrossfaderGain(CrossfaderCurve.Sharp, position, CrossfaderSide.Left));
+        Assert.Equal(1, AudioEngine.CrossfaderGain(CrossfaderCurve.Sharp, position, CrossfaderSide.Right));
+    }
+
+    [Fact]
+    public void The_sharp_curve_cuts_in_over_a_short_stretch_without_a_step()
+    {
+        var halfway = 1 - AudioEngine.SHARP_CUT_IN / 2;
+        Assert.Equal(0.5f, AudioEngine.CrossfaderGain(CrossfaderCurve.Sharp, halfway, CrossfaderSide.Left), 3);
+        Assert.Equal(0.5f, AudioEngine.CrossfaderGain(CrossfaderCurve.Sharp, 1 - halfway, CrossfaderSide.Right), 3);
+    }
 }

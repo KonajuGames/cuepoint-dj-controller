@@ -67,6 +67,11 @@ sealed class AppSettings
     public bool MasterLimiter { get; set; } = true;
 
     /// <summary>
+    /// The crossfader's curve, by name: Smooth or Sharp; null, or one not known, for Smooth.
+    /// </summary>
+    public string? CrossfaderCurve { get; set; }
+
+    /// <summary>
     /// Whether a song can't be loaded onto a deck that's playing into the main mix.
     /// </summary>
     public bool ProtectPlayingDecks { get; set; } = true;

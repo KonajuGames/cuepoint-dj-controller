@@ -16,6 +16,23 @@ enum CrossfaderSide
 }
 
 /// <summary>
+/// How the crossfader shares the mix between its sides as it moves.
+/// </summary>
+enum CrossfaderCurve
+{
+    /// <summary>
+    /// A constant-power blend, for mixing: each side fades gradually across the whole travel.
+    /// </summary>
+    Smooth,
+
+    /// <summary>
+    /// A sharp cut, for scratching: both sides at full until the fader is within a hair of one end, where the other
+    /// cuts out.
+    /// </summary>
+    Sharp,
+}
+
+/// <summary>
 /// SDL's audio subsystem and one SDL_mixer mixer, plus the crossfader between its decks, playing out of an output
 /// device (the system's default unless chosen). Decks play through it. Only one should exist at a time, since it
 /// starts and stops SDL's audio for the whole process.
@@ -108,6 +125,7 @@ sealed unsafe class AudioEngine : IDisposable
 
     readonly List<Deck> _decks = [];
     float _crossfader = 0.5f;
+    CrossfaderCurve _crossfaderCurve;
     bool _autoGain = true;
 
     /// <summary>
@@ -158,17 +176,68 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// How loud the crossfader lets a deck on <paramref name="side"/> through, from 0 to 1. A constant-power curve:
-    /// in the middle each side is at about 0.707 (-3 dB), so the two together sound as loud as either alone and a
-    /// blend doesn't swell as it passes the centre.
+    /// How the crossfader shares the mix between its sides: a smooth blend, or a sharp cut for scratching.
     /// </summary>
-    public float CrossfaderGain(CrossfaderSide side) =>
-        side switch
+    public CrossfaderCurve CrossfaderCurve
+    {
+        get => _crossfaderCurve;
+        set
         {
-            CrossfaderSide.Left => MathF.Cos(_crossfader * MathF.PI / 2),
-            CrossfaderSide.Right => MathF.Sin(_crossfader * MathF.PI / 2),
-            _ => 1,
+            _crossfaderCurve = value;
+            foreach (var deck in _decks)
+                deck.ApplyGain();
+        }
+    }
+
+    /// <summary>
+    /// How far from an end the sharp curve's cut starts: the far side goes from full to silent over this much of the
+    /// fader's travel, which is short enough to cut like a scratch mixer's, but not so short it clicks.
+    /// </summary>
+    public const float SHARP_CUT_IN = 0.04f;
+
+    /// <summary>
+    /// A curve to use in place of <see cref="CrossfaderCurve"/> for now, without changing what's chosen; null for
+    /// none. Auto-Mix holds the smooth curve while it runs, since its blends are planned as gradual fades.
+    /// </summary>
+    public CrossfaderCurve? CrossfaderCurveOverride
+    {
+        get => _crossfaderCurveOverride;
+        set
+        {
+            if (_crossfaderCurveOverride == value)
+                return;
+            _crossfaderCurveOverride = value;
+            foreach (var deck in _decks)
+                deck.ApplyGain();
+        }
+    }
+
+    CrossfaderCurve? _crossfaderCurveOverride;
+
+    /// <summary>
+    /// How loud the crossfader lets a deck on <paramref name="side"/> through, from 0 to 1, by the override if there
+    /// is one, otherwise <see cref="CrossfaderCurve"/>.
+    /// </summary>
+    public float CrossfaderGain(CrossfaderSide side) => CrossfaderGain(_crossfaderCurveOverride ?? _crossfaderCurve, _crossfader, side);
+
+    /// <summary>
+    /// How loud a crossfader at <paramref name="position"/> lets a deck on <paramref name="side"/> through, from 0 to 1.
+    /// Smooth is a constant-power curve: in the middle each side is at about 0.707 (-3 dB), so the two together sound
+    /// as loud as either alone and a blend doesn't swell as it passes the centre. Sharp keeps both sides at full
+    /// across nearly all the travel, cutting one out over the last <see cref="SHARP_CUT_IN"/> toward the other end.
+    /// </summary>
+    public static float CrossfaderGain(CrossfaderCurve curve, float position, CrossfaderSide side)
+    {
+        if (side == CrossfaderSide.None)
+            return 1;
+        // How far the fader is from this side's own end: 0 at it, 1 at the other.
+        var away = side == CrossfaderSide.Left ? position : 1 - position;
+        return curve switch
+        {
+            CrossfaderCurve.Sharp => Math.Clamp((1 - away) / SHARP_CUT_IN, 0, 1),
+            _ => MathF.Cos(away * MathF.PI / 2),
         };
+    }
 
     /// <summary>
     /// What the headphones hear, from 0 (only the decks sent to them) to 1 (only the main mix).

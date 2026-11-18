@@ -30,6 +30,7 @@ sealed class OptionsDialog : Panel
     Element? _lastFocused;
     readonly Checkbox _autoGain;
     readonly Checkbox _limiter;
+    readonly Dropdown<CrossfaderCurve> _crossfaderCurve;
 
     /// <summary>
     /// Whether a song can't be loaded onto a deck that's playing into the main mix.
@@ -132,6 +133,11 @@ sealed class OptionsDialog : Panel
     public event Action? MasterLimiterToggled;
 
     /// <summary>
+    /// The crossfader's curve was changed here.
+    /// </summary>
+    public event Action? CrossfaderCurveChanged;
+
+    /// <summary>
     /// A lighting address was entered (empty for none).
     /// </summary>
     public event Action<string>? LightingAddressChanged;
@@ -221,6 +227,28 @@ sealed class OptionsDialog : Panel
         };
         _content.Add(
             new Label(body, "Keeps the mix from clipping when the decks are loud together, turning it down smoothly just before a peak.")
+            {
+                Color = Theme.Muted,
+            }
+        );
+
+        var curveRow = Row("Crossfader curve", body);
+        _crossfaderCurve = curveRow.Add(
+            new Dropdown<CrossfaderCurve>(body)
+            {
+                Width = 300,
+                Items = () => [CrossfaderCurve.Smooth, CrossfaderCurve.Sharp],
+                Text = curve => curve == CrossfaderCurve.Sharp ? "Sharp cut, for scratching" : "Smooth blend, for mixing",
+                Selected = engine.CrossfaderCurve,
+            }
+        );
+        _crossfaderCurve.Chosen += curve =>
+        {
+            engine.CrossfaderCurve = curve;
+            CrossfaderCurveChanged?.Invoke();
+        };
+        _content.Add(
+            new Label(body, "Smooth fades one deck into the other across the whole fader. Sharp keeps both up until the very end, then cuts.")
             {
                 Color = Theme.Muted,
             }
@@ -407,6 +435,7 @@ sealed class OptionsDialog : Panel
         // The mouse wheel can change it too, so it's said afresh each time.
         _waveformSeconds.Text = $"{WaveformSeconds.Value:F0} seconds";
         _limiter.Checked = _engine.Limiter.Enabled;
+        _crossfaderCurve.Selected = _engine.CrossfaderCurve;
         _output.Selected = _engine.OutputDevice;
         _headphones.Selected = _engine.HeadphoneDevice;
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";

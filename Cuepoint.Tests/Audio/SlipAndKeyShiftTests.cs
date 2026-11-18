@@ -205,6 +205,21 @@ public sealed class SlipAndKeyShiftTests : IDisposable
     }
 
     [Fact]
+    public void A_curve_override_is_used_for_now_without_changing_the_chosen_curve()
+    {
+        _engine.CrossfaderCurve = CrossfaderCurve.Sharp;
+        _engine.Crossfader = 0.5f;
+        Assert.Equal(1, _engine.CrossfaderGain(CrossfaderSide.Left));
+
+        _engine.CrossfaderCurveOverride = CrossfaderCurve.Smooth;
+        Assert.Equal(MathF.Sqrt(0.5f), _engine.CrossfaderGain(CrossfaderSide.Left), 4);
+        Assert.Equal(CrossfaderCurve.Sharp, _engine.CrossfaderCurve);
+
+        _engine.CrossfaderCurveOverride = null;
+        Assert.Equal(1, _engine.CrossfaderGain(CrossfaderSide.Left));
+    }
+
+    [Fact]
     public void Moving_the_cue_point_says_so_but_setting_it_again_where_it_is_does_not()
     {
         var moved = 0;
