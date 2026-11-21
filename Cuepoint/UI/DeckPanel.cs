@@ -184,6 +184,27 @@ sealed class DeckPanel : Panel
     public Deck Deck => _deck;
 
     /// <summary>
+    /// The loaded song's cover, as the renderer's texture of it (see <see cref="Renderer.AddImage"/>) and its size in
+    /// pixels; null while it hasn't one, when a plain square stands in.
+    /// </summary>
+    public (int Texture, int Width, int Height)? Cover { get; set; }
+
+    /// <summary>
+    /// The cover's square, before the title and artist, and the space after it.
+    /// </summary>
+    public const float COVER_SIZE = 40;
+
+    const float COVER_GAP = 8;
+
+    // Where the cover's square goes, worked out with the rest of the layout.
+    float2 _coverAt;
+
+    /// <summary>
+    /// The title and artist's distance from the outer edge: past the badge, and the cover while a song's loaded.
+    /// </summary>
+    float TitleOffset => 40 + (_deck.IsLoaded ? COVER_SIZE + COVER_GAP : 0);
+
+    /// <summary>
     /// A song was dragged from the list and dropped on the deck, to load.
     /// </summary>
     public event Action<DeckPanel, Song>? SongDropped;
@@ -981,7 +1002,7 @@ sealed class DeckPanel : Panel
         _key.Measure();
         var right = MathF.Max(MathF.Max(_bpm.Size.X, _key.Size.X), 90);
         var content = Width - 2 * PAD - TEMPO_COLUMN - TEMPO_GAP;
-        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, content - 40 - right - 8 - KEY_SHIFT_WIDTH - 6 - MEMORY_WIDTH - 16);
+        _title.MaxWidth = _artist.MaxWidth = MathF.Max(40, content - TitleOffset - right - 8 - KEY_SHIFT_WIDTH - 6 - MEMORY_WIDTH - 16);
         _overview.Length = content;
         // The pads share the width between them; the loading line gets what the buttons either side leave it.
         var padWidth = MathF.Floor((Width - 2 * PAD - (_pads.Count - 1) * PAD_GAP) / _pads.Count);
@@ -1020,8 +1041,9 @@ sealed class DeckPanel : Panel
         void Place(Element child, float x, float y) => child.Arrange(new float2(MathF.Round(x), MathF.Round(y)));
 
         Place(_badge, Outer(0, _badge), top + 2);
-        Place(_title, Outer(40, _title), top);
-        Place(_artist, Outer(40, _artist), top + _title.Size.Y + 1);
+        _coverAt = new float2(Mirrored ? contentRight - 40 - COVER_SIZE : contentLeft + 40, top);
+        Place(_title, Outer(TitleOffset, _title), top);
+        Place(_artist, Outer(TitleOffset, _artist), top + _title.Size.Y + 1);
         Place(_bpm, Inner(0, _bpm), top - 6);
         Place(_key, Inner(0, _key), top + _bpm.Size.Y - 6);
 
@@ -1124,6 +1146,7 @@ sealed class DeckPanel : Panel
         DrawFrame(batch);
         // A strip of the deck's colour along the top, so which deck is which reads at a glance.
         batch.AddRect(ScreenPosition, new float2(Size.X, 2), _color);
+        DrawCover(batch);
         DrawChildren(batch);
 
         // A song dragged over the deck: tint it and say what letting go will do.
@@ -1141,6 +1164,26 @@ sealed class DeckPanel : Panel
             batch.AddRect(at, chip, _color);
             batch.AddText(_bold, text, at + new float2(12, 6), Colors.White);
         }
+    }
+
+    /// <summary>
+    /// The loaded song's cover, fitted to its square and keeping its shape; or, without one, the square left plain.
+    /// </summary>
+    void DrawCover(Batch batch)
+    {
+        if (!_deck.IsLoaded)
+            return;
+        var square = new float2(COVER_SIZE, COVER_SIZE);
+        if (Cover is not { } cover)
+        {
+            batch.AddRect(_coverAt, square, Theme.Well);
+            batch.AddBorder(_coverAt, square, 1, Theme.PanelBorder);
+            return;
+        }
+        var scale = COVER_SIZE / Math.Max(cover.Width, cover.Height);
+        var size = new float2(MathF.Round(cover.Width * scale), MathF.Round(cover.Height * scale));
+        var at = _coverAt + new float2(MathF.Floor((COVER_SIZE - size.X) / 2), MathF.Floor((COVER_SIZE - size.Y) / 2));
+        batch.AddTexture(cover.Texture, at, size);
     }
 
     // Several songs dragged at once load the first, from the song list or Up next.

@@ -11,6 +11,7 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 ### Decks
 
 - **Two decks:** play, cue (with a preview while held), sync and key lock on each.
+- **Cover pictures:** a song's cover, as tagged in an MP3 or M4A (and a FLAC, where Windows reads FLAC tags), shows small beside its title and artist, so which song is on which deck reads at a glance. A song without one leaves a plain square there. Windows decodes the pictures, so this is on Windows only.
 - **Tempo fader:** ±8%, ±16% or ±50%.
 - **Key shift:** a deck's **-** and **+** (beside its key) move the key down or up a semitone, as far as an octave, without changing the tempo, to bring a song into a key that mixes with the other deck. The key shown moves with it. Right-click either to put the key back. A new song starts in its own key.
 - **Key match:** a deck's **=** (between **-** and **+**) shifts its key as little as it takes to mix with the other deck's: to the same key, or its relative major or minor, the same number on the Camelot wheel. Key lock goes on with it, so the tempo fader doesn't pull the key away again. **=** is lit while the two decks' keys match.

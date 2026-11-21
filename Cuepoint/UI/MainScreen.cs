@@ -213,6 +213,16 @@ sealed class MainScreen : Panel
     /// </summary>
     public Deck? DeckAt(float2 point) => _decks.FirstOrDefault(panel => panel.Visible && panel.Contains(point))?.Deck;
 
+    /// <summary>
+    /// Shows <paramref name="cover"/> on <paramref name="deck"/>'s panel (see <see cref="DeckPanel.Cover"/>).
+    /// </summary>
+    public void ShowCover(Deck deck, (int Texture, int Width, int Height)? cover)
+    {
+        foreach (var panel in _decks)
+            if (panel.Deck == deck)
+                panel.Cover = cover;
+    }
+
     public void Log(string message) => Browser.Status = $"{DateTime.Now:HH:mm:ss}  {message}";
 
     /// <summary>

@@ -725,10 +725,20 @@ static void Run()
     // Decks being put back after the app didn't close properly, and where each goes once its song is in.
     var restoring = new Dictionary<Deck, (double Position, bool Play, int KeyShift)>();
 
+    // Each deck's cover, as the renderer's texture of it and its size.
+    var covers = new Dictionary<Deck, (int Texture, int Width, int Height)>();
+
     foreach (var deck in decks)
     {
         deck.Loaded += loaded =>
         {
+            // The new song's cover made a texture for the deck to show, and the last song's given back.
+            if (covers.Remove(loaded, out var shown))
+                renderer.RemoveImage(shown.Texture);
+            if (loaded.Cover is { } picture)
+                covers[loaded] = (renderer.AddImage(picture.Width, picture.Height, picture.Rgba), picture.Width, picture.Height);
+            screen.ShowCover(loaded, covers.TryGetValue(loaded, out var cover) ? cover : null);
+
             if (restoring.Remove(loaded, out var restore))
             {
                 loaded.Seek(TimeSpan.FromSeconds(restore.Position));

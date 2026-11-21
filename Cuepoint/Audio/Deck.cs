@@ -31,8 +31,14 @@ sealed partial class Deck : IDisposable
         string Artist,
         TimeSpan Duration,
         Waveform Waveform,
-        DetailWaveform Detail
+        DetailWaveform Detail,
+        CoverPicture? Cover
     );
+
+    /// <summary>
+    /// How many pixels a side the cover picture is read at (see <see cref="Cover"/>).
+    /// </summary>
+    public const int COVER_PIXELS = 80;
 
     public string Name { get; }
 
@@ -56,6 +62,12 @@ sealed partial class Deck : IDisposable
     /// The loaded song's waveform in detail, with its frequency content, for drawing scrolling past.
     /// </summary>
     public DetailWaveform? Detail { get; private set; }
+
+    /// <summary>
+    /// The loaded song's cover picture, from its tags, at most <see cref="COVER_PIXELS"/> a side; null if it hasn't
+    /// one (or off Windows, where it isn't read).
+    /// </summary>
+    public CoverPicture? Cover { get; private set; }
 
     public bool IsLoaded => !_audio.IsNull();
 
@@ -862,8 +874,26 @@ sealed partial class Deck : IDisposable
             artist ?? "",
             pcm.Duration,
             waveform,
-            detail
+            detail,
+            ReadCover(path)
         );
+    }
+
+    /// <summary>
+    /// The song's cover, if it has one; a picture that won't read is only a missing picture, never a failed load.
+    /// </summary>
+    static CoverPicture? ReadCover(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+            return null;
+        try
+        {
+            return CoverArt.Read(path, COVER_PIXELS);
+        }
+        catch (Exception e) when (e is System.Runtime.InteropServices.ExternalException or InvalidCastException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -890,6 +920,7 @@ sealed partial class Deck : IDisposable
         Duration = song.Duration;
         Waveform = song.Waveform;
         Detail = song.Detail;
+        Cover = song.Cover;
         Analysis = null;
 
         // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
