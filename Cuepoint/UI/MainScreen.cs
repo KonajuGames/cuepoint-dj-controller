@@ -405,6 +405,7 @@ sealed class MainScreen : Panel
         {
             foreach (var deck in _decks)
                 deck.Menu = value;
+            AutoMix.Menu = value;
         }
     }
 

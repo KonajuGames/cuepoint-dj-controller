@@ -63,6 +63,37 @@ public class MixOrderTests
     }
 
     [Fact]
+    public void Sorting_by_a_column_puts_those_with_nothing_to_sort_by_last_and_keeps_ties_in_order()
+    {
+        var b = At("b", Camelot(9), 128, 5);
+        var a = At("A", Camelot(8, false), 120, 7);
+        var c = At("c", Camelot(8), 124);
+        var untitled = Song(@"C:\Music\untitled.mp3", title: "");
+        var songs = new[] { b, untitled, c, a };
+        a.Artist = "Zed";
+        b.Artist = "alpha";
+
+        Assert.Equal([a, b, c, untitled], MixOrder.Sort(songs, SongOrder.Title));
+        // The others are by "Artist", which ties, so they keep their order.
+        Assert.Equal([b, untitled, c, a], MixOrder.Sort(songs, SongOrder.Artist));
+        Assert.Equal([a, c, b, untitled], MixOrder.Sort(songs, SongOrder.Tempo));
+        // 8A, 8B, then 9A.
+        Assert.Equal([c, a, b, untitled], MixOrder.Sort(songs, SongOrder.Key));
+        Assert.Equal([b, a, untitled, c], MixOrder.Sort(songs, SongOrder.Energy));
+    }
+
+    [Fact]
+    public void Shuffling_keeps_every_song()
+    {
+        var songs = Enumerable.Range(1, 20).Select(i => At($"{i}", Camelot(8), 120 + i)).ToList();
+
+        var shuffled = MixOrder.Sort(songs, SongOrder.Shuffle, random: new Random(4));
+
+        Assert.NotEqual(songs, shuffled);
+        Assert.Equal(songs.ToHashSet(), shuffled.ToHashSet());
+    }
+
+    [Fact]
     public void Nothing_and_one_song_stay_as_they_are()
     {
         Assert.Empty(MixOrder.Arrange([]));

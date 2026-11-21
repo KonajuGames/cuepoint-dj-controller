@@ -16,7 +16,8 @@ order to build in.
 | 5 | Backing up settings, changeable keys, DDJ-FLX4 and DDJ-400 mappings, Light and High contrast looks | `c1f936f`, `55f95b0`, `7001291` |
 | — | Sync lock, a brighter Dark label colour and fainter list stripes | `3f41228` |
 | — | BEAT LOOP and KEY SHIFT pads, the DDJ-400's FX ON following CH SELECT, sync lock kept after a crash | `1eb46f7` |
-| 6 | Suggested next, past sets kept with `played:` and `notplayed:` searches, ordering Auto-Mix's list for mixing | this commit |
+| 6 | Suggested next, past sets kept with `played:` and `notplayed:` searches, ordering Auto-Mix's list for mixing | `33bb825` |
+| — | Auto-Mix's Order list: for mixing, by title, artist, tempo, key or energy, or shuffled | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).

@@ -32,7 +32,7 @@ sealed class AutoMixPanel : Panel
     readonly Label _time;
     readonly Button _play;
     readonly Button _close;
-    readonly Button _order;
+    readonly Dropdown<SongOrder?> _order;
     readonly ListHeader<AutoMixRow> _header;
     readonly ScrollPanel _scroll;
     readonly Label _status;
@@ -70,9 +70,18 @@ sealed class AutoMixPanel : Panel
     public event Action? CloseRequested;
 
     /// <summary>
-    /// Order for mixing was pressed, to put the songs still to come in an order to mix them in.
+    /// An order was chosen from the Order list, to put the songs still to come in.
     /// </summary>
-    public event Action? OrderRequested;
+    public event Action<SongOrder>? OrderRequested;
+
+    /// <summary>
+    /// Where the Order list opens.
+    /// </summary>
+    public ContextMenu? Menu
+    {
+        get => _order.Menu;
+        set => _order.Menu = value;
+    }
 
     /// <summary>
     /// Songs were dropped on it from the song list, to go on the end.
@@ -111,13 +120,23 @@ sealed class AutoMixPanel : Panel
         _close = Flat("Close Auto-Mix", images.Cross);
         _close.Clicked += _ => CloseRequested?.Invoke();
         _order = Add(
-            new Button(body, "Order for mixing")
+            new Dropdown<SongOrder?>(body)
             {
+                Width = 116,
                 Padding = 4,
-                Tooltip = "Put the songs still to come in an order to mix them in: each by the one that mixes best after it, in key, tempo and energy",
+                Items = () => Enum.GetValues<SongOrder>().Select(how => (SongOrder?)how).ToList(),
+                Text = how => how is { } order ? MixOrder.Name(order) : "Order...",
+                Tooltip =
+                    "Put the songs still to come in another order: for mixing, each by the one that mixes best after it in key, tempo and energy, or by title, artist, tempo, key or energy, or shuffled",
             }
         );
-        _order.Clicked += _ => OrderRequested?.Invoke();
+        _order.Chosen += how =>
+        {
+            // It does what's chosen, then it's ready to choose again.
+            _order.Selected = null;
+            if (how is { } order)
+                OrderRequested?.Invoke(order);
+        };
 
         List = new ListView<AutoMixRow>(body)
         {
@@ -245,9 +264,8 @@ sealed class AutoMixPanel : Panel
         Place(_track, left, y + (BUTTON - _track.Size.Y) / 2);
         Place(_time, left + MathF.Max(64, _track.Size.X + 14), y + (BUTTON - _time.Size.Y) / 2);
         Place(_play, right - BUTTON, y);
-        _order.MinSize = new float2(0, BUTTON);
         _order.Measure();
-        Place(_order, right - BUTTON - 8 - _order.Size.X, y);
+        Place(_order, right - BUTTON - 8 - _order.Size.X, y + (BUTTON - _order.Size.Y) / 2);
         y += BUTTON + 6;
 
         Place(_header, left, y);

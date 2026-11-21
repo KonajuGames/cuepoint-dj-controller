@@ -378,18 +378,18 @@ sealed class AutoMix
     }
 
     /// <summary>
-    /// Puts the songs still to come in an order to mix them in (see <see cref="MixOrder"/>), after the one playing or
-    /// loaded to come in next, if there is one. Returns the order they were in, to put back, or null if there weren't
-    /// two to put in order.
+    /// Puts the songs still to come in the order <paramref name="how"/> says (see <see cref="MixOrder.Sort"/>): to mix
+    /// them in, after the one playing or loaded to come in next, if there is one, or by title, tempo and the rest.
+    /// Returns the order they were in, to put back, or null if there weren't two to put in order.
     /// </summary>
-    public IReadOnlyList<Song>? OrderForMixing()
+    public IReadOnlyList<Song>? Order(SongOrder how, Random? random = null)
     {
         var first = Enumerable.Range(0, Songs.Count).FirstOrDefault(IsWaiting, -1);
         if (first < 0 || Songs.Count - first < 2)
             return null;
         var before = Songs.Skip(first).ToList();
         var after = first > 0 ? Songs[first - 1] : null;
-        Changed([.. Songs.Take(first), .. MixOrder.Arrange(before, after)]);
+        Changed([.. Songs.Take(first), .. MixOrder.Sort(before, how, after, random)]);
         return before;
     }
 

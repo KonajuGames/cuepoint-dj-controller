@@ -420,7 +420,7 @@ public sealed class AutoMixTests
         rig.Mix.Open("Set", [Keyed("8A", 9, 6), Keyed("2A", 3, 6), Keyed("10A", 11, 8), Keyed("9A", 4, 7)]);
         rig.Started();
 
-        var before = rig.Mix.OrderForMixing();
+        var before = rig.Mix.Order(SongOrder.Mixing);
 
         Assert.Equal(["8A", "9A", "10A", "2A"], rig.Mix.Songs.Select(song => song.Title));
         rig.Mix.PutBack(before!);
@@ -433,7 +433,7 @@ public sealed class AutoMixTests
         var rig = new Rig(songs: 2).Started();
         rig.Run(1);
 
-        Assert.Null(rig.Mix.OrderForMixing());
+        Assert.Null(rig.Mix.Order(SongOrder.Title));
     }
 
     [Fact]

@@ -1702,15 +1702,17 @@ static void Run()
         screen.Log(songs.Count == 1 ? $"Added {songs[0].Title} to {autoMix.Name}" : $"Added {songs.Count} songs to {autoMix.Name}");
     }
     screen.AutoMix.SongsDropped += AddToUpNext;
-    screen.AutoMix.OrderRequested += () =>
+    screen.AutoMix.OrderRequested += how =>
     {
-        if (autoMix.OrderForMixing() is not { } before)
+        if (autoMix.Order(how) is not { } before)
         {
             screen.Log("There aren't two songs still to come to put in order");
             return;
         }
-        edits.RecordLibrary($"ordering {autoMix.Name} for mixing", () => autoMix.PutBack(before));
-        screen.Log($"Put {autoMix.Name} in an order to mix it in");
+        var shuffled = how == SongOrder.Shuffle;
+        var what = how == SongOrder.Mixing ? "for mixing" : MixOrder.Name(how).ToLowerInvariant();
+        edits.RecordLibrary(shuffled ? $"shuffling {autoMix.Name}" : $"ordering {autoMix.Name} {what}", () => autoMix.PutBack(before));
+        screen.Log(shuffled ? $"Shuffled {autoMix.Name}" : $"Put {autoMix.Name} in order {what}");
     };
 
     // It comes off the list as it loads.
