@@ -8,8 +8,8 @@ namespace Cuepoint.UI;
 /// for the upper deck's beat, and a bar out from it to where the lower deck's beat is, half a beat at either end. As the
 /// waveforms scroll leftwards, a lower deck that's ahead has its beats left of the upper's, so the bar points left, the
 /// same way its beat lines are off; nudge it the other way to close it up. Green while they're within
-/// <see cref="IN_PHASE_SECONDS"/>, with how far apart they are written beside it. Dim unless both are playing, and
-/// empty unless both songs have a beat grid.
+/// <see cref="IN_PHASE_SECONDS"/>, with how far apart they are written beside it. Empty unless both decks are playing
+/// songs with a beat grid.
 /// </summary>
 sealed class PhaseMeter : Element
 {
@@ -50,7 +50,7 @@ sealed class PhaseMeter : Element
 
     /// <summary>
     /// How far the lower deck's beats are ahead of the upper's, smoothed, in beats and seconds as heard; null unless
-    /// both songs have a beat grid.
+    /// both decks are playing songs with a beat grid.
     /// </summary>
     public (double Beats, double Seconds)? Shown => _shown;
 
@@ -64,7 +64,7 @@ sealed class PhaseMeter : Element
         var seconds = (now - _lastUpdate) / 1000.0;
         _lastUpdate = now;
 
-        var reading = _upper.IsLoaded && _lower.IsLoaded ? _lower.PhaseAgainst(_upper) : null;
+        var reading = _upper.IsPlaying && _lower.IsPlaying ? _lower.PhaseAgainst(_upper) : null;
         _shown = Ease(_shown, reading, 1 - Math.Exp(-SMOOTHING_RATE * seconds));
     }
 
@@ -91,13 +91,10 @@ sealed class PhaseMeter : Element
         foreach (var quarter in new[] { -0.25f, 0.25f })
             batch.AddRect(new float2(MathF.Round(centre + quarter * track.X), top), new float2(1, TRACK_HEIGHT), Colors.Hex(0xFFFFFF, 0.18f));
 
-        var playing = _upper.IsPlaying && _lower.IsPlaying;
         if (_shown is { } shown)
         {
             var lined = Math.Abs(shown.Seconds) <= IN_PHASE_SECONDS;
             var color = lined ? Theme.Connected : Theme.Accent;
-            if (!playing)
-                color = Theme.Fade(color, 0.45f);
 
             // Left for ahead, as its beat lines are on the waveforms. At least two pixels, so a hair out still shows.
             var x = centre - (float)shown.Beats * track.X;
