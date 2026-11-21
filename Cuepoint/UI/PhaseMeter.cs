@@ -85,7 +85,7 @@ sealed class PhaseMeter : Element
         var centre = MathF.Round(ScreenPosition.X + Width / 2);
         var top = MathF.Round(ScreenPosition.Y + (HEIGHT - TRACK_HEIGHT) / 2);
         var left = centre - track.X / 2;
-        batch.AddRect(new float2(left, top), track, Colors.Hex(0x000000));
+        batch.AddRect(new float2(left, top), track, AppTheme.Unlit);
 
         // Faint marks a quarter of a beat out either way, for a sense of scale.
         foreach (var quarter in new[] { -0.25f, 0.25f })

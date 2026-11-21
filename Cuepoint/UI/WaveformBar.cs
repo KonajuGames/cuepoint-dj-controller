@@ -123,7 +123,7 @@ sealed class WaveformBar : Slider
 
     public float4 PlayedColor { get; set; } = Colors.Hex(0xEB7828);
     public float4 UnplayedColor { get; set; } = Colors.Hex(0xFFFFFF, 0.35f);
-    public float4 BackgroundColor { get; set; } = Colors.Hex(0x000000, 0.25f);
+    public float4 BackgroundColor { get; set; } = AppTheme.Overview;
 
     // Each column's height and colour in three bands, worked out once for a song at a size: they don't change as it
     // plays, and looking through the bands for every column takes a good part of a frame.

@@ -30,7 +30,7 @@ sealed class ShortcutsDialog : Panel
     public ShortcutsDialog(Font body, Font bold, Font heading)
     {
         Visible = false;
-        Background = Colors.Hex(0x000000, 0.75f);
+        Background = Theme.Scrim(0.75f);
 
         (_body, _bold, _heading) = (body, bold, heading);
         _box = Add(new ScrollPanel { Padding = 20, Background = Theme.PanelRaised, BorderColor = Theme.PanelBorder, BorderWidth = 1 });

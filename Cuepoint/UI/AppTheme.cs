@@ -23,6 +23,29 @@ static class AppTheme
     /// </summary>
     public static readonly float4 Sampler = Colors.Hex(0xB57BE0);
 
+    /// <summary>
+    /// What the waveforms, the phase meter and the beat trackers are drawn on: dark in every look, as a DJ app's
+    /// waveforms are, so the beat grid's and playhead's white lines show on it.
+    /// </summary>
+    public static readonly float4 Screen = Colors.Hex(0x0E0F12);
+
+    /// <summary>
+    /// Behind a deck's overview: darkening the panel on a dark look, and the waveforms' own dark on a light one.
+    /// </summary>
+    public static float4 Overview => Theme.IsLight ? Screen : Colors.Hex(0x000000, 0.25f);
+
+    /// <summary>
+    /// An unlit box or track in a meter (the beat trackers', the phase meter's): black, but on a look whose panels are
+    /// black already, a dark grey that shows against them.
+    /// </summary>
+    public static float4 Unlit => Theme.Kind == ThemeKind.HighContrast ? Theme.PanelRaised : Colors.Hex(0x000000);
+
+    /// <summary>
+    /// <paramref name="color"/>, deepened on a light look, for a bright colour (a tag's, a folder icon's) that would
+    /// wash out on white.
+    /// </summary>
+    public static float4 OnPage(float4 color) => Theme.IsLight ? Theme.Mix(color, Colors.Hex(0x000000), 0.35f) : color;
+
     public static readonly float4 DeckA = Colors.Hex(0x2F8FFF);
     public static readonly float4 DeckB = Colors.Hex(0xEE4444);
 
@@ -54,8 +77,9 @@ static class AppTheme
     /// </summary>
     public static float4 CamelotColor(int number)
     {
+        // Deeper and less bright on a light look, as pastels wash out on white.
         var hue = (number - 1) / 12f;
-        return Theme.Hsv(hue, 0.55f, 1f);
+        return Theme.IsLight ? Theme.Hsv(hue, 0.85f, 0.62f) : Theme.Hsv(hue, 0.55f, 1f);
     }
 }
 

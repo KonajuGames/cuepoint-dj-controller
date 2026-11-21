@@ -108,6 +108,9 @@ static void Run()
     keyMap.Apply();
     var settings = AppSettings.Load(settingsPath);
 
+    // The look, before anything's made, as elements take their colours as they're made.
+    Theme.Use(Enum.TryParse<ThemeKind>(settings.Theme, out var look) ? look : ThemeKind.Dark);
+
     using var audio = new AudioEngine(settings.BufferFrames is { } frames && AudioEngine.BufferSizes.Contains(frames) ? frames : null);
     using var deckA = audio.CreateDeck("A", CrossfaderSide.Left);
     using var deckB = audio.CreateDeck("B", CrossfaderSide.Right);
@@ -1057,6 +1060,12 @@ static void Run()
             }
         );
     }
+    screen.Options.LookChosen += kind =>
+    {
+        settings.Theme = kind == ThemeKind.Dark ? null : kind.ToString();
+        SaveSettings();
+        screen.Log(kind == Theme.Kind ? $"{Theme.NameOf(kind)} it is" : $"Cuepoint will look {Theme.NameOf(kind).ToLowerInvariant()} the next time it starts");
+    };
     screen.Options.BackUpClicked += () =>
     {
         screen.Options.Close();

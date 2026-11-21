@@ -172,8 +172,8 @@ sealed class SongBrowser : Panel
                 Icon = images.Cross,
                 Padding = 0,
                 Background = Colors.Transparent,
-                HoverBackground = Colors.Hex(0xFFFFFF, 0.1f),
-                PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
+                HoverBackground = Theme.Tint(0.1f),
+                PressedBackground = Theme.Tint(0.05f),
                 TextColor = Theme.Muted,
                 Visible = false,
                 Tooltip = "Clear the search",
@@ -193,8 +193,8 @@ sealed class SongBrowser : Panel
                     Icon = images.Cross,
                     Padding = 0,
                     Background = Colors.Transparent,
-                    HoverBackground = Colors.Hex(0xFFFFFF, 0.1f),
-                    PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
+                    HoverBackground = Theme.Tint(0.1f),
+                    PressedBackground = Theme.Tint(0.05f),
                     TextColor = Theme.Muted,
                     Visible = false,
                     Tooltip = tooltip,
@@ -221,7 +221,7 @@ sealed class SongBrowser : Panel
             DragLabel = song => $"{song.Artist} - {song.Title}",
             RowProgress = analyser.ProgressOf,
             ProgressColor = Theme.Fade(Theme.Accent, 0.1f),
-            AlternateRow = Colors.Hex(0xFFFFFF, 0.03f),
+            AlternateRow = Theme.Tint(0.03f),
         };
         // The title takes whatever width the rest leave, so it's the one column that isn't sized by hand.
         _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title) { SortKey = song => Text(song.Title), Resizable = false };
@@ -754,13 +754,13 @@ sealed class SongBrowser : Panel
     static float4? TagColor(Song song) =>
         song.Notes.Color switch
         {
-            "red" => Colors.Hex(0xE85D5D),
-            "orange" => Colors.Hex(0xEB9238),
-            "yellow" => Colors.Hex(0xE8D04A),
-            "green" => Colors.Hex(0x5CC46E),
-            "blue" => Colors.Hex(0x5A9BEF),
-            "purple" => Colors.Hex(0xA878E8),
-            "pink" => Colors.Hex(0xEE82C0),
+            "red" => AppTheme.OnPage(Colors.Hex(0xE85D5D)),
+            "orange" => AppTheme.OnPage(Colors.Hex(0xEB9238)),
+            "yellow" => AppTheme.OnPage(Colors.Hex(0xE8D04A)),
+            "green" => AppTheme.OnPage(Colors.Hex(0x5CC46E)),
+            "blue" => AppTheme.OnPage(Colors.Hex(0x5A9BEF)),
+            "purple" => AppTheme.OnPage(Colors.Hex(0xA878E8)),
+            "pink" => AppTheme.OnPage(Colors.Hex(0xEE82C0)),
             _ => null,
         };
 

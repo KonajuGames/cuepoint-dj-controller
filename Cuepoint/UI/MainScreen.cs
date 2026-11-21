@@ -313,14 +313,14 @@ sealed class MainScreen : Panel
         node.Kind switch
         {
             LibraryNodeKind.Library => (icons.Library, Theme.Accent),
-            LibraryNodeKind.Drive => (icons.Drive, Colors.Hex(0x8FA3BF)),
-            LibraryNodeKind.Folder => (icons.Folder, Colors.Hex(0xD9B45A)),
-            LibraryNodeKind.List => (node.Name == "History" ? icons.History : icons.List, Colors.Hex(0x5AC8D9)),
+            LibraryNodeKind.Drive => (icons.Drive, AppTheme.OnPage(Colors.Hex(0x8FA3BF))),
+            LibraryNodeKind.Folder => (icons.Folder, AppTheme.OnPage(Colors.Hex(0xD9B45A))),
+            LibraryNodeKind.List => (node.Name == "History" ? icons.History : icons.List, AppTheme.OnPage(Colors.Hex(0x5AC8D9))),
             LibraryNodeKind.VirtualFolders => (icons.Playlist, Theme.Muted),
-            LibraryNodeKind.VirtualFolder => (icons.Playlist, Colors.Hex(0x6CCB7A)),
-            LibraryNodeKind.Filter => (icons.Filter, Colors.Hex(0xB57BE0)),
+            LibraryNodeKind.VirtualFolder => (icons.Playlist, AppTheme.OnPage(Colors.Hex(0x6CCB7A))),
+            LibraryNodeKind.Filter => (icons.Filter, AppTheme.OnPage(Colors.Hex(0xB57BE0))),
             LibraryNodeKind.SmartPlaylists => (icons.Filter, Theme.Muted),
-            LibraryNodeKind.Imported => (icons.Playlist, Colors.Hex(0xE0A35A)),
+            LibraryNodeKind.Imported => (icons.Playlist, AppTheme.OnPage(Colors.Hex(0xE0A35A))),
             LibraryNodeKind.Group => node.Name switch
             {
                 "Local drives" => (icons.Drive, Theme.Muted),

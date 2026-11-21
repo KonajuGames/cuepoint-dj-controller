@@ -24,7 +24,7 @@ sealed class DetailsDialog : Panel
     {
         _root = root;
         Visible = false;
-        Background = Colors.Hex(0x000000, 0.6f);
+        Background = Theme.Scrim(0.6f);
 
         _box = Add(
             new Panel
@@ -51,7 +51,7 @@ sealed class DetailsDialog : Panel
         _title = Field("Title");
         _artist = Field("Artist");
         _album = Field("Album");
-        _problem = _box.Add(new Label(body) { Color = Colors.Hex(0xEE6666), MaxWidth = 420 });
+        _problem = _box.Add(new Label(body) { Color = Theme.Warning, MaxWidth = 420 });
         _box.Add(new Label(body, "Saved in the file's tags; its analysis and cues stay.") { Color = Theme.Muted, MaxWidth = 420 });
         var buttons = _box.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
         var save = buttons.Add(new Button(bold, "Save") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });

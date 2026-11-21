@@ -87,8 +87,8 @@ sealed class AutoMixPanel : Panel
                     Icon = icon,
                     Padding = 0,
                     Background = Colors.Transparent,
-                    HoverBackground = Colors.Hex(0xFFFFFF, 0.1f),
-                    PressedBackground = Colors.Hex(0xFFFFFF, 0.05f),
+                    HoverBackground = Theme.Tint(0.1f),
+                    PressedBackground = Theme.Tint(0.05f),
                     TextColor = Theme.Muted,
                     Tooltip = tooltip,
                 }
@@ -108,7 +108,7 @@ sealed class AutoMixPanel : Panel
         List = new ListView<AutoMixRow>(body)
         {
             EmptyText = "Drag songs here",
-            AlternateRow = Colors.Hex(0xFFFFFF, 0.03f),
+            AlternateRow = Theme.Tint(0.03f),
             CanReorder = true,
             DragLabel = row => row.Song.Title,
         };

@@ -200,9 +200,9 @@ sealed class MixerPanel : Panel
 
             var color = AppTheme.DeckColor(channel.Deck.Name);
             var cued = channel.Deck.Headphones;
-            channel.Pfl.Background = cued ? Theme.Mix(Theme.PanelRaised, color, 0.6f) : Colors.Hex(0x2A2A35);
-            channel.Pfl.HoverBackground = cued ? Theme.Mix(Theme.PanelRaised, color, 0.75f) : Colors.Hex(0x3A3A48);
-            channel.Pfl.TextColor = cued ? Colors.White : Theme.Muted;
+            channel.Pfl.Background = cued ? Theme.Mix(Theme.PanelRaised, color, 0.6f) : Theme.Control;
+            channel.Pfl.HoverBackground = cued ? Theme.Mix(Theme.PanelRaised, color, 0.75f) : Theme.ControlHover;
+            channel.Pfl.TextColor = cued ? Theme.Text : Theme.Muted;
         }
         if (!_crossfader.IsDragging)
             _crossfader.Value = _engine.Crossfader;

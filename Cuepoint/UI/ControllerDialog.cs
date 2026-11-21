@@ -29,7 +29,7 @@ sealed class ControllerDialog : Panel
         _controls = controls;
         _devices = devices;
         Visible = false;
-        Background = Colors.Hex(0x000000, 0.75f);
+        Background = Theme.Scrim(0.75f);
 
         _box = Add(
             new Panel
@@ -136,7 +136,7 @@ sealed class ControllerDialog : Panel
             row.Binding.Text = bindings.Count == 0 ? "-" : string.Join("; ", bindings);
             var learning = _controls.Learning == row.Control.Id;
             row.Learn.Text = learning ? "Waiting..." : "Learn";
-            row.Learn.Background = learning ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Colors.Hex(0x2A2A35);
+            row.Learn.Background = learning ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.55f) : Theme.Control;
             row.Learn.Enabled = device is not null;
             row.Clear.Enabled = bindings.Count > 0;
         }

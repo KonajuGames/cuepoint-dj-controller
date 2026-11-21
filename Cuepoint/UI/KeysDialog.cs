@@ -51,7 +51,7 @@ sealed class KeysDialog : Panel
     {
         (_body, _bold, _heading) = (body, bold, heading);
         Visible = false;
-        Background = Colors.Hex(0x000000, 0.75f);
+        Background = Theme.Scrim(0.75f);
         _box = Add(new ScrollPanel { Padding = 20, Background = Theme.PanelRaised, BorderColor = Theme.PanelBorder, BorderWidth = 1 });
         _content = _box.Add(new Panel { Spacing = 12 });
         _status = new Label(body) { Color = Theme.Accent };
@@ -135,7 +135,7 @@ sealed class KeysDialog : Panel
                 continue;
             var listening = binding.Id == Learning;
             button.Text = listening ? "Press a key..." : DeckKeys.Label(binding.Key);
-            button.Background = listening ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
+            button.Background = listening ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
         }
     }
 

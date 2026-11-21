@@ -38,9 +38,9 @@ sealed class HotcuePad(Font font, int number) : Element
 
     public Font? HintFont { get; set; }
 
-    public float4 EmptyBackground { get; set; } = Colors.Hex(0x2A2A35);
-    public float4 HoverBackground { get; set; } = Colors.Hex(0x3A3A48);
-    public float4 FocusColor { get; set; } = Colors.Hex(0x7AB8FF);
+    public float4 EmptyBackground { get; set; } = Theme.Control;
+    public float4 HoverBackground { get; set; } = Theme.ControlHover;
+    public float4 FocusColor { get; set; } = Theme.Focus;
 
     /// <summary>
     /// Pressed: an empty pad should be set, a set one jumped to.

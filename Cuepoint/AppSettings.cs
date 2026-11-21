@@ -84,6 +84,11 @@ sealed class AppSettings
     public string? CrossfaderCurve { get; set; }
 
     /// <summary>
+    /// The look chosen (see <see cref="ThemeKind"/>), taken on as the app starts; null for the usual dark one.
+    /// </summary>
+    public string? Theme { get; set; }
+
+    /// <summary>
     /// Whether a song can't be loaded onto a deck that's playing into the main mix.
     /// </summary>
     public bool ProtectPlayingDecks { get; set; } = true;

@@ -70,6 +70,11 @@ sealed class OptionsDialog : Panel
     public event Action? ShortcutsClicked;
 
     /// <summary>
+    /// Another look was chosen, to take on the next time the app starts.
+    /// </summary>
+    public event Action<ThemeKind>? LookChosen;
+
+    /// <summary>
     /// Change keys was clicked.
     /// </summary>
     public event Action? ChangeKeysClicked;
@@ -211,7 +216,7 @@ sealed class OptionsDialog : Panel
         _engine = engine;
         Visible = false;
         // Blending is in linear light, where black at 55% only takes off about a third, so it takes more to dim.
-        Background = Colors.Hex(0x000000, 0.75f);
+        Background = Theme.Scrim(0.75f);
 
         _box = Add(
             new ScrollPanel
@@ -423,6 +428,25 @@ sealed class OptionsDialog : Panel
         TallWaveforms = tallRow.Add(new Checkbox(body));
         TallWaveforms.Changed += _ => WaveformsChanged?.Invoke();
         _content.Add(new Label(body, "Taller scrolling waveforms, to read from further away.") { Color = Theme.Muted });
+
+        // The look, which the screen takes on as it's built, so a new one shows the next time the app starts.
+        var lookRow = Row("Look", body);
+        var look = lookRow.Add(
+            new Dropdown<ThemeKind>(body)
+            {
+                Width = 300,
+                Items = () => [ThemeKind.Dark, ThemeKind.Light, ThemeKind.HighContrast],
+                Text = Theme.NameOf,
+                Selected = Theme.Kind,
+            }
+        );
+        look.Chosen += kind => LookChosen?.Invoke(kind);
+        _content.Add(
+            new Label(body, "Dark for dark rooms, Light for daylight, High contrast for bright rooms. It changes the next time Cuepoint starts.")
+            {
+                Color = Theme.Muted,
+            }
+        );
 
         var textRow = Row("Large list text", body);
         _largeListText = textRow.Add(new Checkbox(body));

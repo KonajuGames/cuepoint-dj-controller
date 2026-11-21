@@ -106,7 +106,7 @@ sealed class ScrollingWaveform : Element
     /// </summary>
     public GridEditor? Editor { get; set; }
 
-    public float4 Background { get; set; } = Theme.Well;
+    public float4 Background { get; set; } = AppTheme.Screen;
 
     public WaveformColours Colours { get; set; }
 

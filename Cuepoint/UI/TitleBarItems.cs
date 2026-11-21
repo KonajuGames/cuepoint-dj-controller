@@ -65,7 +65,7 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
             for (var i = 0; i < 4; i++)
             {
                 var at = new float2(ScreenPosition.X + LETTER + i * (BOX + GAP), top);
-                batch.AddRect(at, new float2(BOX, ROW), i == bar ? lit : Colors.Hex(0x000000));
+                batch.AddRect(at, new float2(BOX, ROW), i == bar ? lit : AppTheme.Unlit);
                 if (i == beat && i != bar)
                     batch.AddRect(at + new float2(INSET, INSET), new float2(BOX - 2 * INSET, ROW - 2 * INSET), lit);
             }
@@ -139,7 +139,7 @@ sealed class RecordButton(Font font) : Element
     public override void Draw(Batch batch)
     {
         if (IsHovered || IsPressed)
-            batch.AddRect(ScreenPosition, Size, Colors.Hex(0xFFFFFF, IsPressed && IsHovered ? 0.05f : 0.1f));
+            batch.AddRect(ScreenPosition, Size, Theme.Tint(IsPressed && IsHovered ? 0.05f : 0.1f));
 
         var color = Recording is null ? Theme.Muted : Theme.Warning;
         var middle = ScreenPosition.Y + HEIGHT / 2;

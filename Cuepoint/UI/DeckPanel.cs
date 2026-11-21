@@ -687,24 +687,24 @@ sealed class DeckPanel : Panel
                 PadMode.Sampler => (AppTheme.Sampler, 0.5f),
                 _ => (Theme.PanelRaised, 0f),
             };
-            _padMode.Background = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount) : Colors.Hex(0x2A2A35);
-            _padMode.HoverBackground = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount + 0.15f) : Colors.Hex(0x3A3A48);
-            _padMode.ArrowColor = amount > 0 ? Colors.White : Theme.Muted;
+            _padMode.Background = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount) : Theme.Control;
+            _padMode.HoverBackground = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount + 0.15f) : Theme.ControlHover;
+            _padMode.ArrowColor = amount > 0 ? Theme.Text : Theme.Muted;
         }
         var quantized = _deck.Quantize;
-        _quantize.Background = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
-        _quantize.HoverBackground = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
-        _quantize.TextColor = quantized ? Colors.White : Theme.Muted;
+        _quantize.Background = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
+        _quantize.HoverBackground = quantized ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
+        _quantize.TextColor = quantized ? Theme.Text : Theme.Muted;
         var slip = _deck.Slip;
-        _slip.Background = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
-        _slip.HoverBackground = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
-        _slip.TextColor = slip ? Colors.White : Theme.Muted;
+        _slip.Background = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
+        _slip.HoverBackground = slip ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
+        _slip.TextColor = slip ? Theme.Text : Theme.Muted;
 
         var atMemoryCue = _deck.IsAtMemoryCue;
         _memorySet.Enabled = _deck.IsLoaded;
-        _memorySet.Background = atMemoryCue ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.6f) : Colors.Hex(0x2A2A35);
-        _memorySet.HoverBackground = atMemoryCue ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.75f) : Colors.Hex(0x3A3A48);
-        _memorySet.TextColor = atMemoryCue ? Colors.White : Theme.Muted;
+        _memorySet.Background = atMemoryCue ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.6f) : Theme.Control;
+        _memorySet.HoverBackground = atMemoryCue ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.75f) : Theme.ControlHover;
+        _memorySet.TextColor = atMemoryCue ? Theme.Text : Theme.Muted;
         _memoryPrevious.Enabled = _memoryNext.Enabled = _deck.MemoryCues.Count > 0;
 
         var fx = _deck.Effects;
@@ -713,9 +713,9 @@ sealed class DeckPanel : Panel
         _fxShorter.Enabled = _fxLonger.Enabled = fx.HasBeats;
         if (!_fxLevel.IsDragging)
             _fxLevel.Value = fx.Level;
-        _fxOn.Background = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
-        _fxOn.HoverBackground = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
-        _fxOn.TextColor = fx.On ? Colors.White : Theme.Muted;
+        _fxOn.Background = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
+        _fxOn.HoverBackground = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
+        _fxOn.TextColor = fx.On ? Theme.Text : Theme.Muted;
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
 
         if (!_deck.IsLoaded)
@@ -847,13 +847,13 @@ sealed class DeckPanel : Panel
         // A cue preview is playing, but Play would latch it rather than pause, so it still offers Play.
         var playing = _deck.IsPlaying && !_deck.IsCuePreviewing;
         _playPause.Text = playing ? "PAUSE" : "PLAY";
-        _playPause.Background = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Colors.Hex(0x2A2A35);
-        _playPause.HoverBackground = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Colors.Hex(0x3A3A48);
+        _playPause.Background = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Theme.Control;
+        _playPause.HoverBackground = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Theme.ControlHover;
 
         _sync.Enabled = _deck.CanSync;
         var inSync = _sync.Enabled && _deck.IsInSync;
-        _sync.Background = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Colors.Hex(0x2A2A35);
-        _sync.HoverBackground = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Colors.Hex(0x3A3A48);
+        _sync.Background = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Theme.Control;
+        _sync.HoverBackground = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Theme.ControlHover;
     }
 
     /// <summary>
@@ -871,25 +871,25 @@ sealed class DeckPanel : Panel
 
         // Lit while the key is held, whatever the fader does.
         var locked = _deck.KeyLocked;
-        _keyLock.Background = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
-        _keyLock.HoverBackground = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
-        _keyLock.TextColor = locked ? Colors.White : Theme.Muted;
+        _keyLock.Background = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
+        _keyLock.HoverBackground = locked ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
+        _keyLock.TextColor = locked ? Theme.Text : Theme.Muted;
 
         // Lit on the side the key's been shifted to.
         foreach (var (button, lit) in new[] { (_keyDown, _deck.KeyShift < 0), (_keyUp, _deck.KeyShift > 0) })
         {
-            button.Background = lit ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
-            button.HoverBackground = lit ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
-            button.TextColor = lit ? Colors.White : Theme.Muted;
+            button.Background = lit ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
+            button.HoverBackground = lit ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
+            button.TextColor = lit ? Theme.Text : Theme.Muted;
         }
         _keyDown.Enabled = _deck.KeyShift > -Deck.MAX_KEY_SHIFT;
         _keyUp.Enabled = _deck.KeyShift < Deck.MAX_KEY_SHIFT;
         var canMatch = _deck.CanKeyMatch;
         var matched = canMatch && _deck.IsKeyMatched;
         _keyMatch.Enabled = canMatch;
-        _keyMatch.Background = matched ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Colors.Hex(0x2A2A35);
-        _keyMatch.HoverBackground = matched ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Colors.Hex(0x3A3A48);
-        _keyMatch.TextColor = matched ? Colors.White : Theme.Muted;
+        _keyMatch.Background = matched ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
+        _keyMatch.HoverBackground = matched ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
+        _keyMatch.TextColor = matched ? Theme.Text : Theme.Muted;
     }
 
     void RefreshLoop()
@@ -908,11 +908,11 @@ sealed class DeckPanel : Panel
         _loopIn.Enabled = _deck.IsLoaded;
         _loopOut.Enabled = _deck.IsLoaded && (_deck.LoopInPoint is not null || _deck.IsManualLoop);
         var marked = _deck.IsLoaded && _deck.LoopInPoint is not null;
-        _loopIn.Background = marked ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.35f) : Colors.Hex(0x2A2A35);
-        _loopIn.HoverBackground = marked ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.5f) : Colors.Hex(0x3A3A48);
+        _loopIn.Background = marked ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.35f) : Theme.Control;
+        _loopIn.HoverBackground = marked ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.5f) : Theme.ControlHover;
 
-        _loop.Background = looping ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.6f) : Colors.Hex(0x2A2A35);
-        _loop.HoverBackground = looping ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.75f) : Colors.Hex(0x3A3A48);
+        _loop.Background = looping ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.6f) : Theme.Control;
+        _loop.HoverBackground = looping ? Theme.Mix(Theme.PanelRaised, AppTheme.Loop, 0.75f) : Theme.ControlHover;
         _loop.TextColor = looping ? Theme.TitleBar : Theme.Text;
     }
 
