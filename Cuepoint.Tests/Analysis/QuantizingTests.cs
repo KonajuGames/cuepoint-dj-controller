@@ -59,6 +59,34 @@ public class QuantizingTests
         Assert.Equal(expected, Quantizing.InPhase(Steady, from, hotcue), 9);
     }
 
+    [Theory]
+    // On the beat together, wherever in the songs they are.
+    [InlineData(10.25, 40.25, 0)]
+    // A tenth of a second past the beat against one on it: a fifth of a 120 BPM beat ahead.
+    [InlineData(10.35, 40.25, 0.2)]
+    // A tenth of a second before it: behind.
+    [InlineData(10.15, 40.25, -0.2)]
+    // Most of a beat ahead is a little behind the next.
+    [InlineData(10.65, 40.25, -0.2)]
+    public void Phase_is_how_far_ahead_of_the_other_s_beat_a_song_is(double seconds, double otherSeconds, double expected)
+    {
+        var (beats, units) = Quantizing.PhaseAhead(Steady, seconds, Steady, otherSeconds, 120);
+        Assert.Equal(expected, beats, 9);
+        Assert.Equal(1, units);
+    }
+
+    [Fact]
+    public void Phase_in_half_time_is_counted_in_the_faster_song_s_beats()
+    {
+        // 60 BPM against 120: each of the slow song's beats is two of the other's. An eighth of a second past its beat
+        // is a quarter of a 120 BPM beat ahead, and halfway between its beats it's on one of the other's.
+        var slow = BeatGrid.Constant(60, 0, 300);
+        var (beats, units) = Quantizing.PhaseAhead(slow, 20.125, Steady, 40.25, 120);
+        Assert.Equal(0.25, beats, 9);
+        Assert.Equal(2, units);
+        Assert.Equal(0, Quantizing.PhaseAhead(slow, 20.5, Steady, 40.75, 120).Beats, 9);
+    }
+
     [Fact]
     public void Jump_pads_go_back_on_the_left_and_on_on_the_right_up_to_eight_bars()
     {

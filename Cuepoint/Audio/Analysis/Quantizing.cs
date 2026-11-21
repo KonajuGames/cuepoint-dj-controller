@@ -26,4 +26,22 @@ static class Quantizing
         var at = grid.BeatNumberAt(from);
         return grid.TimeOfBeat(Math.Round(grid.BeatNumberAt(target)) + (at - Math.Floor(at)));
     }
+
+    /// <summary>
+    /// How far a song at <paramref name="seconds"/> into <paramref name="grid"/> is ahead of another at
+    /// <paramref name="otherSeconds"/> into <paramref name="other"/>, playing at <paramref name="otherBpm"/> as heard,
+    /// in beats from -½ up to ½: behind if negative. Beats are compared in the shorter of the two songs' beats, so in
+    /// half or double time (85 against 170) every beat of the slower lands on one of the faster's; <c>Units</c> is how
+    /// many of those go in one of this song's beats, 1 or 2.
+    /// </summary>
+    public static (double Beats, double Units) PhaseAhead(BeatGrid grid, double seconds, BeatGrid other, double otherSeconds, double otherBpm)
+    {
+        var otherBeats = Deck.MasterBeatsPerBeat(grid.BpmAt(seconds), otherBpm);
+        var units = Math.Max(otherBeats, 1);
+        var phase = Fraction(grid.BeatNumberAt(seconds) * units);
+        var otherPhase = Fraction(other.BeatNumberAt(otherSeconds) * units / otherBeats);
+        return (Fraction(phase - otherPhase + 0.5) - 0.5, units);
+    }
+
+    static double Fraction(double value) => value - Math.Floor(value);
 }

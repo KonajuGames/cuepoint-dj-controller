@@ -668,33 +668,49 @@ sealed partial class Deck : IDisposable
     /// </summary>
     double? PhaseOff(Deck master, double beatShift)
     {
-        if (_analysis?.Grid is not { } grid || master._analysis?.Grid is not { } masterGrid || master.Bpm is not { } masterBpm)
+        if (PhaseAhead(master) is not (var ahead, var units, var songBpm))
             return null;
-        {
-            // Phases are compared in the shorter of the two decks' beats, counted as so many to each of this deck's,
-            // so in half or double time every beat of the slower deck lands on one of the faster's.
-            // Both positions from the same moment of the mix, so the comparison is fair.
-            double masterPosition;
-            double position;
-            _engine.Mixer.Lock();
-            try
-            {
-                position = Position.TotalSeconds;
-                masterPosition = master.Position.TotalSeconds;
-            }
-            finally
-            {
-                _engine.Mixer.Unlock();
-            }
+        var shift = Fraction(beatShift - ahead + 0.5) - 0.5;
+        return shift / units * 60 / songBpm;
+    }
 
-            var songBpm = grid.BpmAt(position);
-            var masterBeats = MasterBeatsPerBeat(songBpm, masterBpm);
-            var units = Math.Max(masterBeats, 1);
-            var phase = Fraction(grid.BeatNumberAt(position) * units);
-            var masterPhase = Fraction(masterGrid.BeatNumberAt(masterPosition) * units / masterBeats);
-            var shift = Fraction(masterPhase + beatShift - phase + 0.5) - 0.5;
-            return shift / units * 60 / songBpm;
+    /// <summary>
+    /// How far this deck's beats are ahead of <paramref name="other"/>'s as heard now, for showing how well they line
+    /// up: in beats from -½ up to ½ (behind if negative), counted in the shorter of the two songs' beats, and in
+    /// seconds as heard. Null unless both songs have a beat grid.
+    /// </summary>
+    public (double Beats, double Seconds)? PhaseAgainst(Deck other)
+    {
+        if (PhaseAhead(other) is not (var ahead, var units, var songBpm))
+            return null;
+        return (ahead, ahead / units * 60 / (songBpm * TempoRatio));
+    }
+
+    /// <summary>
+    /// See <see cref="Quantizing.PhaseAhead"/>, from where the two decks are at the same moment of the mix, with this
+    /// deck's song's tempo there.
+    /// </summary>
+    (double Beats, double Units, double SongBpm)? PhaseAhead(Deck other)
+    {
+        if (_analysis?.Grid is not { } grid || other._analysis?.Grid is not { } otherGrid || other.Bpm is not { } otherBpm)
+            return null;
+
+        // Both positions from the same moment of the mix, so the comparison is fair.
+        double otherPosition;
+        double position;
+        _engine.Mixer.Lock();
+        try
+        {
+            position = Position.TotalSeconds;
+            otherPosition = other.Position.TotalSeconds;
         }
+        finally
+        {
+            _engine.Mixer.Unlock();
+        }
+
+        var (beats, units) = Quantizing.PhaseAhead(grid, position, otherGrid, otherPosition, otherBpm);
+        return (beats, units, grid.BpmAt(position));
     }
 
     static double Fraction(double value) => value - Math.Floor(value);

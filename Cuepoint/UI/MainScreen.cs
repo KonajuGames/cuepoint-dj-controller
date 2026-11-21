@@ -32,6 +32,11 @@ sealed class MainScreen : Panel
     readonly List<GridEditor?> _gridEditors = [];
 
     /// <summary>
+    /// How well the first two decks' beats line up, between their waveforms; null with fewer than two decks.
+    /// </summary>
+    readonly PhaseMeter? _phaseMeter;
+
+    /// <summary>
     /// How much a deck's scrolling waveform shows while its grid is being fixed, in seconds.
     /// </summary>
     const float GRID_EDIT_SECONDS = 3;
@@ -126,6 +131,8 @@ sealed class MainScreen : Panel
             _waveforms.Add(waveform);
             _gridEditors.Add(editor);
         }
+        if (decks.Count >= 2)
+            _phaseMeter = Add(new PhaseMeter(decks[0], decks[1], fonts.Small));
 
         // Left to right: the first half of the decks, the mixer, the rest.
         // Decks right of the mixer are laid out as reflections, so each deck's mixing controls sit nearest the mixer.
@@ -229,6 +236,7 @@ sealed class MainScreen : Panel
         AutoMix.Update();
         TitleBar.Update();
         TitleItems.Update();
+        _phaseMeter?.Update();
         foreach (var deck in _decks)
             deck.Refresh();
         _mixer.Refresh();
@@ -287,6 +295,8 @@ sealed class MainScreen : Panel
             waveform.ShowBeatGrid = Options.WaveformBeatGrid.Checked;
             waveform.PixelsPerSecond = waveformWidth / (_gridEditors[i] is { Active: true } ? GRID_EDIT_SECONDS : Options.WaveformSeconds.Value);
         }
+        if (_phaseMeter is not null)
+            _phaseMeter.Width = waveformWidth;
 
         var deckWidth = (width - 2 * GAP - MixerPanel.WIDTH - GAP * (_decks.Count)) / Math.Max(1, _decks.Count);
         foreach (var deck in _decks)
@@ -317,7 +327,12 @@ sealed class MainScreen : Panel
 
     float WaveformsTop => TitleBar.HEIGHT + GAP;
 
-    float DecksTop => WaveformsTop + _waveforms.Count * (WaveformHeight + 2) - 2 + GAP;
+    float DecksTop => WaveformsTop + _waveforms.Count * (WaveformHeight + 2) - 2 + PhaseMeterSpace + GAP;
+
+    /// <summary>
+    /// The room the phase meter takes between the first two waveforms, with a gap below it.
+    /// </summary>
+    float PhaseMeterSpace => _phaseMeter is null ? 0 : PhaseMeter.HEIGHT + 2;
 
     /// <summary>
     /// As tall as the tallest deck, which is taller with its buttons in two rows on a narrow window.
@@ -344,10 +359,15 @@ sealed class MainScreen : Panel
         TitleBar.Arrange(position);
 
         var y = position.Y + WaveformsTop;
-        foreach (var waveform in _waveforms)
+        for (var i = 0; i < _waveforms.Count; i++)
         {
-            waveform.Arrange(new float2(position.X + GAP, y));
+            _waveforms[i].Arrange(new float2(position.X + GAP, y));
             y += WaveformHeight + 2;
+            if (i == 0 && _phaseMeter is not null)
+            {
+                _phaseMeter.Arrange(new float2(position.X + GAP, y));
+                y += PhaseMeterSpace;
+            }
         }
 
         // The decks and mixer in the order they were added, left to right.
