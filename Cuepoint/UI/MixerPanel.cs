@@ -82,7 +82,7 @@ sealed class MixerPanel : Panel
                 eq[row].Changed += knob => SetEq(deck, band, knob.Value);
             }
 
-            var meter = Add(new LevelMeter(2) { Length = FADER_LENGTH, BarThickness = 4, BarGap = 2, Segments = 26 });
+            var meter = Add(new LevelMeter(2) { Length = FADER_LENGTH, BarThickness = 4, BarGap = 2, Segments = 13 });
 
             // A channel fader: up is louder, and double-clicking puts it back to full.
             var fader = Add(

@@ -190,8 +190,9 @@ sealed class TitleBarItems
     /// </summary>
     const double LIMIT_LIGHT_HOLD = 0.5;
 
-    // The master meter's length, and the least it's shortened to on a crowded title bar.
+    // The master meter's length and segments, and the least it's shortened to on a crowded title bar.
     const float MASTER_LENGTH = 160;
+    const int MASTER_SEGMENTS = 16;
     const float MIN_MASTER_LENGTH = 60;
 
     double _limitedAt = double.NegativeInfinity;
@@ -252,7 +253,7 @@ sealed class TitleBarItems
         bar.Centre.Add(new BeatTrackers(decks, small));
         bar.Centre.Add(new Spacer(20));
         _masterLabel = bar.Centre.Add(new Label(small, "MASTER") { Color = Theme.Muted });
-        _master = bar.Centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = MASTER_LENGTH, BarThickness = 4, BarGap = 2, Segments = 32 });
+        _master = bar.Centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = MASTER_LENGTH, BarThickness = 4, BarGap = 2, Segments = MASTER_SEGMENTS });
         // Lit while the master limiter is turning the mix down: a sign the decks are too loud together.
         _limit = bar.Centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
 
@@ -272,13 +273,13 @@ sealed class TitleBarItems
         // sides once it's moved left, down to a short one.
         bar.FitCentre = room =>
         {
-            (_master.Length, _master.Segments) = (MASTER_LENGTH, 32);
+            (_master.Length, _master.Segments) = (MASTER_LENGTH, MASTER_SEGMENTS);
             bar.Centre.Measure();
             if (bar.Centre.Size.X > room)
             {
                 _master.Length = MathF.Max(MIN_MASTER_LENGTH, MASTER_LENGTH - (bar.Centre.Size.X - room));
                 // Segments as wide as at full length.
-                _master.Segments = (int)MathF.Round(_master.Length / MASTER_LENGTH * 32);
+                _master.Segments = (int)MathF.Round(_master.Length / MASTER_LENGTH * MASTER_SEGMENTS);
             }
         };
         // "MASTER" and "LIMIT" centred by their capitals on the meter beside them.
