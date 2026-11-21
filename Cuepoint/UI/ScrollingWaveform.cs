@@ -431,7 +431,7 @@ sealed class ScrollingWaveform : Element
             if (x < ScreenPosition.X - 20 || x >= ScreenPosition.X + Size.X)
                 continue;
 
-            var color = AppTheme.HotcueColor(i);
+            var color = AppTheme.HotcueColor(_deck, i);
             batch.PushClip(ScreenPosition, Size);
             batch.AddRect(new float2(x, ScreenPosition.Y), new float2(2, Size.Y), color);
             WaveformBar.DrawFlag(batch, _font, new float2(x, ScreenPosition.Y), (i + 1).ToString(), color, Theme.TitleBar);

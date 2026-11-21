@@ -254,6 +254,11 @@ sealed class KeyboardControls
             deck.SyncLocked = !deck.SyncLocked;
         else if (key == keys.Loop && shifted)
             deck.Reloop();
+        // With Ctrl they move the loop a beat, and a bar with Shift too.
+        else if (key == keys.HalveLoop && (mods & GlfwModifier.Control) != 0)
+            deck.MoveLoop(shifted ? -4 : -1);
+        else if (key == keys.DoubleLoop && (mods & GlfwModifier.Control) != 0)
+            deck.MoveLoop(shifted ? 4 : 1);
         else if (key == keys.HalveLoop && shifted)
             deck.LoopIn();
         else if (key == keys.DoubleLoop && shifted)

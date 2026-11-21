@@ -160,8 +160,17 @@ static void Run()
                 Level = deck.Effects.Level,
                 EchoBeats = deck.Effects.BeatsOf(DeckEffect.Echo),
                 FlangerBeats = deck.Effects.BeatsOf(DeckEffect.Flanger),
+                GateBeats = deck.Effects.BeatsOf(DeckEffect.Gate),
             }
         );
+        settings.MasterEffect = new AppSettings.DeckEffectSettings
+        {
+            Kind = audio.MasterEffects.Kind,
+            Level = audio.MasterEffects.Level,
+            EchoBeats = audio.MasterEffects.BeatsOf(DeckEffect.Echo),
+            FlangerBeats = audio.MasterEffects.BeatsOf(DeckEffect.Flanger),
+            GateBeats = audio.MasterEffects.BeatsOf(DeckEffect.Gate),
+        };
         settings.SamplerSlots = sampler.Paths.Any(path => path is not null) ? [.. sampler.Paths] : null;
         settings.UnquantizedDecks = decks.Where(deck => !deck.Quantize).Select(deck => deck.Name).ToList() is { Count: > 0 } off ? off : null;
         settings.Save(settingsPath);
@@ -337,6 +346,18 @@ static void Run()
     SamplerPads? SamplerPadsFor(Deck deck) => samplerPads.FirstOrDefault(pads => pads.Deck == deck);
 
     // Quantise is on for each deck unless it was turned off.
+    audio.MicrophoneLevel = settings.MicrophoneLevel;
+    audio.Talkover = settings.Talkover;
+    if (settings.MicrophoneDevice is { } micDevice && !audio.UseMicrophoneDevice(micDevice))
+        Console.Error.WriteLine($"Couldn't open {micDevice} for the microphone");
+    if (settings.MasterEffect is { } master)
+    {
+        audio.MasterEffects.Kind = master.Kind;
+        audio.MasterEffects.Level = master.Level;
+        audio.MasterEffects.SetBeats(DeckEffect.Echo, master.EchoBeats);
+        audio.MasterEffects.SetBeats(DeckEffect.Flanger, master.FlangerBeats);
+        audio.MasterEffects.SetBeats(DeckEffect.Gate, master.GateBeats);
+    }
     foreach (var deck in decks)
     {
         deck.Quantize = settings.UnquantizedDecks?.Contains(deck.Name) != true;
@@ -346,6 +367,7 @@ static void Run()
             deck.Effects.Level = effects.Level;
             deck.Effects.SetBeats(DeckEffect.Echo, effects.EchoBeats);
             deck.Effects.SetBeats(DeckEffect.Flanger, effects.FlangerBeats);
+            deck.Effects.SetBeats(DeckEffect.Gate, effects.GateBeats);
         }
     }
 
@@ -866,6 +888,22 @@ static void Run()
             }
         };
 
+        // A hotcue's name, colour and loop are saved as soon as they're changed, and can be undone.
+        deck.HotcueDetailsChanged += changed =>
+        {
+            if (changed.FilePath is not { } file)
+                return;
+            database.SetHotcueDetails(file, changed.HotcueDetails);
+            try
+            {
+                database.Save();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                screen.Log($"Couldn't save the hot cue to {database.FilePath}: {e.Message}");
+            }
+        };
+
         // Hotcues are saved as soon as they're set or cleared, so none is lost if the app closes mid-set.
         deck.HotcuesChanged += changed =>
         {
@@ -929,6 +967,7 @@ static void Run()
 
     browser.LoadRequested += (song, deckName) => Load(song, decks.First(deck => deck.Name == deckName));
     screen.SongDropped += (deck, song) => Load(song, deck);
+
 
     // The song at a path: a file outside the library becomes one by browsing its folder, as the folder tree would; a
     // folder gives its first song.
@@ -1013,6 +1052,16 @@ static void Run()
         settings.ProtectPlayingDecks = box.Checked;
         SaveSettings();
     };
+    screen.Options.AutoCue.Checked = settings.AutoCue;
+    foreach (var deck in decks)
+        deck.AutoCue = settings.AutoCue;
+    screen.Options.AutoCue.Changed += box =>
+    {
+        settings.AutoCue = box.Checked;
+        foreach (var deck in decks)
+            deck.AutoCue = box.Checked;
+        SaveSettings();
+    };
     screen.Options.AnalyseWhenIdle.Checked = settings.AnalyseWhenIdle;
     screen.Options.AnalyseWhenIdle.Changed += box =>
     {
@@ -1059,11 +1108,96 @@ static void Run()
     // The headphones' settings drop down from their button on the title bar, which is lit while a deck's cued.
     var headphones = new HeadphonesPanel(audio, fonts.Small, fonts.Body, fonts.Bold, images);
     screen.TitleItems.HeadphonesClicked += () => headphones.Toggle(screen.TitleItems.HeadphonesAnchor);
+    // The effect on the whole mix drops down from its button beside the master meter.
+    var masterFx = new MasterEffectsPanel(audio.MasterEffects, fonts.Small, fonts.Body, fonts.Bold, images) { Menu = menu };
+    // Not left with the button that opened it focused, so Escape puts it away.
+    screen.TitleItems.MasterFxClicked += () =>
+    {
+        masterFx.Toggle(screen.TitleItems.MasterFxAnchor);
+        ui.Focus(null);
+    };
+    // The microphone's on, level and talkover drop down from MIC beside it.
+    var microphone = new MicrophonePanel(audio, fonts.Small, fonts.Body, fonts.Bold);
+    screen.TitleItems.MicClicked += () =>
+    {
+        microphone.Toggle(screen.TitleItems.MicAnchor);
+        ui.Focus(null);
+    };
+    microphone.LevelChanged += level =>
+    {
+        settings.MicrophoneLevel = level;
+        SaveSettings();
+    };
+    microphone.TalkoverChanged += on =>
+    {
+        settings.Talkover = on;
+        SaveSettings();
+    };
+    screen.Options.MicrophoneChanged += device =>
+    {
+        settings.MicrophoneDevice = device;
+        SaveSettings();
+        screen.Log(device is null ? "Microphone off" : audio.MicrophoneDevice is null ? $"Couldn't open {device} for the microphone" : $"Microphone on {device}: MIC on the title bar puts it in the mix");
+    };
     screen.TitleItems.Cueing = () => decks.Any(deck => deck.Headphones);
     browser.ColumnMenuRequested += at => menu.Show(at, browser.ColumnMenu());
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var details = new DetailsDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
+
+    // A set hotcue's menu: name it, colour it, make it a hot loop of so many beats, or clear it.
+    void ChangeHotcue(Deck deck, int index, string? name, uint? color, double? loopEnd)
+    {
+        if (deck.FilePath is { } file)
+            edits.RecordHotcueDetails(file, deck.HotcueDetails, index);
+        deck.SetHotcueDetail(index, name, color, loopEnd);
+    }
+    screen.HotcueMenuRequested += (deck, index, at) =>
+    {
+        var detail = deck.DetailOf(index);
+        var (name, color, loopEnd) = (detail?.Name, detail?.Color, detail?.LoopEnd);
+        var number = index + 1;
+        var loopBeats = loopEnd is { } end && deck.Hotcues[index] is { } start && deck.Analysis?.Grid is { } grid
+            ? grid.BeatNumberAt(end) - grid.BeatNumberAt(start.TotalSeconds)
+            : (double?)null;
+        double[] lengths = [1, 2, 4, 8, 16, 32];
+        menu.Show(
+            at,
+            [
+                new MenuItem(
+                    "Rename...",
+                    () => prompt.Show($"Name hot cue {number}", name ?? "", _ => null, given => ChangeHotcue(deck, index, given, color, loopEnd))
+                ),
+                new MenuItem(
+                    "Colour",
+                    [
+                        new MenuItem("Its pad's own", () => ChangeHotcue(deck, index, name, null, loopEnd), Checked: color is null),
+                        MenuItem.Separator,
+                        .. AppTheme.HotcuePalette.Select(colour =>
+                            new MenuItem(colour.Name, () => ChangeHotcue(deck, index, name, colour.Hex, loopEnd), Checked: color == colour.Hex)
+                        ),
+                    ]
+                ),
+                new MenuItem(
+                    "Hot loop",
+                    [
+                        new MenuItem("Not a loop", () => ChangeHotcue(deck, index, name, color, null), Checked: loopEnd is null),
+                        MenuItem.Separator,
+                        .. lengths.Select(beats =>
+                            new MenuItem(
+                                beats == 1 ? "1 beat" : $"{beats} beats",
+                                () => ChangeHotcue(deck, index, name, color, deck.HotLoopEnd(index, beats)),
+                                Enabled: deck.HotLoopEnd(index, beats) is not null,
+                                Checked: loopBeats is { } length && Math.Abs(length - beats) < 0.01
+                            )
+                        ),
+                    ]
+                ),
+                MenuItem.Separator,
+                new MenuItem($"Clear hot cue {number}", () => deck.DeleteHotcue(index)),
+            ]
+        );
+    };
 
     // Everything set up, in one file to keep or take to another computer, and back again.
     var appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint");
@@ -1361,6 +1495,10 @@ static void Run()
                     menu.Close();
                 else if (headphones.Visible)
                     headphones.Close();
+                else if (masterFx.Visible)
+                    masterFx.Close();
+                else if (microphone.Visible)
+                    microphone.Close();
                 else if (prompt.Visible)
                     prompt.Close();
                 else if (confirmation.Visible)
@@ -1413,6 +1551,8 @@ static void Run()
 
     // Right-click menus and the name prompt go over everything, so they're added last.
     ui.Add(headphones);
+    ui.Add(masterFx);
+    ui.Add(microphone);
     ui.Add(menu);
     ui.Add(prompt);
     ui.Add(details);
@@ -2448,6 +2588,7 @@ static void Run()
             {
                 foreach (var deck in decks)
                     deck.Update();
+                MasterEffectsTiming.Follow(audio.MasterEffects, decks);
                 if (relocking.Count > 0)
                     Relock();
                 preview.Update();
@@ -2586,9 +2727,11 @@ static void Run()
                 screen.ScreenSize = new float2(size.X, size.Y);
                 if (controllerDialog is not null)
                     controllerDialog.ScreenSize = screen.ScreenSize;
-                headphones.ScreenSize = menu.ScreenSize = prompt.ScreenSize = details.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
+                headphones.ScreenSize = masterFx.ScreenSize = microphone.ScreenSize = menu.ScreenSize = prompt.ScreenSize = details.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
                 screen.Update();
                 headphones.Refresh();
+                masterFx.Refresh();
+                microphone.Refresh();
                 ui.Layout(screen.ScreenSize);
                 input.UpdateCursor();
                 renderer.DrawFrame(ui);

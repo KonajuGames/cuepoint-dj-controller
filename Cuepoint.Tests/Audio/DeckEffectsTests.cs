@@ -98,6 +98,53 @@ public class DeckEffectsTests
     }
 
     [Fact]
+    public void A_gate_lets_the_first_half_of_each_length_through_and_shuts_the_second_on_the_beat()
+    {
+        // A quarter of a beat at 120 BPM: an eighth of a second, open for the first sixteenth.
+        var effects = new DeckEffects { Kind = DeckEffect.Gate, On = true, Level = 1, BeatSeconds = 0.5 };
+        effects.Beats = 0.25;
+        // A quarter of the way through the gate's length already, by the beat: open for another 1/32 of a second.
+        effects.BeatPosition = 10.0625;
+        var output = Through(effects, Enumerable.Repeat(0.5f, RATE / 2).ToArray());
+
+        var length = RATE / 8;
+        Assert.Equal(0.5f, output[length / 8], 2);
+        Assert.Equal(0, output[length / 4 + length / 8], 2);
+        Assert.Equal(0.5f, output[length / 4 + length / 2 + length / 8], 2);
+    }
+
+    [Fact]
+    public void A_gate_at_half_level_lets_half_through_while_shut()
+    {
+        var effects = new DeckEffects { Kind = DeckEffect.Gate, On = true, Level = 0.5f, BeatSeconds = 0.5 };
+        effects.Beats = 1;
+        var output = Through(effects, Enumerable.Repeat(0.8f, RATE).ToArray());
+
+        // Shut from a quarter of a second, in the second half of the beat.
+        Assert.Equal(0.4f, output[RATE * 3 / 8], 2);
+    }
+
+    [Fact]
+    public void A_crusher_rounds_the_sound_to_fewer_levels_and_holds_it()
+    {
+        var effects = new DeckEffects { Kind = DeckEffect.Crusher, On = true, Level = 1 };
+        var sound = Enumerable.Range(0, RATE / 2).Select(i => MathF.Sin(i * 0.01f) * 0.7f).ToArray();
+        var crushed = Through(effects, sound);
+
+        // At full level: 16 levels each way, each held for 16 samples.
+        var settled = crushed.Skip(RATE / 4).ToArray();
+        Assert.All(settled, sample => Assert.Equal(sample, MathF.Round(sample * 16) / 16, 4));
+        Assert.True(crushed.Zip(sound).Skip(RATE / 4).Max(pair => MathF.Abs(pair.First - pair.Second)) > 0.02f);
+        Assert.False(effects.HasBeats);
+    }
+
+    [Fact]
+    public void The_master_effect_follows_the_deck_playing_that_leads()
+    {
+        Assert.Null(MasterEffectsTiming.Leader([]));
+    }
+
+    [Fact]
     public void Each_effect_keeps_its_own_beats_from_the_lengths_there_are()
     {
         var effects = new DeckEffects();

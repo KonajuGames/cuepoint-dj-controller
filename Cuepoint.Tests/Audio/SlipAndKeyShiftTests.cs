@@ -352,6 +352,47 @@ public sealed class SlipAndKeyShiftTests : IDisposable
     }
 
     [Fact]
+    public void A_loop_moves_on_a_beat_or_back_a_bar_the_same_length_and_only_while_looping()
+    {
+        Assert.False(_deck.MoveLoop(1));
+        _deck.SetHotcues([TimeSpan.FromSeconds(6)]);
+        _deck.SetHotcueDetails([new HotcueDetail(6, null, null, 8)]);
+        _deck.HotcueDown(0);
+
+        // At 120 BPM a beat's half a second, and a bar two seconds.
+        Assert.True(_deck.MoveLoop(1));
+        Assert.Equal((TimeSpan.FromSeconds(6.5), TimeSpan.FromSeconds(8.5)), _deck.Loop);
+        Assert.True(_deck.MoveLoop(-4));
+        Assert.Equal((TimeSpan.FromSeconds(4.5), TimeSpan.FromSeconds(6.5)), _deck.Loop);
+        // Not past the start.
+        Assert.False(_deck.MoveLoop(-16));
+        Assert.Equal((TimeSpan.FromSeconds(4.5), TimeSpan.FromSeconds(6.5)), _deck.Loop);
+    }
+
+    [Fact]
+    public void A_hot_cue_can_be_named_coloured_and_made_a_hot_loop_of_so_many_beats()
+    {
+        var changed = 0;
+        _deck.HotcueDetailsChanged += _ => changed++;
+        Assert.False(_deck.SetHotcueDetail(0, "Drop", null, null));
+
+        _deck.SetHotcues([TimeSpan.FromSeconds(6)]);
+        // At 120 BPM a beat's half a second.
+        Assert.Equal(8, _deck.HotLoopEnd(0, 4));
+        Assert.True(_deck.SetHotcueDetail(0, "  Drop ", 0x4CC35A, _deck.HotLoopEnd(0, 4)));
+
+        Assert.Equal(new HotcueDetail(6, "Drop", 0x4CC35A, 8), _deck.DetailOf(0));
+        Assert.Equal(_deck.DetailOf(0), _deck.HotcueDetails[0]);
+        _deck.HotcueDown(0);
+        Assert.Equal((TimeSpan.FromSeconds(6), TimeSpan.FromSeconds(8)), _deck.Loop);
+
+        // Nothing left to say about it, and it has nothing besides where it is.
+        _deck.SetHotcueDetail(0, " ", null, 5);
+        Assert.Null(_deck.DetailOf(0));
+        Assert.Equal(2, changed);
+    }
+
+    [Fact]
     public void A_hot_cue_s_name_and_colour_go_when_it_moves_and_with_another_song()
     {
         _deck.SetHotcues([TimeSpan.FromSeconds(6)]);

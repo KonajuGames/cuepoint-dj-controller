@@ -64,10 +64,160 @@ sealed unsafe class AudioEngine : IDisposable
     /// </summary>
     public MasterLimiter Limiter { get; } = new();
 
+    /// <summary>
+    /// The effect on the whole mix, after the decks and before the master volume and limiter, timed by the deck
+    /// leading the mix (set once a frame).
+    /// </summary>
+    public DeckEffects MasterEffects { get; } = new();
+
     MixRecorder? _recorder;
 
     float _masterVolume = 1;
     float _appliedMaster = 1;
+
+    // The microphone: a recording device mixed into the main mix, with talkover.
+    Microphone? _microphone;
+    string? _chosenMicrophone;
+    int _microphoneOn;
+    float _microphoneLevel = 0.7f;
+    int _talkover = 1;
+    readonly MicMix _micMix = new();
+    float[] _micBuffer = [];
+
+    /// <summary>
+    /// The recording devices there are, such as microphones and sound cards' inputs, by name.
+    /// </summary>
+    public static IReadOnlyList<(uint Id, string Name)> RecordingDevices()
+    {
+        int count;
+        var ids = Sdl.PInvoke.GetAudioRecordingDevices(&count);
+        if (ids is null)
+            return [];
+        try
+        {
+            var devices = new List<(uint, string)>(count);
+            for (var i = 0; i < count; i++)
+                devices.Add((ids[i], Sdl.PInvoke.GetAudioDeviceName(ids[i]) ?? $"Input {ids[i]}"));
+            return devices;
+        }
+        finally
+        {
+            Sdl.PInvoke.Free(ids);
+        }
+    }
+
+    /// <summary>
+    /// The device the microphone's on, while it's open.
+    /// </summary>
+    public string? MicrophoneDevice => _microphone?.DeviceName;
+
+    /// <summary>
+    /// The device chosen for the microphone, or null for none; <see cref="MicrophoneDevice"/> is null instead while
+    /// it's missing.
+    /// </summary>
+    public string? ChosenMicrophoneDevice => _chosenMicrophone;
+
+    /// <summary>
+    /// Whether the microphone's heard in the main mix. It's off to begin with, so nothing's heard by surprise.
+    /// </summary>
+    public bool MicrophoneOn
+    {
+        get => Volatile.Read(ref _microphoneOn) != 0;
+        set => Volatile.Write(ref _microphoneOn, value ? 1 : 0);
+    }
+
+    /// <summary>
+    /// The microphone's level, from 0 to 1, through the same taper as the faders.
+    /// </summary>
+    public float MicrophoneLevel
+    {
+        get => Volatile.Read(ref _microphoneLevel);
+        set => Volatile.Write(ref _microphoneLevel, Math.Clamp(value, 0, 1));
+    }
+
+    /// <summary>
+    /// Whether the music's turned down while the microphone's spoken into.
+    /// </summary>
+    public bool Talkover
+    {
+        get => Volatile.Read(ref _talkover) != 0;
+        set => Volatile.Write(ref _talkover, value ? 1 : 0);
+    }
+
+    /// <summary>
+    /// Whether talkover has the music turned down now, to light its button.
+    /// </summary>
+    public bool TalkingOver => _micMix.Duck < 0.9f;
+
+    /// <summary>
+    /// Takes the microphone from the recording device called <paramref name="deviceName"/>, or none with null.
+    /// Returns false, with no microphone, if there's no such device or it won't open.
+    /// </summary>
+    public bool UseMicrophoneDevice(string? deviceName)
+    {
+        _chosenMicrophone = deviceName;
+        if (deviceName is null)
+        {
+            SetMicrophone(null);
+            return true;
+        }
+        if (RecordingDevices().FirstOrDefault(device => device.Name == deviceName) is not { Name: not null } found)
+        {
+            SetMicrophone(null);
+            return false;
+        }
+        SdlAudioSpec format;
+        Mixer.GetFormat(&format);
+        try
+        {
+            SetMicrophone(new Microphone(found.Id, deviceName, format));
+            return true;
+        }
+        catch (SdlException)
+        {
+            SetMicrophone(null);
+            return false;
+        }
+    }
+
+    // Swapped with the mix held, so the audio thread never reads one that's going.
+    void SetMicrophone(Microphone? microphone)
+    {
+        Microphone? old;
+        Mixer.Lock();
+        try
+        {
+            (old, _microphone) = (_microphone, microphone);
+        }
+        finally
+        {
+            Mixer.Unlock();
+        }
+        if (old != microphone)
+            old?.Dispose();
+    }
+
+    /// <summary>
+    /// Puts the microphone into the mix, if it's on, turning the music down while it's spoken into with talkover; and
+    /// brings the music back up once it's off. On the audio thread.
+    /// </summary>
+    void MixMicrophone(float* samples, int count, int channels, int rate)
+    {
+        var on = Volatile.Read(ref _microphoneOn) != 0 && _microphone is not null;
+        if (!on && _micMix.Duck >= 1)
+            return;
+        if (_micBuffer.Length < count)
+            Array.Resize(ref _micBuffer, count);
+        fixed (float* mic = _micBuffer)
+        {
+            if (on)
+                _microphone!.Read(mic, count);
+            else
+                new Span<float>(mic, count).Clear();
+        }
+        var gain = Deck.VolumeTaper(Volatile.Read(ref _microphoneLevel));
+        _micMix.Mix(new Span<float>(samples, count), _micBuffer.AsSpan(0, count), channels, rate, on ? gain : 0, Volatile.Read(ref _talkover) != 0);
+    }
 
     // The booth output: a sound card of its own carrying the main mix, at its own volume, to monitors in the DJ booth.
     SdlHeadphones? _booth;
@@ -249,6 +399,8 @@ sealed unsafe class AudioEngine : IDisposable
             var spec = new SdlAudioSpec { format = SdlAudioFormat.F32, channels = AudioOutput.CHANNELS, freq = AudioOutput.RATE };
             Mixer = SdlMixer.CreateMixer(&spec);
             _self = GCHandle.Alloc(this);
+            // Its buffers are big, so they're made here rather than on the audio thread.
+            MasterEffects.Prepare(spec.channels, spec.freq);
             SdlMixer.PInvoke.SetPostMixCallback(Mixer, &MixDone, (void*)GCHandle.ToIntPtr(_self));
             _output = new AudioOutput(this, DEFAULT_PLAYBACK_DEVICE, null, null, bufferFrames);
 
@@ -875,7 +1027,11 @@ sealed unsafe class AudioEngine : IDisposable
         {
             var engine = (AudioEngine)GCHandle.FromIntPtr((nint)userData).Target!;
             if (spec->channels == AudioOutput.CHANNELS)
-                engine.FeedBooth(samples, count);
+                // The master effect goes on the mix the room hears, the booth too, before the volume and the limiter.
+            engine.MasterEffects.Process(samples, count, spec->channels, spec->freq);
+            // The voice over it, past the effect, so it's heard as it's said.
+            engine.MixMicrophone(samples, count, spec->channels, spec->freq);
+            engine.FeedBooth(samples, count);
             engine.ApplyMaster(samples, count, spec->channels);
             if (spec->channels == AudioOutput.CHANNELS)
                 engine.Limiter.Process(new Span<float>(samples, count));
@@ -920,6 +1076,8 @@ sealed unsafe class AudioEngine : IDisposable
         _headphones?.Dispose();
         _headphones = null;
         _booth?.Dispose();
+        _microphone?.Dispose();
+        _microphone = null;
         _booth = null;
         if (_self.IsAllocated)
             _self.Free();

@@ -42,6 +42,8 @@ sealed class OptionsDialog : Panel
     /// </summary>
     public Checkbox AnalyseWhenIdle { get; }
 
+    public Checkbox AutoCue { get; }
+
     public float2 ScreenSize { get; set; }
 
     /// <summary>
@@ -92,6 +94,11 @@ sealed class OptionsDialog : Panel
     public event Action<string?>? HeadphonesChanged;
 
     /// <summary>
+    /// Another microphone was chosen, or none.
+    /// </summary>
+    public event Action<string?>? MicrophoneChanged;
+
+    /// <summary>
     /// The main output was moved to another device (null for the system's default).
     /// </summary>
     public event Action<string?>? OutputChanged;
@@ -107,6 +114,7 @@ sealed class OptionsDialog : Panel
 
     readonly Dropdown<string?> _headphones;
     readonly Dropdown<string?> _booth;
+    readonly Dropdown<string?> _microphone;
     readonly Slider _boothVolume;
 
     /// <summary>
@@ -245,6 +253,15 @@ sealed class OptionsDialog : Panel
             }
         );
 
+        var autoCueRow = Row("Auto cue", body);
+        AutoCue = autoCueRow.Add(
+            new Checkbox(body, "Cue new songs where the music starts")
+            {
+                Checked = true,
+                Tooltip = "A song without a cue point of its own loads cued to its first sound, on the nearest beat, rather than to the silence before it. A cue point set by hand, or from Rekordbox, comes first",
+            }
+        );
+
         var idleRow = Row("Analyse when idle", body);
         AnalyseWhenIdle = idleRow.Add(
             new Checkbox(body, "While nothing's playing")
@@ -324,6 +341,28 @@ sealed class OptionsDialog : Panel
         };
         _content.Add(
             new Label(body, "A second sound card, or a controller's own channels 3 and 4, to hear decks with PFL on before the room does.")
+            {
+                Color = Theme.Muted,
+            }
+        );
+
+        // The microphone: a recording device, mixed into the main mix from the title bar's MIC.
+        var micRow = Row("Microphone", body);
+        _microphone = micRow.Add(
+            new Dropdown<string?>(body)
+            {
+                Width = 300,
+                Items = () => [null, .. AudioEngine.RecordingDevices().Select(device => device.Name)],
+                Text = name => name ?? "None",
+            }
+        );
+        _microphone.Chosen += name =>
+        {
+            engine.UseMicrophoneDevice(name);
+            MicrophoneChanged?.Invoke(engine.ChosenMicrophoneDevice);
+        };
+        _content.Add(
+            new Label(body, "A microphone or a sound card's input, to speak over the music. MIC on the title bar puts it in the mix.")
             {
                 Color = Theme.Muted,
             }
@@ -541,6 +580,7 @@ sealed class OptionsDialog : Panel
         _output.Selected = _engine.OutputDevice;
         _headphones.Selected = _engine.HeadphoneDevice;
         _booth.Selected = _engine.ChosenBoothDevice;
+        _microphone.Selected = _engine.ChosenMicrophoneDevice;
         if (!_boothVolume.IsDragging)
             _boothVolume.Value = _engine.BoothVolume;
         _bufferSize.Selected = _engine.BufferFrames;

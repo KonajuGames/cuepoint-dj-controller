@@ -19,13 +19,25 @@ enum DeckEffect
     /// A sweeping, jet-like comb, as a very short delay moving to and fro: once each number of beats.
     /// </summary>
     Flanger,
+
+    /// <summary>
+    /// The sound chopped on and off in time with the beat: on for the first half of each number of beats, off for the
+    /// second.
+    /// </summary>
+    Gate,
+
+    /// <summary>
+    /// The sound made rough and lo-fi, with fewer bits and fewer samples.
+    /// </summary>
+    Crusher,
 }
 
 /// <summary>
-/// A deck's effect unit, as on a DJ mixer: one effect at a time (<see cref="Kind"/>), switched <see cref="On"/>, at a
-/// <see cref="Level"/>, and for echo and flanger a length in beats (<see cref="Beats"/>) timed by the deck's tempo
-/// (<see cref="BeatSeconds"/>, set once a frame). Echo and reverb ring on when switched off, as their repeats and
-/// tail fade out naturally; the flanger fades out at once. Set from the UI thread; the audio is processed on SDL_mixer's
+/// A deck's effect unit, as on a DJ mixer, or the whole mix's: one effect at a time (<see cref="Kind"/>), switched
+/// <see cref="On"/>, at a <see cref="Level"/>, and for echo, flanger and gate a length in beats (<see cref="Beats"/>)
+/// timed by the tempo (<see cref="BeatSeconds"/>, set once a frame) and kept on the beat (<see cref="BeatPosition"/>).
+/// Echo and reverb ring on when switched off, as their repeats and tail fade out naturally; the others fade out at
+/// once. Set from the UI thread; the audio is processed on SDL_mixer's
 /// audio thread by <see cref="Process"/>, which eases every change in, so nothing clicks.
 /// </summary>
 /// <remarks>
@@ -33,6 +45,8 @@ enum DeckEffect
 /// tape echo would. The reverb is Freeverb (Jezar at Dreampoint's public domain design): eight damped comb filters in
 /// parallel, then four all-passes in series, for each channel, the right's a little longer than the left's for width.
 /// The flanger reads a delay of a millisecond or so to a few, swept by a slow sine and fed back, mixed with the sound.
+/// The gate opens and closes over a few milliseconds, so its edges don't click; the crusher holds each sample for a
+/// few and rounds it to fewer levels, more of both the higher the level.
 /// </remarks>
 sealed unsafe class DeckEffects
 {
@@ -81,7 +95,10 @@ sealed unsafe class DeckEffects
     float _period = 0.25f;
     int _reset;
     double _beatSeconds = 0.5;
-    readonly double[] _beats = [1.0 / 2, 1, 8];
+    readonly double[] _beats = [1.0 / 2, 1, 8, 1.0 / 4, 1];
+    float _periodBeats = 0.5f;
+    double _beatPosition;
+    int _beatPositionSet;
 
     /// <summary>
     /// Which effect it is. Changing it starts the new one afresh. Set from the UI thread.
@@ -146,7 +163,27 @@ sealed unsafe class DeckEffects
     /// <summary>
     /// Whether the chosen effect is timed in beats.
     /// </summary>
-    public bool HasBeats => Kind != DeckEffect.Reverb;
+    public bool HasBeats => HasBeatsOf(Kind);
+
+    /// <summary>
+    /// Whether <paramref name="kind"/> is timed in beats.
+    /// </summary>
+    public static bool HasBeatsOf(DeckEffect kind) => kind is DeckEffect.Echo or DeckEffect.Flanger or DeckEffect.Gate;
+
+    /// <summary>
+    /// Which beat is coming out now, counted through the song (2.5 is halfway through the third), to keep the gate and
+    /// flanger on the beat. Set once a frame from the UI thread while there's a beat grid to say.
+    /// </summary>
+    public double BeatPosition
+    {
+        set
+        {
+            if (!double.IsFinite(value))
+                return;
+            Volatile.Write(ref _beatPosition, value);
+            Interlocked.Increment(ref _beatPositionSet);
+        }
+    }
 
     /// <summary>
     /// Moves <see cref="Beats"/> along <see cref="BeatLengths"/> by <paramref name="steps"/>, stopping at the ends.
@@ -180,6 +217,7 @@ sealed unsafe class DeckEffects
         if (Kind == DeckEffect.Echo)
             seconds = Math.Min(seconds, MAX_ECHO_SECONDS);
         Volatile.Write(ref _period, (float)seconds);
+        Volatile.Write(ref _periodBeats, (float)Beats);
     }
 
     /// <summary>
@@ -213,6 +251,11 @@ sealed unsafe class DeckEffects
     float[] _flange = [];
     int _flangeWrite;
     double _phase;
+    int _beatPositionSeen;
+
+    float _gate;
+    float[] _held = [];
+    int _holdCount;
 
     Comb[][] _combs = [];
     Allpass[][] _allpasses = [];
@@ -262,7 +305,9 @@ sealed unsafe class DeckEffects
 
         var step = (float)(1 / (RAMP_SECONDS * rate));
         var targetFeed = on ? 1f : 0f;
-        var targetMix = (DeckEffect)kind == DeckEffect.Flanger ? (on ? level : 0) : level;
+        var ringsOn = (DeckEffect)kind is DeckEffect.Echo or DeckEffect.Reverb;
+        var targetMix = ringsOn ? level : on ? level : 0;
+        KeepOnTheBeat();
         switch ((DeckEffect)kind)
         {
             case DeckEffect.Echo:
@@ -271,12 +316,18 @@ sealed unsafe class DeckEffects
             case DeckEffect.Reverb:
                 Reverb(samples, frames, channels, targetFeed, targetMix, step);
                 break;
+            case DeckEffect.Gate:
+                Gate(samples, frames, channels, period, targetMix, step);
+                break;
+            case DeckEffect.Crusher:
+                Crusher(samples, frames, channels, on ? 1 : 0, level, step);
+                break;
             default:
                 Flanger(samples, frames, channels, period, targetMix, step);
                 break;
         }
-        // How long it's been fed nothing, for the echoes or tail to die away; the flanger's gone once it's faded out.
-        if ((DeckEffect)kind == DeckEffect.Flanger)
+        // How long it's been fed nothing, for the echoes or tail to die away; the others are gone once faded out.
+        if (!ringsOn)
             _idleFrames = _mix == 0 ? long.MaxValue : 0;
         else
             _idleFrames = _feed == 0 ? (_idleFrames > long.MaxValue - frames ? long.MaxValue : _idleFrames + frames) : 0;
@@ -293,6 +344,27 @@ sealed unsafe class DeckEffects
             DeckEffect.Reverb => (long)(REVERB_TAIL_SECONDS * _rate),
             _ => 0,
         };
+
+    /// <summary>
+    /// Brings the sweep or the gate back into step with the beat, if it's been told where the beat is since: at once
+    /// if it's well out, as when the deck jumps, or else a little at a time, so it doesn't jitter.
+    /// </summary>
+    void KeepOnTheBeat()
+    {
+        var set = Volatile.Read(ref _beatPositionSet);
+        if (set == _beatPositionSeen)
+            return;
+        _beatPositionSeen = set;
+        var periodBeats = Volatile.Read(ref _periodBeats);
+        if (periodBeats <= 0)
+            return;
+        var cycles = Volatile.Read(ref _beatPosition) / periodBeats;
+        var target = cycles - Math.Floor(cycles);
+        var off = target - _phase;
+        off -= Math.Round(off);
+        _phase += Math.Abs(off) > 0.05 ? off : off * 0.1;
+        _phase -= Math.Floor(_phase);
+    }
 
     static float Toward(float value, float target, float step) =>
         value < target ? MathF.Min(target, value + step) : MathF.Max(target, value - step);
@@ -396,6 +468,53 @@ sealed unsafe class DeckEffects
     }
 
     /// <summary>
+    /// How long the gate takes to open or close, in seconds: quick enough to chop, slow enough not to click.
+    /// </summary>
+    const double GATE_EDGE_SECONDS = 0.003;
+
+    void Gate(float* samples, int frames, int channels, double period, float targetMix, float step)
+    {
+        var phaseStep = 1 / (period * _rate);
+        var edge = (float)(1 / (GATE_EDGE_SECONDS * _rate));
+        for (var frame = 0; frame < frames; frame++)
+        {
+            _mix = Toward(_mix, targetMix, step);
+            _phase += phaseStep;
+            if (_phase >= 1)
+                _phase -= 1;
+            _gate = Toward(_gate, _phase < 0.5 ? 1 : 0, edge);
+            // At full level it's silent while closed; less, and some of the sound comes through.
+            var gain = 1 - _mix * (1 - _gate);
+            var at = frame * channels;
+            for (var c = 0; c < channels; c++)
+                samples[at + c] *= gain;
+        }
+    }
+
+    void Crusher(float* samples, int frames, int channels, float targetMix, float level, float step)
+    {
+        // From 12 bits held for a sample or two, to 4 bits held for sixteen.
+        var steps = MathF.Pow(2, 12 - 8 * level);
+        var hold = 1 + (int)(level * 15);
+        for (var frame = 0; frame < frames; frame++)
+        {
+            _mix = Toward(_mix, targetMix, step);
+            var at = frame * channels;
+            if (++_holdCount >= hold)
+            {
+                _holdCount = 0;
+                for (var c = 0; c < channels; c++)
+                    _held[c] = MathF.Round(samples[at + c] * steps) / steps;
+            }
+            for (var c = 0; c < channels; c++)
+            {
+                var x = samples[at + c];
+                samples[at + c] = x + (_held[c] - x) * _mix;
+            }
+        }
+    }
+
+    /// <summary>
     /// Makes its buffers for sound of this shape. Called before the audio thread starts on it, so that thread needn't;
     /// it does only if the shape changes, as with another sound card.
     /// </summary>
@@ -406,6 +525,7 @@ sealed unsafe class DeckEffects
         _echoFrames = (int)(MAX_ECHO_SECONDS * rate) + 4;
         _echo = new float[_echoFrames * channels];
         _flange = new float[FLANGE_FRAMES * channels];
+        _held = new float[channels];
         var scale = rate / 44100.0;
         _combs = new Comb[channels][];
         _allpasses = new Allpass[channels][];
@@ -435,8 +555,31 @@ sealed unsafe class DeckEffects
             foreach (var allpass in allpasses)
                 Array.Clear(allpass.Buffer);
         }
-        (_echoWrite, _echoDelay, _flangeWrite, _phase) = (0, 0, 0, 0);
+        Array.Clear(_held);
+        (_echoWrite, _echoDelay, _flangeWrite, _phase, _gate, _holdCount) = (0, 0, 0, 0, 1, 0);
         (_feed, _mix) = (0, 0);
         _idleFrames = long.MaxValue;
+    }
+}
+
+/// <summary>
+/// Times the effect on the whole mix by the deck leading it: the one playing that isn't following the other with
+/// sync lock, or else either playing, or else one loaded; 120 BPM with none.
+/// </summary>
+static class MasterEffectsTiming
+{
+    public static Deck? Leader(IReadOnlyList<Deck> decks) =>
+        decks.Where(deck => deck.IsPlaying).OrderBy(deck => deck.SyncLocked).FirstOrDefault() ?? decks.FirstOrDefault(deck => deck.IsLoaded);
+
+    /// <summary>
+    /// Sets <paramref name="effects"/>' tempo and beat from the leading deck. Call once a frame, after the decks
+    /// update.
+    /// </summary>
+    public static void Follow(DeckEffects effects, IReadOnlyList<Deck> decks)
+    {
+        var leader = Leader(decks);
+        effects.BeatSeconds = 60 / (leader?.Bpm is > 0 and var bpm ? bpm : 120);
+        if (leader is { IsLoaded: true, Analysis.Grid: { } grid })
+            effects.BeatPosition = grid.BeatNumberAt(leader.Position.TotalSeconds);
     }
 }

@@ -893,6 +893,8 @@ sealed partial class Deck : IDisposable
         UpdateSyncLock();
         // The effects keep time with the beat coming out, or 120 BPM without one.
         Effects.BeatSeconds = 60 / (Bpm is > 0 and var bpm ? bpm : 120);
+        if (IsLoaded && _analysis?.Grid is { } grid)
+            Effects.BeatPosition = grid.BeatNumberAt(Position.TotalSeconds);
         if (IsSlipping)
             AdvanceSlip();
         if (_pending is not { Task.IsCompleted: true } done)
@@ -1168,9 +1170,51 @@ sealed partial class Deck : IDisposable
     public IReadOnlyList<TimeSpan> MemoryCues => _memoryCues;
 
     /// <summary>
+    /// Whether a song with no cue point or memory cue of its own is cued to where its music starts as it loads (see
+    /// <see cref="AutoCuePoint"/>), rather than waiting at the very start.
+    /// </summary>
+    public bool AutoCue { get; set; } = true;
+
+    /// <summary>
+    /// How loud a sample has to be to count as the music starting: about -40 dB.
+    /// </summary>
+    const float FIRST_SOUND = 0.01f;
+
+    /// <summary>
+    /// Where the loaded song's music starts: its first sound, moved onto the nearest beat if it has a beat grid. Null
+    /// if it starts straight away, or there's nothing to hear.
+    /// </summary>
+    public TimeSpan? AutoCuePoint()
+    {
+        if (_pcm is not { } pcm || FirstSound(pcm) is not { } sound)
+            return null;
+        if (_analysis?.Grid is { } grid)
+        {
+            var beat = grid.TimeOfBeat(Math.Round(grid.BeatNumberAt(sound)));
+            if (beat >= 0 && Math.Abs(beat - sound) <= 30 / grid.BpmAt(sound))
+                sound = beat;
+        }
+        return sound < 0.005 ? null : TimeSpan.FromSeconds(sound);
+    }
+
+    /// <summary>
+    /// When <paramref name="pcm"/> is first heard, in seconds; null if it's silent all through.
+    /// </summary>
+    internal static double? FirstSound(PcmAudio pcm)
+    {
+        var samples = pcm.Samples;
+        for (var i = 0; i < samples.Length; i++)
+        {
+            if (MathF.Abs(samples[i]) > FIRST_SOUND)
+                return (double)(i / pcm.Channels) / pcm.SampleRate;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Puts back the memory cues saved for the loaded song (any past its end are left out), with the cue point saved
-    /// for it, or else the first of them, as the cue point; and if the deck's paused at the very start, as a song is
-    /// once it's loaded, it goes there, ready to play.
+    /// for it, or else the first of them, or else where its music starts with <see cref="AutoCue"/>, as the cue
+    /// point; and if the deck's paused at the very start, as a song is once it's loaded, it goes there, ready to play.
     /// </summary>
     public void SetMemoryCues(IReadOnlyList<TimeSpan> cues, TimeSpan? cuePoint = null, IReadOnlyList<(TimeSpan Start, TimeSpan End)>? loops = null)
     {
@@ -1179,7 +1223,10 @@ sealed partial class Deck : IDisposable
         if (!IsLoaded || _pcm is not { } pcm)
             return;
         _memoryCues.AddRange(cues.Where(at => at >= TimeSpan.Zero && at <= Duration).Distinct().Order());
-        var at = cuePoint is { } saved && saved >= TimeSpan.Zero && saved <= Duration ? saved : _memoryCues.Count > 0 ? _memoryCues[0] : (TimeSpan?)null;
+        var at = cuePoint is { } saved && saved >= TimeSpan.Zero && saved <= Duration ? saved
+            : _memoryCues.Count > 0 ? _memoryCues[0]
+            : AutoCue ? AutoCuePoint()
+            : null;
         if (at is not { } cue)
             return;
         var waitingAtStart = !IsPlaying && !_previewing && !IsLooping && !IsPlatterActive && _track.GetPlaybackPosition() <= 0;
@@ -1206,6 +1253,41 @@ sealed partial class Deck : IDisposable
     /// </summary>
     public HotcueDetail? DetailOf(int index) =>
         _hotcues[index] is { } at && _hotcueDetails[index] is { } detail && Math.Abs(detail.At - at.TotalSeconds) < 0.002 ? detail : null;
+
+    /// <summary>
+    /// Every hotcue's name, colour and loop as they stand, to keep with the song.
+    /// </summary>
+    public IReadOnlyList<HotcueDetail?> HotcueDetails => [.. _hotcueDetails];
+
+    /// <summary>
+    /// A hotcue's name, colour or loop was changed by <see cref="SetHotcueDetail"/>, so whoever keeps them can save them.
+    /// </summary>
+    public event Action<Deck>? HotcueDetailsChanged;
+
+    /// <summary>
+    /// Gives hotcue <paramref name="index"/>, if it's set, a <paramref name="name"/> (blank for none), a
+    /// <paramref name="color"/> as 0xRRGGBB (null for its pad's own) and a loop to <paramref name="loopEnd"/> seconds
+    /// (null, or not past the hotcue, for none). Returns whether it was set to give them to.
+    /// </summary>
+    public bool SetHotcueDetail(int index, string? name, uint? color, double? loopEnd)
+    {
+        if (index < 0 || index >= HOTCUE_COUNT || _hotcues[index] is not { } at)
+            return false;
+        name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        loopEnd = loopEnd is { } end && end > at.TotalSeconds + 0.001 ? Math.Min(end, Duration.TotalSeconds) : null;
+        _hotcueDetails[index] = name is null && color is null && loopEnd is null ? null : new HotcueDetail(at.TotalSeconds, name, color, loopEnd);
+        HotcueDetailsChanged?.Invoke(this);
+        return true;
+    }
+
+    /// <summary>
+    /// Where a loop of <paramref name="beats"/> beats from hotcue <paramref name="index"/> would end, in seconds, by the
+    /// song's beat grid; null if it isn't set, or there's no grid.
+    /// </summary>
+    public double? HotLoopEnd(int index, double beats) =>
+        index >= 0 && index < HOTCUE_COUNT && _hotcues[index] is { } at && _analysis?.Grid is { } grid
+            ? Math.Min(grid.TimeOfBeat(grid.BeatNumberAt(at.TotalSeconds) + beats), Duration.TotalSeconds)
+            : null;
 
     /// <summary>
     /// How near the deck has to be to a memory cue to be at it, in seconds.
@@ -1369,6 +1451,13 @@ sealed partial class Deck : IDisposable
             Seek(TimeSpan.FromSeconds(target));
         return true;
     }
+
+    /// <summary>
+    /// Moves the loop playing <paramref name="beats"/> beats on through the song (back, if negative), the same length,
+    /// the music going with it so it stays in time: on by a beat, say, or back by a bar. Returns false, doing nothing,
+    /// with no loop going, no beat grid, or a move past either end.
+    /// </summary>
+    public bool MoveLoop(double beats) => IsLooping && BeatJump(beats);
 
     /// <summary>
     /// Hotcue <paramref name="index"/>'s pad was let go: with <see cref="Slip"/> on, back to where the song would

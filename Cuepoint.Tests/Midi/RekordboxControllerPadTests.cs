@@ -138,12 +138,15 @@ public sealed class RekordboxControllerPadTests : IDisposable
         Assert.False(_a.Effects.On);
         Assert.True(_b.Effects.On);
 
-        // CH 1, and MASTER: both on, unless both are on already.
+        // CH 1, and MASTER: the effect on the whole mix, leaving the decks' alone.
         Press(4, 0x10);
         Press(4, 0x47);
         Assert.True(_a.Effects.On);
         Press(4, 0x14);
         Press(4, 0x47);
-        Assert.False(_a.Effects.On || _b.Effects.On);
+        Assert.True(_engine.MasterEffects.On);
+        Assert.True(_a.Effects.On && _b.Effects.On);
+        Press(4, 0x47);
+        Assert.False(_engine.MasterEffects.On);
     }
 }

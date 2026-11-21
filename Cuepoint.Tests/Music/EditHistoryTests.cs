@@ -37,6 +37,19 @@ public sealed class EditHistoryTests : IDisposable
     }
 
     [Fact]
+    public void A_hot_cue_s_name_colour_and_loop_are_taken_back()
+    {
+        HotcueDetail?[] before = [new HotcueDetail(1, "Intro", null, null)];
+        _database.SetHotcueDetails(_song.Path, before);
+        _history.RecordHotcueDetails(_song.Path, before, 0);
+        _database.SetHotcueDetails(_song.Path, [new HotcueDetail(1, "Drop", 0xE8453C, 3)]);
+
+        Assert.Contains("changing hot cue 1", _history.Undo());
+
+        Assert.Equal("Intro", _database.GetHotcueDetails(_song.Path)[0]!.Name);
+    }
+
+    [Fact]
     public void Hot_cue_changes_are_taken_back_newest_first_and_saved()
     {
         ChangeHotcues(TimeSpan.FromSeconds(1), null);

@@ -99,6 +99,11 @@ sealed class AppSettings
     public bool AnalyseWhenIdle { get; set; } = true;
 
     /// <summary>
+    /// Whether a song with no cue point of its own loads cued to where its music starts.
+    /// </summary>
+    public bool AutoCue { get; set; } = true;
+
+    /// <summary>
     /// The saved searches listed under Smart playlists.
     /// </summary>
     public List<Music.SmartPlaylist> SmartPlaylists { get; set; } = [];
@@ -112,12 +117,30 @@ sealed class AppSettings
         public float Level { get; set; } = 0.6f;
         public double EchoBeats { get; set; } = 0.5;
         public double FlangerBeats { get; set; } = 8;
+        public double GateBeats { get; set; } = 0.25;
     }
 
     /// <summary>
     /// Each deck's effect, by the deck's name.
     /// </summary>
     public Dictionary<string, DeckEffectSettings>? Effects { get; set; }
+
+    /// <summary>
+    /// The effect on the whole mix: which, how much and how long; it always starts off.
+    /// </summary>
+    public DeckEffectSettings? MasterEffect { get; set; }
+
+    /// <summary>
+    /// The recording device the microphone's on, or null for none.
+    /// </summary>
+    public string? MicrophoneDevice { get; set; }
+
+    public float MicrophoneLevel { get; set; } = 0.7f;
+
+    /// <summary>
+    /// Whether the music's turned down while the microphone's spoken into.
+    /// </summary>
+    public bool Talkover { get; set; } = true;
 
     /// <summary>
     /// Lighting software to connect to as well as any found on the network, as host:port; null for none.

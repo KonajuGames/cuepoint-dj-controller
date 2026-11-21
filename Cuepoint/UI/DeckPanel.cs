@@ -209,6 +209,12 @@ sealed class DeckPanel : Panel
     /// </summary>
     public event Action<DeckPanel, Song>? SongDropped;
 
+    /// <summary>
+    /// A set hotcue's pad was right-clicked, at the point given: for a menu to name it, colour it, make it a hot loop
+    /// or clear it.
+    /// </summary>
+    public event Action<DeckPanel, int, float2>? HotcueMenuRequested;
+
     /// <param name="padKeys">The keys that press the hotcue pads, in order, to label them with.</param>
     /// <param name="keys">The keys that press its buttons, to label them with.</param>
     /// <param name="grid">Fixes the deck's beat grid by hand, with the pads in GRID mode; no GRID mode if null.</param>
@@ -298,8 +304,17 @@ sealed class DeckPanel : Panel
         _sync.Clicked += _ => _deck.SyncLocked = !_deck.SyncLocked;
 
         // The loop: halve it, start or stop it (its size on the button), double it.
-        _halveLoop = Add(new Button(bold, "") { Icon = images?.TriangleLeft, MinSize = new float2(26, 30), FocusColor = Theme.Focus, Tooltip = "Halve the loop" });
+        _halveLoop = Add(
+            new Button(bold, "")
+            {
+                Icon = images?.TriangleLeft,
+                MinSize = new float2(26, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Halve the loop. Right-click to move it back a beat",
+            }
+        );
         _halveLoop.Clicked += _ => _deck.HalveLoop();
+        _halveLoop.SecondaryClicked += _ => _deck.MoveLoop(-1);
         _loop = Add(
             new Button(bold, "LOOP 4")
             {
@@ -309,8 +324,17 @@ sealed class DeckPanel : Panel
             }
         );
         _loop.Clicked += _ => _deck.ToggleLoop();
-        _doubleLoop = Add(new Button(bold, "") { Icon = images?.TriangleRight, MinSize = new float2(26, 30), FocusColor = Theme.Focus, Tooltip = "Double the loop" });
+        _doubleLoop = Add(
+            new Button(bold, "")
+            {
+                Icon = images?.TriangleRight,
+                MinSize = new float2(26, 30),
+                FocusColor = Theme.Focus,
+                Tooltip = "Double the loop. Right-click to move it on a beat",
+            }
+        );
         _doubleLoop.Clicked += _ => _deck.DoubleLoop();
+        _doubleLoop.SecondaryClicked += _ => _deck.MoveLoop(1);
 
         // Quantise: lit while hotcues and the cue point go on the beat, and jumps to them stay in time.
         _quantize = Add(
@@ -395,15 +419,10 @@ sealed class DeckPanel : Panel
             new Dropdown<DeckEffect>(small)
             {
                 Items = () => Enum.GetValues<DeckEffect>(),
-                Text = kind => kind switch
-                {
-                    DeckEffect.Echo => "ECHO",
-                    DeckEffect.Reverb => "REVERB",
-                    _ => "FLANGER",
-                },
+                Text = EffectName,
                 Width = 78,
                 Padding = 3,
-                Tooltip = "The deck's effect: an echo in time with the beat, reverb, or a flanger sweeping in time",
+                Tooltip = "The deck's effect: an echo in time with the beat, reverb, a flanger sweeping in time, a gate chopping the sound in time, or a bit-crusher making it rough and lo-fi",
             }
         );
         _fxKind.Chosen += kind => _deck.Effects.Kind = kind;
@@ -646,6 +665,16 @@ sealed class DeckPanel : Panel
                 else
                     _deck.DeleteHotcue(index);
             };
+            // A right-click does as Shift does in the other modes, and opens a hotcue's menu.
+            pad.MenuRequested += (_, at) =>
+            {
+                if (_grid is { Active: true })
+                    _grid.Pad(index, fine: true);
+                else if (_sampler is { Active: true })
+                    _sampler.Clear(index);
+                else if (_roll is not { Active: true } && _jump is not { Active: true } && _deck.Hotcues[index] is not null)
+                    HotcueMenuRequested?.Invoke(this, index, at);
+            };
             _pads.Add(pad);
         }
 
@@ -813,7 +842,7 @@ sealed class DeckPanel : Panel
             {
                 ShowSample(_pads[i], _sampler!.Sampler, i);
                 if (_deck.Hotcues[i] is { } cueAt)
-                    flags.Add(((float)cueAt.TotalSeconds, AppTheme.HotcueColor(i), (i + 1).ToString()));
+                    flags.Add(((float)cueAt.TotalSeconds, AppTheme.HotcueColor(_deck, i), (i + 1).ToString()));
                 continue;
             }
             var hotcue = _deck.Hotcues[i];
@@ -831,11 +860,11 @@ sealed class DeckPanel : Panel
                 gridMode ? GridTooltip(GridEditor.Pads[i])
                 : rollMode ? $"Loops {RollPads.Label(i)} {(RollPads.Sizes[i] > 1 ? "beats" : "beat")} while held, then carries on from where the song would have got to"
                 : jumpMode ? $"Jump {jumpBeats:0} {(jumpBeats == 1 ? "beat" : "beats")} {(JumpPads.Sizes[i] < 0 ? "back" : "on")}, staying in time; a loop goes with it"
-                : detail?.LoopEnd is not null ? $"Hot loop {i + 1}{(detail.Name is { } loopName ? $", {loopName}" : "")}: jump to it and loop. Shift-click or right-click to clear it"
-                : hotcue is not null ? $"Hotcue {i + 1}{(detail?.Name is { } cueName ? $", {cueName}" : "")}: jump to it. Shift-click or right-click to clear it"
+                : detail?.LoopEnd is not null ? $"Hot loop {i + 1}{(detail.Name is { } loopName ? $", {loopName}" : "")}: jump to it and loop. Shift-click to clear it, or right-click to name it, colour it or change its loop"
+                : hotcue is not null ? $"Hotcue {i + 1}{(detail?.Name is { } cueName ? $", {cueName}" : "")}: jump to it. Shift-click to clear it, or right-click to name it, colour it or make it a hot loop"
                 : $"Hotcue {i + 1}: set it here";
             if (hotcue is { } at)
-                flags.Add(((float)at.TotalSeconds, AppTheme.HotcueColor(i), (i + 1).ToString()));
+                flags.Add(((float)at.TotalSeconds, AppTheme.HotcueColor(_deck, i), (i + 1).ToString()));
         }
         _overview.Flags = flags;
         _overview.Region = _deck.Loop is { } loop ? ((float)loop.Start.TotalSeconds, (float)loop.End.TotalSeconds) : null;
@@ -922,7 +951,20 @@ sealed class DeckPanel : Panel
     /// <summary>
     /// An effect's length in beats: as <see cref="FormatBeats"/>, with three quarters as "3/4".
     /// </summary>
-    static string FormatFxBeats(double beats) => beats == 0.75 ? "3/4" : FormatBeats(beats);
+    internal static string FormatFxBeats(double beats) => beats == 0.75 ? "3/4" : FormatBeats(beats);
+
+    /// <summary>
+    /// What an effect's called on its list, short enough for a deck's.
+    /// </summary>
+    internal static string EffectName(DeckEffect kind) =>
+        kind switch
+        {
+            DeckEffect.Echo => "ECHO",
+            DeckEffect.Reverb => "REVERB",
+            DeckEffect.Gate => "GATE",
+            DeckEffect.Crusher => "CRUSH",
+            _ => "FLANGER",
+        };
 
     /// <summary>
     /// The effect's level slider's length, and the room its beats take, wide enough for "1/16".

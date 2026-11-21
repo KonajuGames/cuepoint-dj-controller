@@ -346,6 +346,10 @@ sealed class MidiControls : IDisposable
         {
             if (action.StartsWith("fx.select.") && pressed)
                 _fxSelected = action["fx.select.".Length..];
+            else if (action == "mic.on" && pressed)
+                _engine.MicrophoneOn = !_engine.MicrophoneOn;
+            else if ((action == "master.fx.on" || action == "fx.on" && _fxSelected == "master") && pressed)
+                _engine.MasterEffects.On = !_engine.MasterEffects.On;
             else if (action == "fx.on" && pressed)
             {
                 // On for all of them unless they're all on already; then off.
@@ -481,6 +485,18 @@ sealed class MidiControls : IDisposable
                 break;
             case "reloop":
                 deck.Reloop();
+                break;
+            case "loop.back":
+                deck.MoveLoop(-1);
+                break;
+            case "loop.on":
+                deck.MoveLoop(1);
+                break;
+            case "loop.backbar":
+                deck.MoveLoop(-4);
+                break;
+            case "loop.onbar":
+                deck.MoveLoop(4);
                 break;
             case var _ when action.StartsWith("beatloop") && int.TryParse(action["beatloop".Length..], out var loopPad) && loopPad >= 1 && loopPad <= ControlCatalog.BeatLoopSizes.Count:
                 // A loop of that size, or out of it if it's the one going.
@@ -665,7 +681,14 @@ sealed class MidiControls : IDisposable
     {
         var (deck, action) = Split(id);
         if (deck is null)
-            return action == "fx.on" && FxDecks().Any(fx => fx.Effects.On);
+            return action switch
+            {
+                "master.fx.on" => _engine.MasterEffects.On,
+                "mic.on" => _engine.MicrophoneOn,
+                "fx.on" when _fxSelected == "master" => _engine.MasterEffects.On,
+                "fx.on" => FxDecks().Any(fx => fx.Effects.On),
+                _ => false,
+            };
         return action switch
         {
             // Steady while playing; flashing while a song's loaded and paused, ready to go.

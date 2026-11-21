@@ -48,6 +48,27 @@ sealed class EditHistory(LibraryDatabase database, MusicLibrary library, IReadOn
         );
     }
 
+    /// <summary>
+    /// The song at <paramref name="path"/>'s hot cue names, colours and loops went from <paramref name="before"/>,
+    /// as hot cue <paramref name="index"/> was changed.
+    /// </summary>
+    public void RecordHotcueDetails(string path, IReadOnlyList<HotcueDetail?> before, int index)
+    {
+        var kept = before.ToArray();
+        Add(
+            new Edit(
+                path,
+                $"changing hot cue {index + 1}",
+                () =>
+                {
+                    database.SetHotcueDetails(path, kept);
+                    foreach (var deck in DecksWith(path))
+                        deck.SetHotcueDetails(kept);
+                }
+            )
+        );
+    }
+
     static string Describe(IReadOnlyList<TimeSpan?> before, IReadOnlyList<TimeSpan?> after)
     {
         for (var i = 0; i < Math.Max(before.Count, after.Count); i++)

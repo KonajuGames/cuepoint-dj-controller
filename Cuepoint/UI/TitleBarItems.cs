@@ -200,6 +200,8 @@ sealed class TitleBarItems
     readonly Spacer _os2lGap;
     readonly Label _cpu;
     readonly IconButton _headphones;
+    readonly Button _masterFx;
+    readonly Button _mic;
     readonly Process _process = Process.GetCurrentProcess();
     readonly Stopwatch _sinceCpu = Stopwatch.StartNew();
     TimeSpan _cpuBefore;
@@ -240,6 +242,26 @@ sealed class TitleBarItems
     public float2 HeadphonesAnchor => _headphones.ScreenPosition + _headphones.Size;
 
     /// <summary>
+    /// The master FX button was clicked, to show or put away the effect on the whole mix below it.
+    /// </summary>
+    public event Action? MasterFxClicked;
+
+    /// <summary>
+    /// The bottom left corner of the master FX button, where the master effect drops down from.
+    /// </summary>
+    public float2 MasterFxAnchor => _masterFx.ScreenPosition + new float2(0, _masterFx.Size.Y);
+
+    /// <summary>
+    /// The MIC button was clicked, to show or put away the microphone's settings below it.
+    /// </summary>
+    public event Action? MicClicked;
+
+    /// <summary>
+    /// The bottom left corner of the MIC button, where the microphone's settings drop down from.
+    /// </summary>
+    public float2 MicAnchor => _mic.ScreenPosition + new float2(0, _mic.Size.Y);
+
+    /// <summary>
     /// Puts Cuepoint's widgets into <paramref name="bar"/>.
     /// </summary>
     public TitleBarItems(TitleBar bar, AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font body, Font bold, Images images)
@@ -269,6 +291,28 @@ sealed class TitleBarItems
         _master = bar.Centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = MASTER_LENGTH, BarThickness = 4, BarGap = 2, Segments = MASTER_SEGMENTS });
         // Lit while the master limiter is turning the mix down: a sign the decks are too loud together.
         _limit = bar.Centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
+        bar.Centre.Add(new Spacer(10));
+        // The effect on the whole mix, lit while it's on.
+        _masterFx = bar.Centre.Add(
+            new Button(small, "FX")
+            {
+                Padding = 3,
+                MinSize = new float2(26, 18),
+                Tooltip = "Master FX: an effect on the whole mix, timed by the deck leading it",
+            }
+        );
+        _masterFx.Clicked += _ => MasterFxClicked?.Invoke();
+        bar.Centre.Add(new Spacer(6));
+        // The microphone, lit while it's in the mix, and brighter while talkover has the music down.
+        _mic = bar.Centre.Add(
+            new Button(small, "MIC")
+            {
+                Padding = 3,
+                MinSize = new float2(32, 18),
+                Tooltip = "Microphone: put it in the mix, its level, and talkover",
+            }
+        );
+        _mic.Clicked += _ => MicClicked?.Invoke();
 
         _audioWarning = bar.Status.Add(new Label(bold) { Color = Theme.Warning, Visible = false });
         _audioWarningGap = bar.Status.Add(new Spacer(16) { Visible = false });
@@ -323,6 +367,15 @@ sealed class TitleBarItems
         if (limiter.TakeReduction() < LIMIT_LIGHT_GAIN)
             _limitedAt = Clock.Seconds();
         _limit.Visible = limiter.Enabled;
+        var fxOn = _engine.MasterEffects.On;
+        _masterFx.Background = fxOn ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
+        _masterFx.HoverBackground = fxOn ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
+        _masterFx.TextColor = fxOn ? Theme.Text : Theme.Muted;
+        var micOn = _engine.MicrophoneOn && _engine.MicrophoneDevice is not null;
+        var micLit = !micOn ? 0f : _engine.TalkingOver ? 0.8f : 0.5f;
+        _mic.Background = micLit > 0 ? Theme.Mix(Theme.PanelRaised, Theme.Warning, micLit) : Theme.Control;
+        _mic.HoverBackground = micLit > 0 ? Theme.Mix(Theme.PanelRaised, Theme.Warning, micLit + 0.1f) : Theme.ControlHover;
+        _mic.TextColor = micOn ? Theme.Text : Theme.Muted;
         _limit.Color = Clock.Seconds() - _limitedAt < LIMIT_LIGHT_HOLD ? Theme.Accent : Theme.Faint;
         if (!_masterVolume.IsDragging)
             _masterVolume.Value = _engine.MasterVolume;

@@ -54,22 +54,33 @@ static class AppTheme
     /// </summary>
     public static float4 DeckColor(string name) => name == "B" ? DeckB : DeckA;
 
-    static readonly float4[] Hotcues =
+    /// <summary>
+    /// The hotcue pads' colours, in order round the rainbow, with what to call each, to give one a hot cue.
+    /// </summary>
+    public static readonly IReadOnlyList<(string Name, uint Hex)> HotcuePalette =
     [
-        Colors.Hex(0xE8453C),
-        Colors.Hex(0xF08A24),
-        Colors.Hex(0xF2C230),
-        Colors.Hex(0x4CC35A),
-        Colors.Hex(0x2EC4C4),
-        Colors.Hex(0x3D8BF2),
-        Colors.Hex(0x8E5CF0),
-        Colors.Hex(0xE858B8),
+        ("Red", 0xE8453C),
+        ("Orange", 0xF08A24),
+        ("Yellow", 0xF2C230),
+        ("Green", 0x4CC35A),
+        ("Cyan", 0x2EC4C4),
+        ("Blue", 0x3D8BF2),
+        ("Purple", 0x8E5CF0),
+        ("Pink", 0xE858B8),
     ];
+
+    static readonly float4[] Hotcues = [.. HotcuePalette.Select(colour => Colors.Hex(colour.Hex))];
 
     /// <summary>
     /// Hotcue <paramref name="index"/>'s colour, from 0: round the rainbow, so neighbouring pads are told apart.
     /// </summary>
     public static float4 HotcueColor(int index) => Hotcues[((index % Hotcues.Length) + Hotcues.Length) % Hotcues.Length];
+
+    /// <summary>
+    /// Hotcue <paramref name="index"/>'s colour on <paramref name="deck"/>: the one it's been given, or its pad's own.
+    /// </summary>
+    public static float4 HotcueColor(Cuepoint.Audio.Deck deck, int index) =>
+        deck.DetailOf(index)?.Color is { } given ? Colors.Hex(given) : HotcueColor(index);
 
     /// <summary>
     /// A colour for each Camelot number, round the colour wheel as the keys go round theirs, so keys that mix sit

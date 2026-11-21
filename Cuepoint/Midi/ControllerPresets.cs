@@ -236,12 +236,12 @@ static class ControllerPresets
         }
 
         // The 400's FX ON/OFF doesn't say which channel it's for, but its CH SELECT switch says where it's set as it
-        // moves (CH 1, CH 2 or MASTER), so it works the deck, or both, the switch was last set to.
+        // moves (CH 1, CH 2 or MASTER), so it works the deck the switch was last set to, or the effect on the whole mix.
         if (!flx4)
         {
             Note("fx.select.A", FX, 0x10);
             Note("fx.select.B", FX, 0x11);
-            Note("fx.select.both", FX, 0x14);
+            Note("fx.select.master", FX, 0x14);
             Note("fx.on", FX, 0x47);
         }
 

@@ -106,7 +106,7 @@ public class RekordboxControllerPresetTests
         Assert.Empty(Messages(Ddj400, "A.fx.on"));
         Assert.Equal([(4, 0x47)], Messages(Ddj400, "fx.on"));
         Assert.Equal([(4, 0x10)], Messages(Ddj400, "fx.select.A"));
-        Assert.Equal([(4, 0x14)], Messages(Ddj400, "fx.select.both"));
+        Assert.Equal([(4, 0x14)], Messages(Ddj400, "fx.select.master"));
         Assert.Empty(Messages(Flx4, "fx.on"));
         Assert.Equal([(4, 0x63)], Messages(Ddj400, "B.fx.next"));
     }

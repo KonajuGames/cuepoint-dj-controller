@@ -17,7 +17,8 @@ order to build in.
 | — | Sync lock, a brighter Dark label colour and fainter list stripes | `3f41228` |
 | — | BEAT LOOP and KEY SHIFT pads, the DDJ-400's FX ON following CH SELECT, sync lock kept after a crash | `1eb46f7` |
 | 6 | Suggested next, past sets kept with `played:` and `notplayed:` searches, ordering Auto-Mix's list for mixing | `33bb825` |
-| — | Auto-Mix's Order list: for mixing, by title, artist, tempo, key or energy, or shuffled | this commit |
+| — | Auto-Mix's Order list: for mixing, by title, artist, tempo, key or energy, or shuffled | `d540af9` |
+| 7 | Editing hot cues, auto cue, moving a loop, gate and bit-crusher, master FX, a microphone with talkover | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -36,7 +37,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 | 2 | **Play history across sessions**: every set kept in a dated list | M | `SessionPlays` keeps only this session's; each set's saved as it's played (a file per session in the app's folder), listed under Lists > History by date, each exportable as today's is. Adds `played:30d` and `notplayed:30d` searches, which suggestions (1) can use to avoid repeats across gigs. |
 | 3 | **Smarter Auto-Mix ordering**: "Order for mixing" on a playlist | M | Orders by key and energy (a walk round the Camelot wheel, energy rising then easing) before Auto-Mix plays it. Shares (1)'s scoring. |
 
-## Phase 7: Cues and decks
+## Phase 7: Cues and decks (done)
 
 | # | Item | Size | Notes |
 |---|---|---|---|
@@ -64,7 +65,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Order and dependencies
 
-- **Next:** Phase 7, (4) first: hot cues are what's touched most on the decks.
+- **Next:** Phase 8, (9) first.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.
 - **Biggest:** live streaming (11), for its encoder and network handling; master effects (7) touch the mix itself.

@@ -123,6 +123,11 @@ sealed class MainScreen : Panel
     /// </summary>
     public event Action<Deck, Song>? SongDropped;
 
+    /// <summary>
+    /// A set hotcue's pad was right-clicked: the deck, the hotcue and where, for its menu.
+    /// </summary>
+    public event Action<Deck, int, float2>? HotcueMenuRequested;
+
     public MainScreen(
         AudioEngine engine,
         IReadOnlyList<Deck> decks,
@@ -173,6 +178,7 @@ sealed class MainScreen : Panel
                 Add(_mixer);
             _decks.Add(Add(deckPanels[i]));
             deckPanels[i].SongDropped += (panel, song) => SongDropped?.Invoke(panel.Deck, song);
+            deckPanels[i].HotcueMenuRequested += (panel, index, at) => HotcueMenuRequested?.Invoke(panel.Deck, index, at);
         }
         if (deckPanels.Count < 2)
             Add(_mixer);

@@ -37,6 +37,8 @@ static class KeyboardShortcuts
                 Row("Cue, play, sync, loop", (k, _) => $"{L(k.Cue)} {L(k.Play)} {L(k.Sync)} {L(k.Loop)}"),
                 Row("Halve / double the loop", (k, _) => $"{L(k.HalveLoop)} / {L(k.DoubleLoop)}"),
                 Row("Loop in / out", (k, _) => $"Shift + {L(k.HalveLoop)} / {L(k.DoubleLoop)}"),
+                Row("Move the loop back / on a beat", (k, _) => $"Ctrl + {L(k.HalveLoop)} / {L(k.DoubleLoop)}"),
+                Row("Move the loop back / on a bar", (k, _) => $"Ctrl + Shift + {L(k.HalveLoop)} / {L(k.DoubleLoop)}"),
                 Row("Reloop", (k, _) => $"Shift + {L(k.Loop)}"),
                 Row("Censor: backwards while held", (k, _) => $"Ctrl + {L(k.Play)}"),
                 Row("Tempo down / up (hold); both resets it", (k, _) => $"{L(k.TempoDown)} / {L(k.TempoUp)}"),

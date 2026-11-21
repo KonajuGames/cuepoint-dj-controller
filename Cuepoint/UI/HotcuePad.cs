@@ -4,8 +4,8 @@ namespace Cuepoint.UI;
 
 /// <summary>
 /// One hotcue's pad: its number, lit in its colour when set. It acts as it goes down, not when let go, so a jump
-/// lands on the beat it's pressed on: <see cref="Triggered"/> to set or jump, and with Shift held, or a right-click,
-/// <see cref="Deleted"/> to clear it. Enter or Space trigger it from the keyboard. A <see cref="KeyHint"/>, the app's
+/// lands on the beat it's pressed on: <see cref="Triggered"/> to set or jump, and with Shift held
+/// <see cref="Deleted"/> to clear it. A right-click is <see cref="MenuRequested"/>. Enter or Space trigger it from the keyboard. A <see cref="KeyHint"/>, the app's
 /// own key for it, shows small in its corner.
 /// </summary>
 sealed class HotcuePad(Font font, int number) : Element
@@ -48,9 +48,14 @@ sealed class HotcuePad(Font font, int number) : Element
     public event Action<HotcuePad>? Triggered;
 
     /// <summary>
-    /// Shift-clicked or right-clicked: the hotcue should be cleared.
+    /// Shift-clicked: the hotcue should be cleared.
     /// </summary>
     public event Action<HotcuePad>? Deleted;
+
+    /// <summary>
+    /// Right-clicked, at the point given: for a menu of what can be done with it.
+    /// </summary>
+    public event Action<HotcuePad, float2>? MenuRequested;
 
     public override bool IsInteractive => Enabled;
     public override bool IsFocusable => Enabled;
@@ -68,7 +73,7 @@ sealed class HotcuePad(Font font, int number) : Element
     public override void SecondaryClick(float2 point)
     {
         if (Enabled)
-            Deleted?.Invoke(this);
+            MenuRequested?.Invoke(this, point);
     }
 
     public override bool KeyDown(Key key, Modifiers modifiers)

@@ -187,7 +187,7 @@ public sealed class MixerAndDeckLayoutTests : IDisposable
         var effects = panel.Children.OfType<Dropdown<DeckEffect>>().Single();
 
         effects.RaiseClicked();
-        Assert.Equal(new[] { "ECHO", "REVERB", "FLANGER" }, menu.ItemTexts);
+        Assert.Equal(new[] { "ECHO", "REVERB", "FLANGER", "GATE", "CRUSH" }, menu.ItemTexts);
         menu.Choose("FLANGER");
 
         Assert.Equal(DeckEffect.Flanger, _deck.Effects.Kind);
