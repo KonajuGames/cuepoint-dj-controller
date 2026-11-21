@@ -97,12 +97,28 @@ public class RekordboxControllerPresetTests
     }
 
     [Fact]
-    public void The_FLX4_s_FX_ON_comes_for_the_channel_chosen_and_the_400_s_isn_t_mapped()
+    public void The_FLX4_s_FX_ON_comes_for_the_channel_chosen_and_the_400_s_follows_CH_SELECT()
     {
-        // FX ON/OFF is note 0x47 on channel 5 for CH1 and 6 for CH2 on the FLX4; the 400 says no channel.
+        // FX ON/OFF is note 0x47 on channel 5 for CH1 and 6 for CH2 on the FLX4; the 400 says no channel, but its
+        // CH SELECT sends 0x10, 0x11 or 0x14 on channel 5 as it's set to CH 1, CH 2 or MASTER.
         Assert.Equal([(4, 0x47)], Messages(Flx4, "A.fx.on"));
         Assert.Equal([(5, 0x47)], Messages(Flx4, "B.fx.on"));
         Assert.Empty(Messages(Ddj400, "A.fx.on"));
+        Assert.Equal([(4, 0x47)], Messages(Ddj400, "fx.on"));
+        Assert.Equal([(4, 0x10)], Messages(Ddj400, "fx.select.A"));
+        Assert.Equal([(4, 0x14)], Messages(Ddj400, "fx.select.both"));
+        Assert.Empty(Messages(Flx4, "fx.on"));
         Assert.Equal([(4, 0x63)], Messages(Ddj400, "B.fx.next"));
+    }
+
+    [Theory]
+    [MemberData(nameof(Models))]
+    public void BEAT_LOOP_and_KEY_SHIFT_pads_are_where_the_lists_say(string model)
+    {
+        var mapping = Mapping(model);
+        Assert.Equal([(7, 0x60)], Messages(mapping, "A.beatloop1"));
+        Assert.Equal([(9, 0x67)], Messages(mapping, "B.beatloop8"));
+        Assert.Equal([(7, 0x73)], Messages(mapping, "A.keyshift4"));
+        Assert.Equal([(9, 0x74)], Messages(mapping, "B.keyshift5"));
     }
 }

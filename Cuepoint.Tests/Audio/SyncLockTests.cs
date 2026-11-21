@@ -72,6 +72,15 @@ public sealed class SyncLockTests : IDisposable
     }
 
     [Fact]
+    public void A_lock_is_kept_with_the_decks_for_after_a_crash()
+    {
+        _b.SyncLocked = true;
+        var saved = SessionState.Of([_a, _b]);
+        Assert.False(saved.Decks.Single(deck => deck.Name == "A").SyncLocked);
+        Assert.True(saved.Decks.Single(deck => deck.Name == "B").SyncLocked);
+    }
+
+    [Fact]
     public void Moving_a_locked_deck_s_own_tempo_lets_go()
     {
         _b.SyncLocked = true;

@@ -34,6 +34,19 @@ static class ControlCatalog
     public const int HOTCUES = 8;
 
     /// <summary>
+    /// The loop each pad starts in a controller's BEAT LOOP mode, in beats, as Pioneer's pads are labelled.
+    /// </summary>
+    public static readonly IReadOnlyList<double> BeatLoopSizes = [0.25, 0.5, 1, 2, 4, 8, 16, 32];
+
+    /// <summary>
+    /// The key each pad shifts to in a controller's KEY SHIFT mode, in semitones from the song's own: up along the
+    /// top row, down along the bottom.
+    /// </summary>
+    public static readonly IReadOnlyList<int> KeyShiftPads = [1, 2, 3, 4, -1, -2, -3, -4];
+
+    static string Beats(double beats) => beats < 1 ? $"1/{1 / beats:0}" : $"{beats:0}";
+
+    /// <summary>
     /// Every control, for decks with these names.
     /// </summary>
     public static IReadOnlyList<ControlInfo> For(IEnumerable<string> deckNames)
@@ -84,6 +97,10 @@ static class ControlCatalog
                     new($"{deck}.sampler", $"Deck {deck} sampler mode (pads play samples)", ControlKind.Button, HasLight: true),
                 ]
             );
+            for (var i = 1; i <= BeatLoopSizes.Count; i++)
+                controls.Add(new($"{deck}.beatloop{i}", $"Deck {deck} {Beats(BeatLoopSizes[i - 1])}-beat loop (out of it, pressed again)", ControlKind.Button, HasLight: true));
+            for (var i = 1; i <= KeyShiftPads.Count; i++)
+                controls.Add(new($"{deck}.keyshift{i}", $"Deck {deck} key shift {KeyShiftPads[i - 1]:+0;-0} (back to the song's key, pressed again)", ControlKind.Button, HasLight: true));
             for (var i = 1; i <= HOTCUES; i++)
                 controls.Add(new($"{deck}.roll{i}", $"Deck {deck} loop roll {RollPads.Label(i - 1)}", ControlKind.Button, HasLight: true));
             for (var i = 1; i <= JumpPads.Sizes.Count; i++)
@@ -119,6 +136,10 @@ static class ControlCatalog
         controls.AddRange(
             [
                 new("crossfader", "Crossfader", ControlKind.Fader),
+                new("fx.select.A", "Effects section set to deck A (a CH SELECT switch)", ControlKind.Button),
+                new("fx.select.B", "Effects section set to deck B", ControlKind.Button),
+                new("fx.select.both", "Effects section set to both decks (MASTER)", ControlKind.Button),
+                new("fx.on", "Effect on or off for the deck or decks the effects section is set to", ControlKind.Button, HasLight: true),
                 new("master", "Master volume", ControlKind.Knob),
                 new("browse", "Browse songs", ControlKind.Encoder),
                 new("browse.folders", "Browse folders", ControlKind.Encoder),

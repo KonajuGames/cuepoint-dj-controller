@@ -125,16 +125,19 @@ static class ControllerPresets
     /// and the mixer and browser on 7, much as on the DDJ-SB3. The pads send notes 16 apart in each mode the
     /// controller has, from 0x00 in HOT CUE mode: 0x10 PAD FX 1, 0x20 BEAT JUMP and 0x30 SAMPLER. HOT CUE pads are
     /// hotcues, cleared with Shift; PAD FX 1's are loop rolls; BEAT JUMP's are beat jumps; and SAMPLER's play the
-    /// sampler's pads. Each mode's button puts the deck's pads in its mode here too. The other modes (KEYBOARD, PAD FX
-    /// 2, BEAT LOOP and KEY SHIFT) have nothing to match here, so their pads do nothing.
+    /// sampler's pads. Each of those modes' buttons puts the deck's pads in its mode here too. BEAT LOOP's pads (from
+    /// 0x60) start loops of 1/4 to 32 beats and KEY SHIFT's (from 0x70) shift the key, 1 to 4 semitones up along the
+    /// top row and down along the bottom, whatever mode the screen's pads are in. KEYBOARD and PAD FX 2 have nothing
+    /// to match here, so their pads do nothing.
     ///
     /// The loop buttons are IN and OUT, then on the FLX4 4 BEAT/EXIT, a four-beat loop or out of one, and on the 400
     /// RELOOP/EXIT, out of a loop or (with Shift) back into the last one; the 400's IN held is a four-beat loop. CUE/LOOP
     /// CALL halves and doubles the loop, and with Shift adds or removes a memory cue. The jog wheel's top (touched)
     /// scratches, as its vinyl mode is on unless an app turns it off; with Shift it searches. The FLX4's CFX knobs and
     /// the 400's FILTER knobs are each channel's filter. Beat FX: the FLX4 says which channel the FX ON/OFF is for, so
-    /// it's that deck's effect on and off; on the 400 it doesn't, so it's left out. FX SELECT, BEAT and LEVEL/DEPTH
-    /// set both decks' effects, as the controller has one Beat FX section. Neither has KEY LOCK or SLIP buttons.
+    /// it's that deck's effect on and off; the 400's doesn't, so it works the deck (or both) its CH SELECT was last set
+    /// to. FX SELECT, BEAT and LEVEL/DEPTH set both decks' effects, as the controller has one Beat FX section. Neither
+    /// has KEY LOCK or SLIP buttons.
     /// </summary>
     static ControllerMapping PioneerDdjRekordbox(string device, bool flx4)
     {
@@ -191,6 +194,8 @@ static class ControllerPresets
                 Note($"{deck}.hotcue{pad + 1}.delete", shiftedPads, pad);
                 Note($"{deck}.roll{pad + 1}", pads, 0x10 + pad);
                 Note($"{deck}.jump{pad + 1}", pads, 0x20 + pad);
+                Note($"{deck}.beatloop{pad + 1}", pads, 0x60 + pad);
+                Note($"{deck}.keyshift{pad + 1}", pads, 0x70 + pad);
                 // SAMPLER's pads are the hotcue pads, which play samples while the deck's in SAMPLER mode.
                 Note($"{deck}.hotcue{pad + 1}", pads, 0x30 + pad);
             }
@@ -228,6 +233,16 @@ static class ControllerPresets
             Control($"{deck}.fx.level", FX, 0x02);
             if (flx4)
                 Note($"{deck}.fx.on", FX + i, 0x47);
+        }
+
+        // The 400's FX ON/OFF doesn't say which channel it's for, but its CH SELECT switch says where it's set as it
+        // moves (CH 1, CH 2 or MASTER), so it works the deck, or both, the switch was last set to.
+        if (!flx4)
+        {
+            Note("fx.select.A", FX, 0x10);
+            Note("fx.select.B", FX, 0x11);
+            Note("fx.select.both", FX, 0x14);
+            Note("fx.on", FX, 0x47);
         }
 
         // MASTER LEVEL is left alone: it sets the controller's own output, so here it would turn the mix down twice.

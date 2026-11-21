@@ -333,10 +333,26 @@ sealed class MidiControls : IDisposable
         return ((state.Coarse << 7) | message.Value) / 16383f;
     }
 
+    // Which decks a shared effects section's FX ON/OFF works, as its CH SELECT switch was last set: both until it
+    // says otherwise, as the switch only speaks when it's moved.
+    string _fxSelected = "both";
+
+    IEnumerable<Deck> FxDecks() =>
+        _fxSelected == "both" ? _decks.Take(2) : _decks.Where(deck => deck.Name == _fxSelected);
+
     void Press(Deck? deck, string action, bool pressed)
     {
         if (deck is null)
         {
+            if (action.StartsWith("fx.select.") && pressed)
+                _fxSelected = action["fx.select.".Length..];
+            else if (action == "fx.on" && pressed)
+            {
+                // On for all of them unless they're all on already; then off.
+                var on = !FxDecks().All(fx => fx.Effects.On);
+                foreach (var fx in FxDecks())
+                    fx.Effects.On = on;
+            }
             if (action == "browse.press" && pressed)
                 BrowsePressed?.Invoke();
             return;
@@ -465,6 +481,23 @@ sealed class MidiControls : IDisposable
                 break;
             case "reloop":
                 deck.Reloop();
+                break;
+            case var _ when action.StartsWith("beatloop") && int.TryParse(action["beatloop".Length..], out var loopPad) && loopPad >= 1 && loopPad <= ControlCatalog.BeatLoopSizes.Count:
+                // A loop of that size, or out of it if it's the one going.
+                var size = ControlCatalog.BeatLoopSizes[loopPad - 1];
+                if (deck.IsLooping && deck.LoopBeats == size)
+                    deck.ExitLoop();
+                else
+                {
+                    deck.LoopBeats = size;
+                    if (!deck.IsLooping)
+                        deck.ToggleLoop();
+                }
+                break;
+            case var _ when action.StartsWith("keyshift") && int.TryParse(action["keyshift".Length..], out var keyPad) && keyPad >= 1 && keyPad <= ControlCatalog.KeyShiftPads.Count:
+                // That far from the song's key, or back to it if it's there already.
+                var shift = ControlCatalog.KeyShiftPads[keyPad - 1];
+                deck.KeyShift = deck.KeyShift == shift ? 0 : shift;
                 break;
             case "loop.beats1" or "loop.beats2" or "loop.beats4" or "loop.beats8":
                 // A loop of that size: started if there isn't one, or the one going on made that size.
@@ -632,7 +665,7 @@ sealed class MidiControls : IDisposable
     {
         var (deck, action) = Split(id);
         if (deck is null)
-            return false;
+            return action == "fx.on" && FxDecks().Any(fx => fx.Effects.On);
         return action switch
         {
             // Steady while playing; flashing while a song's loaded and paused, ready to go.
@@ -643,6 +676,10 @@ sealed class MidiControls : IDisposable
             "keylock" => deck.KeyLocked,
             "slip" => deck.Slip,
             "fx.on" => deck.Effects.On,
+            _ when action.StartsWith("beatloop") && int.TryParse(action["beatloop".Length..], out var loopPad) && loopPad >= 1 && loopPad <= ControlCatalog.BeatLoopSizes.Count
+                => deck.IsLooping && deck.LoopBeats == ControlCatalog.BeatLoopSizes[loopPad - 1],
+            _ when action.StartsWith("keyshift") && int.TryParse(action["keyshift".Length..], out var keyPad) && keyPad >= 1 && keyPad <= ControlCatalog.KeyShiftPads.Count
+                => deck.KeyShift == ControlCatalog.KeyShiftPads[keyPad - 1],
             "memory.set" => deck.IsAtMemoryCue,
             "key.match" => deck.CanKeyMatch && deck.IsKeyMatched,
             "loop" => deck.IsLooping,

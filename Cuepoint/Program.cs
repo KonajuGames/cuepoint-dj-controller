@@ -739,6 +739,23 @@ static void Run()
     // Decks being put back after the app didn't close properly, and where each goes once its song is in.
     var restoring = new Dictionary<Deck, (double Position, bool Play, int KeyShift)>();
 
+    // Decks to lock to the other again once they've their songs back, analysed, and the other has its: by the song
+    // each was locked with, so a song loaded by hand meanwhile isn't locked.
+    var relocking = new Dictionary<Deck, string>();
+    void Relock()
+    {
+        foreach (var (deck, path) in relocking.ToList())
+        {
+            if (!string.Equals(deck.FilePath, path, StringComparison.OrdinalIgnoreCase) && !deck.IsLoading)
+                relocking.Remove(deck);
+            else if (!deck.IsLoading && deck.CanSync)
+            {
+                deck.SyncLocked = true;
+                relocking.Remove(deck);
+            }
+        }
+    }
+
     // Each deck's cover, as the renderer's texture of it and its size.
     var covers = new Dictionary<Deck, (int Texture, int Width, int Height)>();
 
@@ -2262,6 +2279,8 @@ static void Run()
             deck.KeyLocked = state.KeyLocked;
             deck.Slip = state.Slip;
             restoring[deck] = (resume ? left.PositionAt(state, DateTime.UtcNow) : state.Position, resume && state.Playing, state.KeyShift);
+            if (state.SyncLocked)
+                relocking[deck] = song.Path;
             Load(song, deck, byHand: false);
         }
         if (restoring.Count > 0)
@@ -2385,6 +2404,8 @@ static void Run()
             {
                 foreach (var deck in decks)
                     deck.Update();
+                if (relocking.Count > 0)
+                    Relock();
                 preview.Update();
                 sampler.Update();
             }

@@ -37,6 +37,11 @@ sealed class SessionState
         public bool KeyLocked { get; set; }
         public bool Slip { get; set; }
         public int KeyShift { get; set; }
+
+        /// <summary>
+        /// Whether SYNC was locked, following the other deck.
+        /// </summary>
+        public bool SyncLocked { get; set; }
     }
 
     /// <summary>
@@ -57,6 +62,7 @@ sealed class SessionState
                     KeyLocked = deck.KeyLocked,
                     Slip = deck.Slip,
                     KeyShift = deck.KeyShift,
+                    SyncLocked = deck.SyncLocked,
                 })
                 .ToList(),
         };
