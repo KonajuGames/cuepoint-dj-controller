@@ -11,6 +11,7 @@ namespace Cuepoint.Music;
 /// for every key that mixes with it (itself, a step round the wheel either way, and its relative major or minor).
 /// Only songs analysed can be found by tempo or key. "rating:4" finds songs rated 4 or more, "color:red" those tagged
 /// that colour, and "comment:word" those with the word in their comment; words on their own look in comments too.
+/// "energy:7" finds songs of that energy, and "energy:6-8" those from 6 to 8, from their analysis.
 /// Anything in double quotes is text to find as it's written, spaces
 /// and all, so "80-90" finds those characters rather than a tempo; a quote left open runs to the end.
 /// </summary>
@@ -22,7 +23,9 @@ sealed partial record SongQuery(
     bool Compatible,
     int MinRating = 0,
     string? Color = null,
-    IReadOnlyList<string>? Comments = null
+    IReadOnlyList<string>? Comments = null,
+    int? MinEnergy = null,
+    int? MaxEnergy = null
 )
 {
     /// <summary>
@@ -40,7 +43,7 @@ sealed partial record SongQuery(
     /// <summary>
     /// Whether it asks for a tempo or key, which only an analysed song has.
     /// </summary>
-    public bool NeedsAnalysis => MinBpm is not null || Key is not null;
+    public bool NeedsAnalysis => MinBpm is not null || Key is not null || MinEnergy is not null;
 
     /// <summary>
     /// Whether it asks for a rating, colour or comment.
@@ -49,6 +52,9 @@ sealed partial record SongQuery(
 
     [GeneratedRegex(@"^rating:([1-5])$", RegexOptions.IgnoreCase)]
     private static partial Regex RatingWord();
+
+    [GeneratedRegex(@"^energy:(10|[1-9])(?:-(10|[1-9]))?$", RegexOptions.IgnoreCase)]
+    private static partial Regex EnergyWord();
 
     [GeneratedRegex(@"^colou?r:(.+)$", RegexOptions.IgnoreCase)]
     private static partial Regex ColorWord();
@@ -82,6 +88,7 @@ sealed partial record SongQuery(
         var rating = 0;
         string? color = null;
         var comments = new List<string>();
+        int? minEnergy = null, maxEnergy = null;
         foreach (Match part in QuotedOrNot().Matches(text))
         {
             if (part.Value[0] == '"')
@@ -106,6 +113,12 @@ sealed partial record SongQuery(
                 }
                 else if (RatingWord().Match(word) is { Success: true } stars)
                     rating = int.Parse(stars.Groups[1].Value, CultureInfo.InvariantCulture);
+                else if (EnergyWord().Match(word) is { Success: true } energy)
+                {
+                    var low = int.Parse(energy.Groups[1].Value, CultureInfo.InvariantCulture);
+                    var high = energy.Groups[2].Success ? int.Parse(energy.Groups[2].Value, CultureInfo.InvariantCulture) : low;
+                    (minEnergy, maxEnergy) = (Math.Min(low, high), Math.Max(low, high));
+                }
                 else if (ColorWord().Match(word) is { Success: true } tagged)
                     color = tagged.Groups[1].Value;
                 else if (CommentWord().Match(word) is { Success: true } said)
@@ -114,7 +127,7 @@ sealed partial record SongQuery(
                     words.Add(word);
             }
         }
-        return new SongQuery(words, min, max, key, compatible, rating, color, comments);
+        return new SongQuery(words, min, max, key, compatible, rating, color, comments, minEnergy, maxEnergy);
     }
 
     static double Number(string text) => double.Parse(text, CultureInfo.InvariantCulture);
@@ -163,6 +176,8 @@ sealed partial record SongQuery(
         if (MinBpm is { } min && (bpm < min || bpm > MaxBpm))
             return false;
         if (Key is { } key && !(Compatible ? analysis.Key.MixesWith(key) : analysis.Key == key))
+            return false;
+        if (MinEnergy is { } least && (analysis.Energy is not { } energy || energy < least || energy > MaxEnergy))
             return false;
         return true;
     }

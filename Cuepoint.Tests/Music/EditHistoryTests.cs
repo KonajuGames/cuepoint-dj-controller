@@ -172,4 +172,15 @@ public sealed class EditHistoryTests : IDisposable
         writer.Write(SAMPLES * 2);
         writer.Write(new byte[SAMPLES * 2]);
     }
+
+    [Fact]
+    public void A_library_change_is_undone_in_turn_and_says_what_it_was()
+    {
+        var undone = false;
+        _history.RecordLibrary("deleting Warm up", () => undone = true);
+
+        Assert.Equal("Undid deleting Warm up", _history.Undo());
+        Assert.True(undone);
+        Assert.Equal("Nothing to undo", _history.Undo());
+    }
 }

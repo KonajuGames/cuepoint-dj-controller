@@ -6,7 +6,9 @@ namespace Cuepoint.Audio.Analysis;
 /// <param name="Grid">Where the beats fall: one steady tempo, or several where the song changes tempo.</param>
 /// <param name="Loudness">Integrated loudness, in LUFS.</param>
 /// <param name="Peak">The largest sample, where 1 is full scale.</param>
-sealed record TrackAnalysis(BeatGrid Grid, double Loudness, float Peak, MusicalKey Key)
+/// <param name="Energy">How much energy it has, from 1 to 10 (see <see cref="EnergyRating"/>); null for a song
+/// analysed before that was worked out, until it's analysed again.</param>
+sealed record TrackAnalysis(BeatGrid Grid, double Loudness, float Peak, MusicalKey Key, int? Energy = null)
 {
     /// <summary>
     /// The loudness every song is brought to: the level streaming services play at. Most modern masters are louder
@@ -139,7 +141,8 @@ static class TrackAnalyzer
             var key = KeyDetector.Detect(mono, _rate, cancel);
             progress?.Invoke(1);
 
-            return new TrackAnalysis(grid, _loudness.IntegratedLoudness, _loudness.Peak, key.Key);
+            var energy = EnergyRating.Rate(_loudness.IntegratedLoudness, grid.MainBpm, EnergyRating.FullShare(mono, _rate));
+            return new TrackAnalysis(grid, _loudness.IntegratedLoudness, _loudness.Peak, key.Key, energy);
         }
     }
 }

@@ -4,8 +4,9 @@ using Cuepoint.Audio.Analysis;
 namespace Cuepoint.Music;
 
 /// <summary>
-/// The hot cue and beat grid changes made since the app started, newest last, to take back one at a time. Each is
-/// kept with its song, so it can be undone after the song's left the deck. UI thread only.
+/// The hot cue and beat grid changes made since the app started, and changes to the library's lists, newest last, to
+/// take back one at a time. Each song's is kept with it, so it can be undone after the song's left the deck. UI
+/// thread only.
 /// </summary>
 sealed class EditHistory(LibraryDatabase database, MusicLibrary library, IReadOnlyList<Deck> decks)
 {
@@ -109,6 +110,12 @@ sealed class EditHistory(LibraryDatabase database, MusicLibrary library, IReadOn
             )
         );
 
+    /// <summary>
+    /// A change to the library's lists, such as songs taken out of a virtual folder, that <paramref name="undo"/> puts
+    /// back; <paramref name="what"/> says what it was, as "taking 3 songs out of Warm up".
+    /// </summary>
+    public void RecordLibrary(string what, Action undo) => Add(new Edit("", what, undo));
+
     IEnumerable<Deck> DecksWith(string path) => decks.Where(deck => string.Equals(deck.FilePath, path, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
@@ -121,6 +128,8 @@ sealed class EditHistory(LibraryDatabase database, MusicLibrary library, IReadOn
         var edit = _edits[^1];
         _edits.RemoveAt(_edits.Count - 1);
         edit.Undo();
+        if (edit.Path.Length == 0)
+            return $"Undid {edit.What}";
         var song = library.Find(edit.Path)?.Title ?? Path.GetFileNameWithoutExtension(edit.Path);
         try
         {

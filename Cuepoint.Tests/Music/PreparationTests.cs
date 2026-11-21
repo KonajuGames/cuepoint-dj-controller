@@ -68,6 +68,18 @@ public sealed class PreparationTests : IDisposable
     }
 
     [Fact]
+    public void Once_everything_s_analysed_idle_analysis_works_out_the_energy_of_songs_without_it()
+    {
+        var songs = new[] { Song(_folder["a.mp3"]), Song(_folder["b.mp3"]) };
+        _database.Set(songs[0], Analysed() with { Energy = 6 });
+        _database.Set(songs[1], Analysed());
+        using var analyser = Analyser();
+
+        Assert.Equal(songs[1], analyser.RequestIdle(songs));
+        Assert.Equal(1, analyser.QueuedCount);
+    }
+
+    [Fact]
     public void Idle_analysis_passes_over_songs_that_failed()
     {
         var song = Song(_folder["a.mp3"]);

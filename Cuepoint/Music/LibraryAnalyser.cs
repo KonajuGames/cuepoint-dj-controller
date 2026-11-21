@@ -130,23 +130,32 @@ sealed class LibraryAnalyser : IDisposable
 
     /// <summary>
     /// With nothing being analysed or waiting, asks for the first of <paramref name="songs"/> that needs it, for one
-    /// song at a time to be done while nothing else is going on. Returns the song, if there was one.
+    /// song at a time to be done while nothing else is going on. Returns the song, if there was one. Once none is
+    /// left unanalysed, the first analysed before energy was worked out is analysed again for it, keeping a grid
+    /// fixed by hand.
     /// </summary>
     public Song? RequestIdle(IEnumerable<Song> songs)
     {
         if (ActiveCount > 0 || QueuedCount > 0)
             return null;
+        Song? withoutEnergy = null;
         foreach (var song in songs)
         {
             lock (_lock)
                 LookUp(song);
-            if (song.Analysis is null && song.AnalysisError is null)
+            if (song.AnalysisError is not null)
+                continue;
+            if (song.Analysis is null)
             {
                 Request(song);
                 return song;
             }
+            if (song.Analysis.Energy is null)
+                withoutEnergy ??= song;
         }
-        return null;
+        if (withoutEnergy is not null)
+            Reanalyse([withoutEnergy]);
+        return withoutEnergy;
     }
 
     /// <summary>

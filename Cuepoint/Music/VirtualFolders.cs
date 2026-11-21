@@ -492,6 +492,32 @@ sealed class VirtualFolders
     }
 
     /// <summary>
+    /// Puts a virtual folder's songs back as they were, <paramref name="paths"/> in order, to undo a change to it.
+    /// Nothing happens to one that's been deleted since. Returns why it couldn't be saved, if it couldn't.
+    /// </summary>
+    public string? Restore(VirtualFolder folder, IReadOnlyList<string> paths)
+    {
+        if (!_folders.Contains(folder))
+            return null;
+        folder.EditablePaths.Clear();
+        folder.EditablePaths.AddRange(paths);
+        return Saved(folder);
+    }
+
+    /// <summary>
+    /// Makes a deleted virtual folder again, called <paramref name="name"/> (or near it, if that's taken now), on the
+    /// drive at <paramref name="drive"/> if it's there to write to, with <paramref name="paths"/> in it. Returns it.
+    /// </summary>
+    public VirtualFolder Recreate(string name, string? drive, IReadOnlyList<string> paths)
+    {
+        var folder = Create(CheckName(name) is null ? name : UnusedName(name));
+        if (drive is not null && WritableDrives().Any(writable => string.Equals(writable.Root, drive, StringComparison.OrdinalIgnoreCase)))
+            MoveToDrive(folder, drive);
+        Restore(folder, paths);
+        return folder;
+    }
+
+    /// <summary>
     /// Takes songs out of a virtual folder. Returns why it couldn't be saved, if it couldn't.
     /// </summary>
     public string? Remove(VirtualFolder folder, IEnumerable<Song> songs)

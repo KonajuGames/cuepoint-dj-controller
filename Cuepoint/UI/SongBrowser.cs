@@ -1,3 +1,4 @@
+using System.Globalization;
 using Brutal.Numerics;
 using Cuepoint.Music;
 
@@ -159,7 +160,7 @@ sealed class SongBrowser : Panel
                 Placeholder = "Search, or 120-126 BPM, 8A, ~8A",
                 FocusColor = Theme.Focus,
                 ClearOnEscape = true,
-                Tooltip = "Words find songs by title, artist or album. 120-126 finds songs from 120 to 126 BPM, and 124bpm those at 124. 8A finds songs in that key, and ~8A those that mix with it. rating:4 finds songs rated 4 or more, color:red those tagged red, comment:peak those with that in their comment. They go together: disco 120-126 ~8A. Put text in quotes to find it as written: \"80-90\"",
+                Tooltip = "Words find songs by title, artist or album. 120-126 finds songs from 120 to 126 BPM, and 124bpm those at 124. 8A finds songs in that key, and ~8A those that mix with it. rating:4 finds songs rated 4 or more, color:red those tagged red, comment:peak those with that in their comment, energy:6-8 those with that much energy. They go together: disco 120-126 ~8A. Put text in quotes to find it as written: \"80-90\"",
             }
         );
         _search.TextChanged += _ => Filter();
@@ -251,6 +252,7 @@ sealed class SongBrowser : Panel
         _columns.Add(new ListColumn<Song>("Key", 112, FormatKey) { Color = KeyColor, SortKey = KeyOrder });
         _columns.Add(new ListColumn<Song>("Length", 80, song => Format(song.Duration)) { AlignRight = true, SortKey = song => song.Duration });
         _columns.Add(new ListColumn<Song>("BPM", 86, FormatBpm) { AlignRight = true, SortKey = song => song.Analysis?.Bpm });
+        _columns.Add(new ListColumn<Song>("Energy", 70, song => song.Analysis?.Energy?.ToString(CultureInfo.InvariantCulture) ?? "") { AlignRight = true, SortKey = song => song.Analysis?.Energy });
         ListColumn<Song> Optional(ListColumn<Song> column)
         {
             _columns.Add(column);

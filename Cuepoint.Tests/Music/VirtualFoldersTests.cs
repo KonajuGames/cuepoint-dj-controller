@@ -183,4 +183,38 @@ public class VirtualFoldersTests : IDisposable
         Assert.False(File.Exists(made.FilePath));
         Assert.True(File.Exists(_folder["F", "Music", "a.mp3"]));
     }
+
+    [Fact]
+    public void A_change_is_undone_by_putting_its_songs_back_in_their_order()
+    {
+        var folders = Open(DriveF);
+        var made = folders.Create("Warm up");
+        folders.Add(made, [SongAt("F", "Music", "a.mp3"), SongAt("F", "Music", "b.mp3"), SongAt("F", "Music", "c.mp3")]);
+        var before = made.Paths.ToList();
+
+        folders.Remove(made, [SongAt("F", "Music", "b.mp3")]);
+        Assert.Null(folders.Restore(made, before));
+
+        Assert.Equal(before, Assert.Single(Open(DriveF).All).Paths);
+    }
+
+    [Fact]
+    public void A_deleted_folder_comes_back_on_its_drive_with_its_songs()
+    {
+        var folders = Open(DriveF);
+        var made = folders.Create("Warm up");
+        folders.MoveToDrive(made, DriveF);
+        folders.Add(made, [SongAt("F", "Music", "c.mp3"), SongAt("F", "Music", "a.mp3")]);
+        var (paths, drive) = (made.Paths.ToList(), made.Drive);
+        folders.Delete(made);
+
+        var back = folders.Recreate("Warm up", drive, paths);
+
+        Assert.Equal(("Warm up", drive), (back.Name, back.Drive));
+        Assert.Equal(paths, back.Paths);
+        // Nothing happens to one deleted since.
+        folders.Delete(back);
+        Assert.Null(folders.Restore(back, []));
+        Assert.Empty(folders.All);
+    }
 }

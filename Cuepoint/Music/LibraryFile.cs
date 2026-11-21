@@ -265,7 +265,7 @@ sealed class LibraryFile
             {
                 DownbeatOffset = record.Downbeat,
             };
-            analysis = new TrackAnalysis(grid, record.Loudness, record.Peak, key);
+            analysis = new TrackAnalysis(grid, record.Loudness, record.Peak, key, record.Energy);
             return true;
         }
         catch (ArgumentException)
@@ -292,6 +292,21 @@ sealed class LibraryFile
     /// Keeps <paramref name="song"/>'s title, artist and album, just read from its tags, with its analysis, if it has
     /// one for the file as it is.
     /// </summary>
+    /// <summary>
+    /// <paramref name="song"/>'s file was rewritten with new tags, the sound the same: it's now
+    /// <paramref name="size"/> bytes, written at <paramref name="modified"/>. What's known of it is kept, as for the file
+    /// as it is now, with its new names, so it isn't analysed again.
+    /// </summary>
+    public void Retag(Song song, long size, DateTime modified)
+    {
+        if (_tracks.TryGetValue(song.Path, out var record) && record.Size == song.Size && record.Modified == song.Modified)
+        {
+            (record.Size, record.Modified) = (size, modified);
+            (record.Title, record.Artist, record.Album) = (song.Title, song.Artist, song.Album);
+            Dirty = true;
+        }
+    }
+
     public void SetNames(Song song)
     {
         if (!_tracks.TryGetValue(song.Path, out var record) || record.Size != song.Size || record.Modified != song.Modified)
@@ -332,6 +347,7 @@ sealed class LibraryFile
             Loudness = Math.Round(analysis.Loudness, 2),
             Peak = analysis.Peak,
             Key = analysis.Key.Name,
+            Energy = analysis.Energy,
         };
     }
 
@@ -624,6 +640,12 @@ sealed class LibraryFile
         public double Loudness { get; set; }
         public float Peak { get; set; }
         public string? Key { get; set; }
+
+        /// <summary>
+        /// How much energy it has, from 1 to 10; missing for a song analysed before that was worked out.
+        /// </summary>
+        public int? Energy { get; set; }
+
         public string? Error { get; set; }
     }
 

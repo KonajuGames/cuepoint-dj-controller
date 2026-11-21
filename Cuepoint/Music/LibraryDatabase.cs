@@ -155,6 +155,11 @@ sealed class LibraryDatabase
 
     public void SetNames(Song song) => FileFor(song.Path).SetNames(song);
 
+    /// <summary>
+    /// See <see cref="LibraryFile.Retag"/>.
+    /// </summary>
+    public void Retag(Song song, long size, DateTime modified) => FileFor(song.Path).Retag(song, size, modified);
+
     public IReadOnlyList<TimeSpan?> GetHotcues(string path) => FileFor(path).GetHotcues(path);
 
     public void SetHotcues(string path, IReadOnlyList<TimeSpan?> hotcues) => FileFor(path).SetHotcues(path, hotcues);

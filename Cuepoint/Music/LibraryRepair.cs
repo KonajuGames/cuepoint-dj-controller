@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Cuepoint.Music;
 
@@ -6,8 +8,65 @@ namespace Cuepoint.Music;
 /// Finding songs that are in the library twice, and songs whose files have moved. Nothing here deletes or moves a
 /// file: the copies are only listed, and a moved song only has what's known about it follow it to its new place.
 /// </summary>
-static class LibraryRepair
+static partial class LibraryRepair
 {
+    /// <summary>
+    /// How far apart two songs' lengths can be and still be the same recording: enough for a different encode or
+    /// rip, not for a radio edit beside an extended mix.
+    /// </summary>
+    public const double SIMILAR_SECONDS = 3;
+
+    /// <summary>
+    /// <paramref name="songs"/> that look like the same recording as one or more of the others, in groups, each in
+    /// path order: the same artist and title, ignoring case, punctuation, a leading track number, "feat." credits
+    /// and anything in brackets ("Remastered 2011"), and lengths within <see cref="SIMILAR_SECONDS"/>. Copies tagged or
+    /// encoded differently are found, as exact copies are too. A song whose length isn't known yet goes by its name.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<Song>> FindSimilar(IEnumerable<Song> songs)
+    {
+        var groups = new List<IReadOnlyList<Song>>();
+        foreach (var named in songs.GroupBy(song => (Normal(song.Artist), Normal(song.Title))).Where(group => group.Key.Item2.Length > 0 && group.Count() > 1))
+        {
+            // Strung out by length, a song joins the run before it if it's close enough to the last one's.
+            var runs = new List<List<Song>>();
+            foreach (var song in named.OrderBy(song => song.Duration ?? TimeSpan.Zero))
+            {
+                var last = runs.LastOrDefault()?.Last();
+                if (last is not null && (last.Duration is not { } a || song.Duration is not { } b || (b - a).TotalSeconds <= SIMILAR_SECONDS))
+                    runs[^1].Add(song);
+                else
+                    runs.Add([song]);
+            }
+            groups.AddRange(runs.Where(run => run.Count > 1).Select(run => (IReadOnlyList<Song>)run.OrderBy(song => song.Path, StringComparer.OrdinalIgnoreCase).ToList()));
+        }
+        return groups.OrderBy(group => group[0].Path, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    [GeneratedRegex(@"\s*[\(\[][^\)\]]*[\)\]]")]
+    private static partial Regex Bracketed();
+
+    [GeneratedRegex(@"\s+(feat\.?|ft\.?|featuring)\s.*$", RegexOptions.IgnoreCase)]
+    private static partial Regex Featuring();
+
+    [GeneratedRegex(@"^\d{1,3}[\s.\-_]+")]
+    private static partial Regex TrackNumber();
+
+    /// <summary>
+    /// A name as <see cref="FindSimilar"/> compares it: without a leading track number, "feat." credits or anything in
+    /// brackets, and only its letters and digits, in lower case.
+    /// </summary>
+    internal static string Normal(string name)
+    {
+        var text = Featuring().Replace(Bracketed().Replace(TrackNumber().Replace(name.Trim(), ""), ""), "");
+        var kept = new StringBuilder(text.Length);
+        foreach (var c in text.Normalize(NormalizationForm.FormKC))
+        {
+            if (char.IsLetterOrDigit(c))
+                kept.Append(char.ToLowerInvariant(c));
+        }
+        return kept.ToString();
+    }
+
     /// <summary>
     /// A song's file gone from <paramref name="From"/> and found at <paramref name="To"/>, with that file's time.
     /// </summary>

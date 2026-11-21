@@ -999,6 +999,7 @@ static void Run()
     screen.TitleItems.Cueing = () => decks.Any(deck => deck.Headphones);
     browser.ColumnMenuRequested += at => menu.Show(at, browser.ColumnMenu());
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
+    var details = new DetailsDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
 
     var controls = new KeyboardControls(decks, audio);
@@ -1257,6 +1258,7 @@ static void Run()
     ui.Add(headphones);
     ui.Add(menu);
     ui.Add(prompt);
+    ui.Add(details);
     ui.Add(confirmation);
 
     // Virtual folders: made from the heading's menu, renamed and deleted from their own, filled by dragging songs
@@ -1335,13 +1337,22 @@ static void Run()
         try
         {
             var showing = browser.Source?.Folder == folder;
+            var (name, drive, paths) = (folder.Name, folder.Drive, folder.Paths.ToList());
             virtualFolders.Delete(folder);
             FoldersChanged();
             if (showing || screen.FolderTree.SelectedItem?.Folder == folder)
                 screen.FolderTree.Select(virtualFoldersNode);
             if (showing)
                 browser.Source = folders[0];
-            screen.Log($"Deleted {folder.Name}; its songs are untouched");
+            edits.RecordLibrary(
+                $"deleting {name}",
+                () =>
+                {
+                    virtualFolders.Recreate(name, drive, paths);
+                    FoldersChanged();
+                }
+            );
+            screen.Log($"Deleted {folder.Name}; its songs are untouched, and Ctrl + Z brings it back");
         }
         catch (InvalidOperationException e)
         {
@@ -1669,6 +1680,52 @@ static void Run()
             Enabled: !repairing
         );
 
+    // Looks under a folder for songs that look like the same recording, tagged or encoded differently, and lists them
+    // where exact copies go.
+    MenuItem FindSimilarIn(string folder) =>
+        new(
+            "Find similar songs",
+            () =>
+            {
+                repairing = true;
+                screen.Log($"Looking for songs alike under {folder}...");
+                library.Background.Start(
+                    () => MusicLibrary.ListFolder(folder, recursive: true).Select(file => file.FullName).ToList(),
+                    paths =>
+                        library.LoadSongsAt(
+                            paths,
+                            songs =>
+                            {
+                                repairing = false;
+                                var groups = LibraryRepair.FindSimilar(songs);
+                                duplicates = groups.SelectMany(group => group).ToList();
+                                screen.Log(
+                                    groups.Count == 0
+                                        ? $"No songs alike under {folder}"
+                                        : $"{duplicates.Count} songs look like the same recording as another, in {groups.Count} {(groups.Count == 1 ? "group" : "groups")}; see Lists > Duplicates"
+                                );
+                                if (groups.Count == 0)
+                                    return;
+                                browser.ShowColumn("Folder");
+                                var lists = folders.Single(node => node.Name == "Lists");
+                                screen.FolderTree.SetExpanded(lists, true);
+                                var listed = lists.Children.Single(node => node.Name == "Duplicates");
+                                if (browser.Source == listed)
+                                    browser.Reload();
+                                else
+                                    screen.FolderTree.Select(listed);
+                            }
+                        ),
+                    () =>
+                    {
+                        repairing = false;
+                        screen.Log($"Couldn't look for songs alike under {folder}");
+                    }
+                );
+            },
+            Enabled: !repairing
+        );
+
     // Looks under a folder for songs the database has whose files have gone, and offers to take what's known to them.
     MenuItem FindMovedSongsIn(string folder) =>
         new(
@@ -1772,7 +1829,10 @@ static void Run()
                                 {
                                     if (browser.Source == node)
                                         screen.FolderTree.Select(smartNode.Parent ?? folders[0]);
+                                    var (name, search) = (smart.Name, smart.Search);
                                     smartPlaylists.Delete(smart);
+                                    edits.RecordLibrary($"deleting {name}", () => smartPlaylists.Add(smartPlaylists.CheckName(name) is null ? name : $"{name} (2)", search));
+                                    screen.Log($"Deleted {name}; Ctrl + Z brings it back");
                                 }
                             )
                     ),
@@ -1787,6 +1847,7 @@ static void Run()
                     new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox)), SeratoCuesFor(node, "Serato cues and grids")]),
                     new MenuItem("Export", [new MenuItem("Play history...", () => afterEvents.Enqueue(ExportHistory))]),
                     FindDuplicatesIn(library.Root),
+                    FindSimilarIn(library.Root),
                     FindMovedSongsIn(library.Root),
                 ]
             );
@@ -1802,6 +1863,7 @@ static void Run()
                     new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node),
                     SeratoCuesFor(node),
                     FindDuplicatesIn(path),
+                    FindSimilarIn(path),
                     FindMovedSongsIn(path),
                 ]
             );
@@ -1907,6 +1969,32 @@ static void Run()
             enabled: songs.Count == 1
         );
 
+    // A song's title, artist and album, written into its file's tags. Its analysis, cues and notes stay with it, as
+    // what's known is moved on to the file as it now is, rather than it counting as a new song to analyse.
+    void EditDetails(Song song)
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        details.Show(
+            song.Title,
+            song.Artist,
+            song.Album,
+            (title, artist, album) =>
+            {
+                if (!OperatingSystem.IsWindows())
+                    throw new InvalidOperationException("Details can only be written on Windows");
+                if (WindowsTags.Write(song.Path, title, artist, album) is { } error)
+                    throw new InvalidOperationException(error);
+                var file = new FileInfo(song.Path);
+                (song.Title, song.Artist, song.Album) = (title, artist.Length > 0 ? artist : song.Artist, album.Length > 0 ? album : song.Album);
+                database.Retag(song, file.Length, file.LastWriteTimeUtc);
+                (song.Size, song.Modified) = (file.Length, file.LastWriteTimeUtc);
+                browser.Refilter();
+                screen.Log($"Saved the details of {song.Artist} - {song.Title}");
+            }
+        );
+    }
+
     MenuItem RatingMenu(IReadOnlyList<Song> songs) =>
         new(
             "Rating",
@@ -1950,6 +2038,7 @@ static void Run()
                     Enabled: songs.Count > 0 && audio.HasHeadphones
                 ),
                 SamplerMenu(songs),
+                new MenuItem("Edit details...", () => EditDetails(songs[0]), Enabled: songs.Count == 1 && OperatingSystem.IsWindows()),
                 RatingMenu(songs),
                 ColourMenu(songs),
                 new MenuItem(
@@ -2019,15 +2108,23 @@ static void Run()
 
     browser.AnalyseAllCancelled += left => screen.Log($"Stopped analysing all; {left} {(left == 1 ? "song was" : "songs were")} left unanalysed");
 
+    // Taking songs out of a virtual folder, or putting them in another order, can be undone with Ctrl + Z.
     browser.RemoveRequested += (folder, songs) =>
     {
+        var before = folder.Paths.ToList();
         var error = virtualFolders.Remove(folder, songs);
-        screen.Log(error is not null ? $"Couldn't save {folder.Name}: {error}" : $"Took {(songs.Count == 1 ? songs[0].Title : $"{songs.Count} songs")} out of {folder.Name}");
+        var what = songs.Count == 1 ? songs[0].Title : $"{songs.Count} songs";
+        if (error is null)
+            edits.RecordLibrary($"taking {what} out of {folder.Name}", () => virtualFolders.Restore(folder, before));
+        screen.Log(error is not null ? $"Couldn't save {folder.Name}: {error}" : $"Took {what} out of {folder.Name}; Ctrl + Z puts it back");
     };
     browser.MoveRequested += (folder, songs, before) =>
     {
+        var order = folder.Paths.ToList();
         if (virtualFolders.Move(folder, songs, before) is { } error)
             screen.Log($"Couldn't save {folder.Name}: {error}");
+        else if (!order.SequenceEqual(folder.Paths))
+            edits.RecordLibrary($"reordering {folder.Name}", () => virtualFolders.Restore(folder, order));
     };
 
     // What the decks are doing is written down every couple of seconds, and the record deleted as the app closes. One
@@ -2299,7 +2396,7 @@ static void Run()
                 screen.ScreenSize = new float2(size.X, size.Y);
                 if (controllerDialog is not null)
                     controllerDialog.ScreenSize = screen.ScreenSize;
-                headphones.ScreenSize = menu.ScreenSize = prompt.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
+                headphones.ScreenSize = menu.ScreenSize = prompt.ScreenSize = details.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
                 screen.Update();
                 headphones.Refresh();
                 ui.Layout(screen.ScreenSize);

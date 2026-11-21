@@ -17,9 +17,9 @@ sealed class Song
     /// The file's size and when it was last written, as of the scan: if either changes, an analysis saved for it is
     /// out of date.
     /// </summary>
-    public long Size { get; }
+    public long Size { get; internal set; }
 
-    public DateTime Modified { get; }
+    public DateTime Modified { get; internal set; }
 
     public string Title { get; internal set; }
     public string Artist { get; internal set; }

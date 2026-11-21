@@ -158,4 +158,86 @@ static unsafe class WindowsTags
     }
 
     static long? ToTicks(IntPtr value) => PropVariantToUInt64(value, out var ticks) < 0 ? null : (long)ticks;
+
+    const int GPS_READWRITE = 2;
+    const ushort VT_LPWSTR = 31;
+    const ushort VT_VECTOR = 0x1000;
+
+    /// <summary>
+    /// Writes <paramref name="title"/>, <paramref name="artist"/> and <paramref name="album"/> into the file's tags,
+    /// as File Explorer's details pane does; any that's blank is left as it was. Returns why it couldn't, if it
+    /// couldn't: a kind of file Windows can't write tags to, or one that's read-only or in use.
+    /// </summary>
+    public static string? Write(string path, string? title, string? artist, string? album)
+    {
+        var hr = SHGetPropertyStoreFromParsingName(
+            Path.GetFullPath(path),
+            IntPtr.Zero,
+            GPS_READWRITE,
+            typeof(IPropertyStore).GUID,
+            out var store
+        );
+        if (hr < 0)
+            return $"Windows can't change the details of {Path.GetExtension(path)} files, or this one's read-only or in use";
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(title) && SetText(store, Title, title.Trim()) is { } titleError)
+                return titleError;
+            // An artist is a list of them, to Windows.
+            if (!string.IsNullOrWhiteSpace(artist) && SetText(store, Artist, artist.Trim(), list: true) is { } artistError)
+                return artistError;
+            if (!string.IsNullOrWhiteSpace(album) && SetText(store, Album, album.Trim()) is { } albumError)
+                return albumError;
+            hr = store.Commit();
+            return hr < 0 ? $"Couldn't save the file's details (error 0x{hr:X8}); it may be read-only or in use" : null;
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(store);
+        }
+    }
+
+    /// <summary>
+    /// Sets one property to <paramref name="text"/>, or with <paramref name="list"/>, to a list of just it. Returns
+    /// why it couldn't, if it couldn't.
+    /// </summary>
+    static string? SetText(IPropertyStore store, PropertyKey key, string text, bool list = false)
+    {
+        var value = Marshal.AllocCoTaskMem(PROPVARIANT_SIZE);
+        try
+        {
+            // A PROPVARIANT: its type, then (8 bytes in) the string, or a count and a pointer to the strings.
+            var bytes = new Span<byte>((void*)value, PROPVARIANT_SIZE);
+            bytes.Clear();
+            var chars = Marshal.StringToCoTaskMemUni(text);
+            if (list)
+            {
+                var items = Marshal.AllocCoTaskMem(IntPtr.Size);
+                Marshal.WriteIntPtr(items, chars);
+                Marshal.WriteInt16(value, (short)(VT_VECTOR | VT_LPWSTR));
+                Marshal.WriteInt32(value, 8, 1);
+                Marshal.WriteIntPtr(value, 8 + IntPtr.Size, items);
+            }
+            else
+            {
+                Marshal.WriteInt16(value, (short)VT_LPWSTR);
+                Marshal.WriteIntPtr(value, 8, chars);
+            }
+            try
+            {
+                var hr = store.SetValue(key, value);
+                return hr < 0 ? $"Windows wouldn't take that for this file (error 0x{hr:X8})" : null;
+            }
+            finally
+            {
+                // Frees the string, and the list holding it, as they were made with CoTaskMemAlloc.
+                PropVariantClear(value);
+            }
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(value);
+        }
+    }
 }
