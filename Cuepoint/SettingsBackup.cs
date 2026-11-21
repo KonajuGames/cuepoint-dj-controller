@@ -4,8 +4,8 @@ namespace Cuepoint;
 
 /// <summary>
 /// Everything set up in Cuepoint, in one file to keep or take to another computer: the settings (devices, options,
-/// smart playlists, sampler pads and the rest), the keyboard's keys, the controller mappings learned, and the virtual
-/// folders kept in the app's own folder. Not the song database, which is large and kept with the songs on each drive,
+/// smart playlists, sampler pads and the rest), the keyboard's keys, the controller mappings learned, the virtual
+/// folders kept in the app's own folder, and the sets played. Not the song database, which is large and kept with the songs on each drive,
 /// nor virtual folders kept on other drives, which go with them.
 /// </summary>
 static class SettingsBackup
@@ -15,7 +15,7 @@ static class SettingsBackup
     /// </summary>
     static readonly string[] Files = ["settings.json", "keys.json"];
 
-    static readonly string[] Folders = ["controllers", "VirtualFolders"];
+    static readonly string[] Folders = ["controllers", "VirtualFolders", "history"];
 
     /// <summary>
     /// Writes what's set up in <paramref name="appFolder"/> to a zip at <paramref name="zipPath"/>. Returns how many

@@ -96,10 +96,19 @@ sealed class SmartPlaylists(
     /// </summary>
     public IReadOnlyList<Song> SongsIn(SmartPlaylist list)
     {
+        var query = SongQuery.Parse(list.Search);
+        return Everything().Where(query.Matches).ToList();
+    }
+
+    /// <summary>
+    /// Every song found so far: the music library's and every song in the database on the drives plugged in, even in
+    /// folders not opened this run, with what's known of them looked up.
+    /// </summary>
+    public IEnumerable<Song> Everything()
+    {
         LoadKnown();
         analyser.LookUp(library.Songs);
-        var query = SongQuery.Parse(list.Search);
-        return library.Songs.Concat(_known).Distinct().Where(query.Matches).ToList();
+        return library.Songs.Concat(_known).Distinct();
     }
 
     void LoadKnown()

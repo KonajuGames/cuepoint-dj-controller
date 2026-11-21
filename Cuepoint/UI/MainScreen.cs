@@ -321,6 +321,7 @@ sealed class MainScreen : Panel
             LibraryNodeKind.Filter => (icons.Filter, AppTheme.OnPage(Colors.Hex(0xB57BE0))),
             LibraryNodeKind.SmartPlaylists => (icons.Filter, Theme.Muted),
             LibraryNodeKind.Imported => (icons.Playlist, AppTheme.OnPage(Colors.Hex(0xE0A35A))),
+            LibraryNodeKind.PlayedSet => (icons.History, AppTheme.OnPage(Colors.Hex(0x5AC8D9))),
             LibraryNodeKind.Group => node.Name switch
             {
                 "Local drives" => (icons.Drive, Theme.Muted),

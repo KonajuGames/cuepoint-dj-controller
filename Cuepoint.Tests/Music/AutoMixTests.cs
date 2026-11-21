@@ -407,6 +407,36 @@ public sealed class AutoMixTests
     }
 
     [Fact]
+    public void Ordering_for_mixing_leaves_what_s_played_and_playing_and_orders_what_s_to_come_after_it()
+    {
+        static Song Keyed(string title, int pitch, int energy)
+        {
+            var song = Song($@"C:\Music\{title}.mp3", title: title);
+            (song.Duration, song.Analysis) = (TimeSpan.FromSeconds(300), new TrackAnalysis(BeatGrid.Constant(125, FIRST_BEAT, 300), -9, 0.9f, new MusicalKey(pitch, true), energy));
+            return song;
+        }
+        var rig = new Rig();
+        // A minor (8A) first, then D# minor (2A) that clashes, E minor (9A) and B minor (10A).
+        rig.Mix.Open("Set", [Keyed("8A", 9, 6), Keyed("2A", 3, 6), Keyed("10A", 11, 8), Keyed("9A", 4, 7)]);
+        rig.Started();
+
+        var before = rig.Mix.OrderForMixing();
+
+        Assert.Equal(["8A", "9A", "10A", "2A"], rig.Mix.Songs.Select(song => song.Title));
+        rig.Mix.PutBack(before!);
+        Assert.Equal(["8A", "2A", "10A", "9A"], rig.Mix.Songs.Select(song => song.Title));
+    }
+
+    [Fact]
+    public void Ordering_for_mixing_needs_two_songs_still_to_come()
+    {
+        var rig = new Rig(songs: 2).Started();
+        rig.Run(1);
+
+        Assert.Null(rig.Mix.OrderForMixing());
+    }
+
+    [Fact]
     public void Playing_puts_the_first_song_on_deck_A_with_the_mixer_set_straight()
     {
         var rig = new Rig();

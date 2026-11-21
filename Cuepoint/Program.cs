@@ -302,7 +302,15 @@ static void Run()
     IReadOnlyList<Song> duplicates = [];
     var repairing = false;
     var smartPlaylists = new SmartPlaylists(settings.SmartPlaylists, library, database, analyser);
-    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports, smartPlaylists, () => duplicates);
+    // Every set played, kept between runs, this one as it goes.
+    var playLog = new PlayLog(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "history"));
+    var sessionStarted = DateTime.Now;
+    var keptPlays = 0;
+    SongQuery.LastPlayed = playLog.LastPlayed;
+
+    // What would mix well next, set once the session's plays are kept: best first, and what it's suggesting for.
+    Func<(IReadOnlyList<Song>, string)> suggested = () => ([], "Suggested next");
+    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports, smartPlaylists, () => duplicates, () => suggested(), playLog.Past);
     var smartNode = folders.Single(node => node.Kind == LibraryNodeKind.SmartPlaylists);
     _ = smartNode.Children;
     var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
@@ -590,6 +598,17 @@ static void Run()
     // Songs played out for ten seconds or more get a tick in the list, and make up the tracklist of a recording.
     var plays = new SessionPlays();
 
+    // Suggestions leave out what's been played and what's on a deck.
+    suggested = () =>
+    {
+        if (Suggestions.From(decks) is not { } playing)
+            return ([], "Suggested next: load an analysed song to suggest what follows it");
+        var onDecks = decks.Select(deck => deck.FilePath).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var songs = Suggestions.For(playing, smartPlaylists.Everything(), song => plays.Contains(song.Path) || onDecks.Contains(song.Path)).Select(suggestion => suggestion.Song).ToList();
+        var after = library.SongAt(playing.Path) is { } song ? $"{song.Artist} - {song.Title}" : Path.GetFileNameWithoutExtension(playing.Path);
+        return (songs, $"Suggested after {after} ({playing.Key.Camelot}, {playing.Bpm:F1} BPM)");
+    };
+
     // The mix can be recorded, as the room hears it, with the title bar's record button: into a WAV file named for
     // when it started, in the recordings folder.
     var recordingsFolder =
@@ -713,21 +732,24 @@ static void Run()
 
     // The songs played this session, in order, saved where the DJ says: as an M3U playlist or a plain-text set list,
     // by the type chosen in the Save dialog.
-    void ExportHistory()
+    void ExportHistory() => ExportSet(plays.History, "Nothing's been played yet this session, so there's no history to export");
+
+    // A set, this session's or one before, as a playlist or a set list.
+    void ExportSet(IReadOnlyList<(DateTime Started, string Path)> history, string empty)
     {
-        if (plays.History.Count == 0)
+        if (history.Count == 0)
         {
-            screen.Log("Nothing's been played yet this session, so there's no history to export");
+            screen.Log(empty);
             return;
         }
         (string Description, string Pattern)[] types = [("M3U playlist", "*.m3u8"), ("Plain text", "*.txt")];
         var owner = OperatingSystem.IsWindows() ? WindowChrome.Handle : 0;
-        var name = $"Play history {plays.History[0].Started:yyyy-MM-dd}";
+        var name = $"Play history {history[0].Started:yyyy-MM-dd}";
         if (WindowsShell.AskWhereToSave(owner, "Export play history", types, name, Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)) is not { } chosen)
             return;
         var format = chosen.Type == 0 ? HistoryFormat.M3u : HistoryFormat.Text;
-        var error = PlayHistory.Save(chosen.Path, PlayHistory.Write(plays.History, format, library.SongAt), format);
-        var count = plays.History.Count;
+        var error = PlayHistory.Save(chosen.Path, PlayHistory.Write(history, format, library.SongAt), format);
+        var count = history.Count;
         screen.Log(
             error is not null ? $"Couldn't export the play history: {error}"
             : $"Exported {count} {(count == 1 ? "song" : "songs")} played to {chosen.Path}"
@@ -1680,6 +1702,16 @@ static void Run()
         screen.Log(songs.Count == 1 ? $"Added {songs[0].Title} to {autoMix.Name}" : $"Added {songs.Count} songs to {autoMix.Name}");
     }
     screen.AutoMix.SongsDropped += AddToUpNext;
+    screen.AutoMix.OrderRequested += () =>
+    {
+        if (autoMix.OrderForMixing() is not { } before)
+        {
+            screen.Log("There aren't two songs still to come to put in order");
+            return;
+        }
+        edits.RecordLibrary($"ordering {autoMix.Name} for mixing", () => autoMix.PutBack(before));
+        screen.Log($"Put {autoMix.Name} in an order to mix it in");
+    };
 
     // It comes off the list as it loads.
     loadNextUp = deck =>
@@ -2040,6 +2072,16 @@ static void Run()
                 ]
             );
         // Lists, filters, and Rekordbox's playlists and Serato's crates: the songs they list.
+        // A set played before: to mix again, check, or write out.
+        else if (node.Set is { } set)
+            menu.Show(
+                point,
+                [
+                    AutoMixFor(node),
+                    CheckFor(node),
+                    new MenuItem("Export...", () => afterEvents.Enqueue(() => ExportSet(set.Songs.Select(song => (song.Started, song.Path)).ToList(), "That set has nothing in it"))),
+                ]
+            );
         else if (node.HasSongs)
             menu.Show(point, node.Kind == LibraryNodeKind.Imported ? [AutoMixFor(node), CheckFor(node), SeratoCuesFor(node), ExportFor(node)] : [SeratoCuesFor(node)]);
     };
@@ -2465,6 +2507,13 @@ static void Run()
             {
                 controls.Update(elapsed);
                 plays.Update(decks, elapsed);
+                // The set kept as it grows (or shrinks, a song marked as not played).
+                if (plays.History.Count != keptPlays)
+                {
+                    keptPlays = plays.History.Count;
+                    if (playLog.Keep(sessionStarted, plays.History) is { } historyError)
+                        screen.Log($"Couldn't keep the play history: {historyError}");
+                }
             }
         );
         Guarded(

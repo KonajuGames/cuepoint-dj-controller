@@ -11,7 +11,9 @@ namespace Cuepoint.Music;
 /// for every key that mixes with it (itself, a step round the wheel either way, and its relative major or minor).
 /// Only songs analysed can be found by tempo or key. "rating:4" finds songs rated 4 or more, "color:red" those tagged
 /// that colour, and "comment:word" those with the word in their comment; words on their own look in comments too.
-/// "energy:7" finds songs of that energy, and "energy:6-8" those from 6 to 8, from their analysis.
+/// "energy:7" finds songs of that energy, and "energy:6-8" those from 6 to 8, from their analysis. "played:30d"
+/// finds songs played in the last 30 days, in any set, and "notplayed:30d" those that haven't been ("played:2w" counts
+/// in weeks).
 /// Anything in double quotes is text to find as it's written, spaces
 /// and all, so "80-90" finds those characters rather than a tempo; a quote left open runs to the end.
 /// </summary>
@@ -25,7 +27,9 @@ sealed partial record SongQuery(
     string? Color = null,
     IReadOnlyList<string>? Comments = null,
     int? MinEnergy = null,
-    int? MaxEnergy = null
+    int? MaxEnergy = null,
+    TimeSpan? PlayedWithin = null,
+    bool NotPlayed = false
 )
 {
     /// <summary>
@@ -48,7 +52,20 @@ sealed partial record SongQuery(
     /// <summary>
     /// Whether it asks for a rating, colour or comment.
     /// </summary>
-    public bool NeedsNotes => MinRating > 0 || Color is not null || Comments is { Count: > 0 };
+    public bool NeedsNotes => MinRating > 0 || Color is not null || Comments is { Count: > 0 } || PlayedWithin is not null;
+
+    /// <summary>
+    /// When a song was last played, by its path, for "played:" and "notplayed:"; never, until it's told otherwise.
+    /// </summary>
+    public static Func<string, DateTime?> LastPlayed { get; set; } = _ => null;
+
+    /// <summary>
+    /// The time now, for "played:"; the computer's clock unless a test says otherwise.
+    /// </summary>
+    public static Func<DateTime> Now { get; set; } = () => DateTime.Now;
+
+    [GeneratedRegex(@"^(not)?played:(\d{1,4})([dw])$", RegexOptions.IgnoreCase)]
+    private static partial Regex PlayedWord();
 
     [GeneratedRegex(@"^rating:([1-5])$", RegexOptions.IgnoreCase)]
     private static partial Regex RatingWord();
@@ -89,6 +106,8 @@ sealed partial record SongQuery(
         string? color = null;
         var comments = new List<string>();
         int? minEnergy = null, maxEnergy = null;
+        TimeSpan? playedWithin = null;
+        var notPlayed = false;
         foreach (Match part in QuotedOrNot().Matches(text))
         {
             if (part.Value[0] == '"')
@@ -119,6 +138,12 @@ sealed partial record SongQuery(
                     var high = energy.Groups[2].Success ? int.Parse(energy.Groups[2].Value, CultureInfo.InvariantCulture) : low;
                     (minEnergy, maxEnergy) = (Math.Min(low, high), Math.Max(low, high));
                 }
+                else if (PlayedWord().Match(word) is { Success: true } played)
+                {
+                    var amount = int.Parse(played.Groups[2].Value, CultureInfo.InvariantCulture);
+                    playedWithin = TimeSpan.FromDays(char.ToLowerInvariant(played.Groups[3].Value[0]) == 'w' ? amount * 7 : amount);
+                    notPlayed = played.Groups[1].Success;
+                }
                 else if (ColorWord().Match(word) is { Success: true } tagged)
                     color = tagged.Groups[1].Value;
                 else if (CommentWord().Match(word) is { Success: true } said)
@@ -127,7 +152,7 @@ sealed partial record SongQuery(
                     words.Add(word);
             }
         }
-        return new SongQuery(words, min, max, key, compatible, rating, color, comments, minEnergy, maxEnergy);
+        return new SongQuery(words, min, max, key, compatible, rating, color, comments, minEnergy, maxEnergy, playedWithin, notPlayed);
     }
 
     static double Number(string text) => double.Parse(text, CultureInfo.InvariantCulture);
@@ -165,6 +190,12 @@ sealed partial record SongQuery(
         foreach (var comment in Comments ?? [])
         {
             if (song.Notes.Comment?.Contains(comment, StringComparison.OrdinalIgnoreCase) != true)
+                return false;
+        }
+        if (PlayedWithin is { } within)
+        {
+            var recently = LastPlayed(song.Path) is { } when && Now() - when <= within;
+            if (recently == NotPlayed)
                 return false;
         }
         if (!NeedsAnalysis)

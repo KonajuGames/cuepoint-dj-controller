@@ -16,6 +16,7 @@ order to build in.
 | 5 | Backing up settings, changeable keys, DDJ-FLX4 and DDJ-400 mappings, Light and High contrast looks | `c1f936f`, `55f95b0`, `7001291` |
 | — | Sync lock, a brighter Dark label colour and fainter list stripes | `3f41228` |
 | — | BEAT LOOP and KEY SHIFT pads, the DDJ-400's FX ON following CH SELECT, sync lock kept after a crash | `1eb46f7` |
+| 6 | Suggested next, past sets kept with `played:` and `notplayed:` searches, ordering Auto-Mix's list for mixing | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -26,7 +27,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
   untried: that Windows names them exactly "DDJ-FLX4" and "DDJ-400", that their lights come on, that the jog wheels
   feel right, and that the BEAT LOOP and KEY SHIFT pads and the 400's FX ON do what's expected.
 
-## Phase 6: Choosing what to play
+## Phase 6: Choosing what to play (done)
 
 | # | Item | Size | Notes |
 |---|---|---|---|
@@ -62,7 +63,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Order and dependencies
 
-- **Next:** Phase 6, (1) first: it's what's used most in a set.
+- **Next:** Phase 7, (4) first: hot cues are what's touched most on the decks.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.
 - **Biggest:** live streaming (11), for its encoder and network handling; master effects (7) touch the mix itself.

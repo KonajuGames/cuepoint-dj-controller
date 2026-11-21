@@ -49,6 +49,11 @@ enum LibraryNodeKind
     /// files are here.
     /// </summary>
     Imported,
+
+    /// <summary>
+    /// A set played in an earlier session: its songs, in the order they were played, those whose files are here.
+    /// </summary>
+    PlayedSet,
 }
 
 /// <summary>
@@ -246,6 +251,22 @@ sealed class LibraryNode
     public bool IsLive => Kind is LibraryNodeKind.Filter or LibraryNodeKind.List;
 
     /// <summary>
+    /// Whether its songs come in an order of their own (best first, say) for the song list to keep, whatever column
+    /// it's sorted by elsewhere.
+    /// </summary>
+    public bool KeepsOrder { get; init; }
+
+    /// <summary>
+    /// The set it lists, for a set played before.
+    /// </summary>
+    public PlayedSet? Set { get; init; }
+
+    /// <summary>
+    /// What to call it at the top of the song list, as it is now, in place of its name; its name if null.
+    /// </summary>
+    public Func<string>? Heading { get; init; }
+
+    /// <summary>
     /// The songs to list when it's chosen. A folder's or drive's are read once, in the background where it can be
     /// (none meanwhile, and <see cref="SongsLoaded"/> once they're in); the rest are asked for each time, since they
     /// change (a virtual folder edited, say).
@@ -300,6 +321,8 @@ static class LibraryTree
     /// <param name="imports">Other DJ software's playlists, under a node of their own for each that has any.</param>
     /// <param name="smart">The saved searches, under a heading of their own.</param>
     /// <param name="duplicates">The songs last found to have exact copies, for a list of them.</param>
+    /// <param name="suggested">The songs that would mix well next, best first, and what they're for.</param>
+    /// <param name="pastSets">The sets played in earlier sessions, newest first, for a list of each.</param>
     public static List<LibraryNode> Build(
         MusicLibrary library,
         IReadOnlyList<Deck> decks,
@@ -308,7 +331,9 @@ static class LibraryTree
         Func<string, bool> isRecursive,
         ImportedLibraries? imports = null,
         SmartPlaylists? smart = null,
-        Func<IReadOnlyList<Song>>? duplicates = null
+        Func<IReadOnlyList<Song>>? duplicates = null,
+        Func<(IReadOnlyList<Song> Songs, string Heading)>? suggested = null,
+        IReadOnlyList<PlayedSet>? pastSets = null
     )
     {
         // The library's songs as they are when asked for, since its folder can be changed.
@@ -366,7 +391,13 @@ static class LibraryTree
                 LibraryNodeKind.Group,
                 children: () =>
                 [
+                    new("Suggested next", LibraryNodeKind.List, () => suggested?.Invoke().Songs ?? [])
+                    {
+                        KeepsOrder = true,
+                        Heading = () => suggested?.Invoke().Heading ?? "Suggested next",
+                    },
                     new("History", LibraryNodeKind.List, () => history.Reverse().Distinct().ToList()),
+                    .. (pastSets is { Count: > 0 } ? (IEnumerable<LibraryNode>)[PastSets(library, pastSets)] : []),
                     new(
                         "Recently added",
                         LibraryNodeKind.List,
@@ -506,6 +537,26 @@ static class LibraryTree
             };
         }
     }
+
+    /// <summary>
+    /// "Past sets", with a list under it for each set played before, newest first, its songs in the order played.
+    /// </summary>
+    static LibraryNode PastSets(MusicLibrary library, IReadOnlyList<PlayedSet> sets) =>
+        new(
+            "Past sets",
+            LibraryNodeKind.Group,
+            children: () =>
+                sets.Select(set =>
+                {
+                    var paths = set.Songs.Select(song => song.Path).ToList();
+                    return new LibraryNode(set.Name, LibraryNodeKind.PlayedSet, () => SongsAt(library, paths))
+                    {
+                        Set = set,
+                        SongPaths = () => paths,
+                        LoadSongs = done => library.LoadSongsAt(paths, done),
+                    };
+                })
+        );
 
     /// <summary>
     /// The songs at <paramref name="paths"/>, in order, those whose files are here.

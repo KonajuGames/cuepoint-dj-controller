@@ -351,7 +351,7 @@ sealed class SongBrowser : Panel
             if (value is { IsLoadedList: true })
                 value.RefreshSongs();
             TakeSongs(value?.Songs ?? []);
-            _heading.Text = value?.Name ?? "";
+            _heading.Text = value?.Heading?.Invoke() ?? value?.Name ?? "";
             Filter();
             _scroll.ScrollTo(float2.Zero);
         }
@@ -381,7 +381,7 @@ sealed class SongBrowser : Panel
         if (_source is null)
             return;
         TakeSongs(_source.Songs);
-        _heading.Text = _source.Name;
+        _heading.Text = _source.Heading?.Invoke() ?? _source.Name;
         Filter();
     }
 
@@ -427,6 +427,8 @@ sealed class SongBrowser : Panel
         {
             TakeSongs(live.Songs);
             Filter();
+            if (live.Heading is { } heading)
+                _heading.Text = heading();
         }
 
         // Songs in view (as last drawn) are analysed first, from the top down.
@@ -508,8 +510,9 @@ sealed class SongBrowser : Panel
         IEnumerable<Song> songs = query.IsEmpty ? _sourceSongs : _sourceSongs.Where(query.Matches);
         _unanalysed = query.NeedsAnalysis ? _sourceSongs.Count(song => song.Analysis is null && song.AnalysisError is null) : 0;
 
-        // Sorted, those with nothing to sort by go last either way, and ties keep the order they came in.
-        if (_sortColumn?.SortKey is { } key)
+        // Sorted, those with nothing to sort by go last either way, and ties keep the order they came in; a list in an
+        // order of its own (best first) keeps it.
+        if (_sortColumn?.SortKey is { } key && _source is not { KeepsOrder: true })
         {
             var keyed = songs.Select(song => (Song: song, Key: key(song))).OrderBy(pair => pair.Key is null);
             songs = (_sortDescending ? keyed.ThenByDescending(pair => pair.Key) : keyed.ThenBy(pair => pair.Key)).Select(pair => pair.Song);

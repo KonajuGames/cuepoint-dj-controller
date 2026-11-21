@@ -377,6 +377,36 @@ sealed class AutoMix
         return index >= 0 && Remove([index]) > 0;
     }
 
+    /// <summary>
+    /// Puts the songs still to come in an order to mix them in (see <see cref="MixOrder"/>), after the one playing or
+    /// loaded to come in next, if there is one. Returns the order they were in, to put back, or null if there weren't
+    /// two to put in order.
+    /// </summary>
+    public IReadOnlyList<Song>? OrderForMixing()
+    {
+        var first = Enumerable.Range(0, Songs.Count).FirstOrDefault(IsWaiting, -1);
+        if (first < 0 || Songs.Count - first < 2)
+            return null;
+        var before = Songs.Skip(first).ToList();
+        var after = first > 0 ? Songs[first - 1] : null;
+        Changed([.. Songs.Take(first), .. MixOrder.Arrange(before, after)]);
+        return before;
+    }
+
+    /// <summary>
+    /// Puts the songs still to come back in the order <paramref name="order"/> had them, as far as they're still to
+    /// come; any not in it keep their places after those that are.
+    /// </summary>
+    public void PutBack(IReadOnlyList<Song> order)
+    {
+        var first = Enumerable.Range(0, Songs.Count).FirstOrDefault(IsWaiting, -1);
+        if (first < 0)
+            return;
+        var waiting = Songs.Skip(first).ToList();
+        var back = order.Where(waiting.Remove).ToList();
+        Changed([.. Songs.Take(first), .. back, .. waiting]);
+    }
+
     void Changed(IReadOnlyList<Song> songs)
     {
         Songs = songs;
