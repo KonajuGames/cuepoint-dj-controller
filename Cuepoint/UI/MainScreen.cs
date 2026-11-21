@@ -76,6 +76,11 @@ sealed class MainScreen : Panel
     public OptionsDialog Options { get; }
 
     /// <summary>
+    /// Every keyboard shortcut, opened with ? or from the options.
+    /// </summary>
+    public ShortcutsDialog Shortcuts { get; }
+
+    /// <summary>
     /// Whether the folder list and song list are in large text, for reading in the dark or without glasses. The
     /// folder list widens to fit.
     /// </summary>
@@ -190,6 +195,12 @@ sealed class MainScreen : Panel
         AutoMix = Add(new AutoMixPanel(fonts.Body, fonts.Bold, images) { Visible = false });
 
         Options = Add(new OptionsDialog(engine, library.Root, databasePath, fonts.Body, fonts.Bold, fonts.Heading));
+        Shortcuts = Add(new ShortcutsDialog(fonts.Body, fonts.Bold, fonts.Heading));
+        Options.ShortcutsClicked += () =>
+        {
+            Options.Close();
+            Shortcuts.Toggle();
+        };
 
         // The wheel over a waveform zooms both together, as the options' slider does: up shows less of the song, closer.
         foreach (var waveform in _waveforms)
@@ -316,6 +327,7 @@ sealed class MainScreen : Panel
         Browser.FixedSize = new float2(width - FoldersWidth - 3 * GAP - (_autoMixWidth > 0 ? _autoMixWidth + GAP : 0), browserHeight);
         AutoMix.FixedSize = new float2(AutoMixPanel.OPEN_WIDTH, browserHeight);
         Options.ScreenSize = ScreenSize;
+        Shortcuts.ScreenSize = ScreenSize;
 
         foreach (var child in Children)
         {
@@ -389,5 +401,7 @@ sealed class MainScreen : Panel
             AutoMix.Arrange(new float2(MathF.Round(position.X + ScreenSize.X - GAP - _autoMixWidth), position.Y + BrowserTop));
         if (Options.Visible)
             Options.Arrange(position);
+        if (Shortcuts.Visible)
+            Shortcuts.Arrange(position);
     }
 }

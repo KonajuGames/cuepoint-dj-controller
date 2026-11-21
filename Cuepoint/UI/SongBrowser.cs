@@ -322,6 +322,18 @@ sealed class SongBrowser : Panel
     public Song? SelectedSong => List.SelectedItem;
 
     /// <summary>
+    /// The search box, for Ctrl + F to go to.
+    /// </summary>
+    public TextBox SearchBox => _search;
+
+    /// <summary>
+    /// Up, Down, Page Up and Page Down from the search box (or anything else here that doesn't use them) move through
+    /// the songs, so a search can be typed and its results gone through without leaving the box.
+    /// </summary>
+    public override bool KeyDown(Key key, Modifiers modifiers) =>
+        key is Key.Up or Key.Down or Key.PageUp or Key.PageDown && List.KeyDown(key, modifiers);
+
+    /// <summary>
     /// What to list the songs of: a folder, virtual folder or filter from the folder list.
     /// </summary>
     public LibraryNode? Source

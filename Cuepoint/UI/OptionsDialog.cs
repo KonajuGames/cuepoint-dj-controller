@@ -5,7 +5,7 @@ namespace Cuepoint.UI;
 
 /// <summary>
 /// The options, over the screen dimmed behind them: automatic gain, how much of the song the scrolling waveforms
-/// show, where the library and its analysis live, and the keyboard shortcuts. Clicking outside it, Close, or Escape
+/// show, where the library and its analysis live, and a way to the keyboard shortcuts. Clicking outside it, Close, or Escape
 /// closes it. Sized to the screen by whoever lays it out, with <see cref="ScreenSize"/>; on a screen too short for it
 /// all, it scrolls.
 /// </summary>
@@ -63,6 +63,11 @@ sealed class OptionsDialog : Panel
     readonly Label _waveformSeconds;
 
     public event Action? Closed;
+
+    /// <summary>
+    /// Show the shortcuts was clicked.
+    /// </summary>
+    public event Action? ShortcutsClicked;
 
     /// <summary>
     /// The headphones were moved to another device, or turned off; the new device's name, or null.
@@ -389,38 +394,10 @@ sealed class OptionsDialog : Panel
         Row("Analysis saved in", body).Add(new Label(body, databasePath) { Color = Theme.Text, MaxWidth = 340 });
         _recordingsFolder = Row("Recordings saved in", body).Add(new Label(body) { Color = Theme.Text, MaxWidth = 340 });
 
-        _content.Add(new Label(bold, "Keyboard") { Color = Theme.Text });
-        var keys = _content.Add(new Panel { Spacing = 3 });
-        foreach (var (key, action) in new[]
-        {
-            ("1 / 2", "Load the selected song to deck A / B"),
-            ("Ctrl + P", "Preview the selected song in the headphones, or stop"),
-            ("Ctrl + Z", "Undo the last hot cue, memory cue or beat grid change"),
-            ("Alt + Z X C", "Deck A: previous memory cue, add or remove one, next"),
-            ("Alt + N M ,", "Deck B: previous memory cue, add or remove one, next"),
-            ("Z X C V", "Deck A: cue, play, sync, loop"),
-            ("N M , .", "Deck B: cue, play, sync, loop"),
-            ("3 4 / 9 0", "Halve / double the loop, deck A / B"),
-            ("5 6 / 7 8", "Tempo down / up (hold); both together reset it"),
-            ("Shift + those", "Volume down / up (hold)"),
-            ("T / Y", "Headphones for deck A / B"),
-            ("G / H", "Key lock deck A / B"),
-            ("F1 F2 F3", "Kill A's low, mid, high; F9 F10 F11 for B"),
-            ("F4 / F12", "Reset deck A / B's EQ and filter"),
-            ("F5 F6 / F7 F8", "Filter A / B toward low-pass / high-pass (hold)"),
-            ("[ ]  B", "Crossfader left, right (hold); B centres it"),
-            ("Ctrl", "With a held key, moves a quarter as fast"),
-            ("Q W E R", "Hotcues 1 to 4 on deck A; A S D F for 5 to 8"),
-            ("U I O P", "Hotcues 1 to 4 on deck B; J K L ; for 5 to 8"),
-            ("Shift", "With a hotcue key, or clicking a pad, clears it"),
-            ("GRID", "Pads and their keys fix the beat grid; Shift nudges finely"),
-            ("Tab / Enter / Esc", "Next control / press / leave a box or close this"),
-        })
-        {
-            var row = keys.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
-            row.Add(new Panel { MinSize = new float2(130, 0) }).Add(new Label(body, key) { Color = Theme.Text });
-            row.Add(new Label(body, action) { Color = Theme.Muted });
-        }
+        var keysRow = Row("Keyboard", body);
+        var showKeys = keysRow.Add(new Button(body, "Show the shortcuts") { FocusColor = Theme.Focus });
+        showKeys.Clicked += _ => ShortcutsClicked?.Invoke();
+        keysRow.Add(new Label(body, "or press ? at any time") { Color = Theme.Muted });
 
         var close = _content.Add(new Button(bold, "Close") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
         close.Clicked += _ => Close();

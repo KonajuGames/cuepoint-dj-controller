@@ -57,6 +57,16 @@ sealed unsafe class MixRecorder : IDisposable
     public TimeSpan Duration => TimeSpan.FromSeconds((double)Interlocked.Read(ref _frames) / RATE);
 
     /// <summary>
+    /// When it started, by the computer's clock, to line it up with the songs played.
+    /// </summary>
+    public DateTime Started { get; } = DateTime.Now;
+
+    /// <summary>
+    /// How long each file holds before the recording carries on in the next.
+    /// </summary>
+    public TimeSpan FileDuration => TimeSpan.FromSeconds((double)_maxDataBytes / FRAME_BYTES / RATE);
+
+    /// <summary>
     /// Why it stopped writing, if it couldn't carry on (a full disk, say); what's been written is kept.
     /// </summary>
     public string? Error { get; private set; }

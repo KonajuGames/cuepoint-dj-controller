@@ -555,6 +555,9 @@ static void Run()
         screen.Log(recursiveNode == node ? $"Listing every song under {where}" : $"Listing only the songs directly in {where}");
     }
 
+    // Songs played out for ten seconds or more get a tick in the list, and make up the tracklist of a recording.
+    var plays = new SessionPlays();
+
     // The mix can be recorded, as the room hears it, with the title bar's record button: into a WAV file named for
     // when it started, in the recordings folder.
     var recordingsFolder =
@@ -588,11 +591,43 @@ static void Run()
         var saved = files.Count > 1 ? $"{stopping.Path} and {files.Count - 1} more" : stopping.Path;
         var length = stopping.Duration;
         var time = length.TotalHours >= 1 ? $"{(int)length.TotalHours}:{length.Minutes:00}:{length.Seconds:00}" : $"{length.Minutes}:{length.Seconds:00}";
+        var tracklist = SaveTracklist(stopping, files);
         screen.Log(
             stopping.Error is { } error
                 ? $"Recording stopped: {error}. What was recorded is in {saved}"
-                : $"Saved {time} of the mix in {saved}"
+                : $"Saved {time} of the mix in {saved}{(tracklist ? ", with its tracklist and cue sheet" : "")}"
         );
+    }
+
+    // Beside each of a recording's files, a cue sheet marking where each song played starts in it; and beside the
+    // first, the whole recording's tracklist as text. False if no song was played for long enough to count, or they
+    // couldn't be written.
+    bool SaveTracklist(MixRecorder recording, IReadOnlyList<string> files)
+    {
+        var all = PlayHistory.Recorded(plays.History, recording.Started, TimeSpan.Zero, TimeSpan.MaxValue, library.SongAt);
+        if (all.Count == 0)
+            return false;
+        var failed = PlayHistory.Save(
+            Path.ChangeExtension(recording.Path, ".txt"),
+            PlayHistory.Tracklist(all, Path.GetFileNameWithoutExtension(recording.Path), library.SongAt),
+            HistoryFormat.Text
+        );
+        for (var i = 0; i < files.Count; i++)
+        {
+            var from = recording.FileDuration * i;
+            var to = i + 1 < files.Count ? recording.FileDuration * (i + 1) : TimeSpan.MaxValue;
+            var tracks = PlayHistory.Recorded(plays.History, recording.Started, from, to, library.SongAt);
+            if (tracks.Count > 0)
+            {
+                failed ??= PlayHistory.SaveCueSheet(
+                    Path.ChangeExtension(files[i], ".cue"),
+                    PlayHistory.CueSheet(tracks, Path.GetFileName(files[i]), recording.Started, library.SongAt)
+                );
+            }
+        }
+        if (failed is not null)
+            screen.Log($"Couldn't save the recording's tracklist: {failed}");
+        return failed is null;
     }
     screen.TitleItems.Recording = () => recorder?.Duration;
     screen.TitleItems.RecordClicked += () =>
@@ -636,9 +671,6 @@ static void Run()
     screen.TitleItems.AudioWarning = () => audio.Missing;
     if (OperatingSystem.IsWindows())
         WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
-
-    // Songs played out for ten seconds or more get a tick in the list.
-    var plays = new SessionPlays();
 
     // The songs played this session, in order, saved where the DJ says: as an M3U playlist or a plain-text set list,
     // by the type chosen in the Save dialog.
@@ -1022,11 +1054,50 @@ static void Run()
             controllerDialog.Open();
         };
     }
+    // Enter in the search box goes on to the list, on its first song if none's chosen, so 1 and 2 load from it and the
+    // arrow keys move through it, rather than typing into the box.
+    browser.SearchBox.Submitted += _ =>
+    {
+        if (browser.List.SelectedItem is null && browser.List.Items.Count > 0)
+            browser.List.SelectedIndex = 0;
+        ui.Focus(browser.List);
+    };
+
     input.UnhandledKey += (key, action, mods) =>
     {
+        // The arrow keys work the lists wherever the focus is, as a controller's browse knob does, repeating as
+        // they're held.
+        if (!screen.Options.Visible && !screen.Shortcuts.Visible && BrowseKey(key, mods) is var (target, browseKey))
+        {
+            if (action != GlfwKeyAction.Release)
+                target.KeyDown(browseKey, Modifiers.None);
+            return;
+        }
+
         if (action == GlfwKeyAction.Repeat)
             return;
         var pressed = action == GlfwKeyAction.Press;
+
+        // ? shows every shortcut, or hides them again.
+        if (key == KeyboardShortcuts.SHOW && (mods & GlfwModifier.Shift) != 0)
+        {
+            if (pressed)
+            {
+                screen.Options.Close();
+                screen.Shortcuts.Toggle();
+            }
+            return;
+        }
+
+        if (key == GlfwKey.F && (mods & GlfwModifier.Control) != 0)
+        {
+            if (pressed)
+            {
+                ui.Focus(browser.SearchBox);
+                browser.SearchBox.SelectAll();
+            }
+            return;
+        }
 
         // Before the decks' keys, as Z on its own is deck A's cue.
         if (key == GlfwKey.Z && (mods & GlfwModifier.Control) != 0)
@@ -1083,6 +1154,8 @@ static void Run()
                     prompt.Close();
                 else if (confirmation.Visible)
                     confirmation.Close();
+                else if (screen.Shortcuts.Visible)
+                    screen.Shortcuts.Close();
                 else if (controllerDialog?.Escape() != true)
                     screen.Options.Close();
                 break;
@@ -1094,6 +1167,32 @@ static void Run()
                 break;
         }
     };
+
+    // Where a key moves through the lists, as KeyboardShortcuts lists them: the song list's on its own, the folder
+    // list's with Shift. Enter loads the chosen song onto a free deck, or opens out the chosen folder.
+    (Element Target, Key Key)? BrowseKey(GlfwKey key, GlfwModifier mods)
+    {
+        if ((mods & (GlfwModifier.Control | GlfwModifier.Alt | GlfwModifier.Super)) != 0)
+            return null;
+        Key? browse = key switch
+        {
+            GlfwKey.Up => Key.Up,
+            GlfwKey.Down => Key.Down,
+            GlfwKey.Left => Key.Left,
+            GlfwKey.Right => Key.Right,
+            GlfwKey.PageUp => Key.PageUp,
+            GlfwKey.PageDown => Key.PageDown,
+            GlfwKey.Home => Key.Home,
+            GlfwKey.End => Key.End,
+            GlfwKey.Enter or GlfwKey.KpEnter => Key.Enter,
+            _ => null,
+        };
+        if (browse is not { } k)
+            return null;
+        if ((mods & GlfwModifier.Shift) != 0)
+            return k is Key.PageUp or Key.PageDown ? null : (screen.FolderTree, k);
+        return k is Key.Left or Key.Right ? null : (browser.List, k);
+    }
 
     // Right-click menus and the name prompt go over everything, so they're added last.
     ui.Add(headphones);

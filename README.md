@@ -64,7 +64,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 - **Crossfader**, and automatic gain for each song (in the options).
 - **Headphones:** the headphones button in the title bar, lit while a deck is cued, drops down what they hear (the cued decks, the main mix, or a blend) and their volume.
 - **Master limiter:** keeps the mix under 1 dB below full scale when the decks are loud together, turning it down smoothly just before each peak rather than clipping. LIMIT by the master meter lights while it's working. It can be turned off in the options.
-- **Recording the mix:** the record button in the title bar records the main mix, as the room hears it, to a 24-bit WAV file in `Music\Cuepoint Recordings`, showing how long it's been going. A set of over four hours carries on into a second file.
+- **Recording the mix:** the record button in the title bar records the main mix, as the room hears it, to a 24-bit WAV file in `Music\Cuepoint Recordings`, showing how long it's been going. A set of over four hours carries on into a second file. When it stops, a cue sheet (`.cue`) beside each file marks where each song played starts in it, so players and mix sites can show the tracklist and skip through it, and a `.txt` beside the first file lists the songs with their times, ready to paste under the mix. Songs count once they've played for ten seconds, as in History, and a song already playing as the recording starts is there from the start.
 - **Outputs:** the main mix and the headphones can go to separate sound cards, or the headphones can use channels 3 and 4 of a four-channel controller's sound card.
 
 ### Library
@@ -115,6 +115,8 @@ Each song is analysed in the background as it comes into view in the list. The a
 
 ## Keyboard
 
+Press `?` to see every shortcut over the screen (or **Show the shortcuts** in the options), drawn from the keys as they really are; `?` or Esc hides it again.
+
 Each deck has its own side of the keyboard.
 
 | | Deck A | Deck B |
@@ -137,7 +139,9 @@ Each deck has its own side of the keyboard.
 - **Faders:** they move while their keys are held, a quarter as fast with Ctrl.
 - **Nudging:** a nudge plays the deck 4% slower or faster while its key's held, to line up the beats by ear without moving the tempo. Dragging the scrolling waveform of a playing deck does the same: left of where you pressed pushes it on, right holds it back, further for more. On a stopped deck, the drag moves through the song.
 - **Crossfader:** `[` and `]` slide it, and `B` centres it.
-- **Loading songs:** `1` loads the selected song onto deck A and `2` onto deck B.
+- **Loading songs:** `1` loads the selected song onto deck A and `2` onto deck B. Enter loads it onto a deck that's free.
+- **Browsing:** the arrow keys, Page Up and Page Down, Home and End move through the song list, and with Shift, Up and Down move through the folder list and Left and Right fold a folder in or open it out, as a controller's browse knob does.
+- **Searching:** Ctrl + F goes to the search box. Up and Down still move through the songs while you type, Enter goes on to the list so `1` and `2` load from it, and Esc empties the box, then leaves it.
 
 ## Building and running
 

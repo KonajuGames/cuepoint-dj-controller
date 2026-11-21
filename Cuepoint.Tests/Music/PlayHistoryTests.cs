@@ -63,6 +63,69 @@ public class PlayHistoryTests
         Assert.NotNull(PlayHistory.Save(folder["Nowhere", "set.txt"], "x", HistoryFormat.Text));
     }
 
+    [Fact]
+    public void A_recording_s_tracks_start_where_they_were_played_with_the_one_already_playing_from_the_start()
+    {
+        // Recording from two minutes into Wake Me Up (which runs over four), so it's heard from the start.
+        var tracks = PlayHistory.Recorded(History, Evening.AddMinutes(2), TimeSpan.Zero, TimeSpan.MaxValue, SongAt);
+        Assert.Equal(
+            new (TimeSpan, string)[] { (TimeSpan.Zero, History[0].Item2), (TimeSpan.FromMinutes(2), History[1].Item2), (TimeSpan.FromMinutes(178), History[2].Item2) },
+            tracks
+        );
+    }
+
+    [Fact]
+    public void A_song_over_before_the_recording_starts_is_left_out()
+    {
+        // Ten minutes after Wake Me Up started, it's long over, but track07's length isn't known, so it may be playing.
+        var late = PlayHistory.Recorded(History.Take(1).ToList(), Evening.AddMinutes(10), TimeSpan.Zero, TimeSpan.MaxValue, SongAt);
+        Assert.Empty(late);
+        var unknown = PlayHistory.Recorded(History.Take(2).ToList(), Evening.AddMinutes(10), TimeSpan.Zero, TimeSpan.MaxValue, SongAt);
+        Assert.Equal(History[1].Item2, Assert.Single(unknown).Path);
+    }
+
+    [Fact]
+    public void A_later_file_of_a_recording_counts_from_its_own_start()
+    {
+        // The second of two-hour files, from two hours in: Faded, at three hours, is an hour into it, and track07,
+        // the last before it, has no known length, so it's there from the start.
+        var tracks = PlayHistory.Recorded(History, Evening, TimeSpan.FromHours(2), TimeSpan.FromHours(4), SongAt);
+        Assert.Equal(new (TimeSpan, string)[] { (TimeSpan.Zero, History[1].Item2), (TimeSpan.FromHours(1), History[2].Item2) }, tracks);
+    }
+
+    [Theory]
+    [InlineData(0, "00:00:00")]
+    [InlineData(61.5, "01:01:37")]
+    // Past 99 minutes, the minutes just go on.
+    [InlineData(6000.2, "100:00:15")]
+    public void Cue_sheet_times_are_minutes_seconds_and_75ths(double seconds, string expected)
+    {
+        Assert.Equal(expected, PlayHistory.CueTime(TimeSpan.FromSeconds(seconds)));
+    }
+
+    [Fact]
+    public void A_cue_sheet_names_the_file_and_each_track_with_where_it_starts()
+    {
+        var tracks = new (TimeSpan, string)[] { (TimeSpan.Zero, History[0].Item2), (TimeSpan.FromSeconds(242.4), History[1].Item2) };
+        var sheet = PlayHistory.CueSheet(tracks, "Mix 2026-11-03 21-30-00.wav", Evening, SongAt);
+        Assert.Equal(
+            "REM DATE 2026-11-03\n"
+                + "REM COMMENT \"Recorded with Cuepoint\"\n"
+                + "TITLE \"Mix 2026-11-03 21-30-00\"\n"
+                + "FILE \"Mix 2026-11-03 21-30-00.wav\" WAVE\n"
+                + "  TRACK 01 AUDIO\n    TITLE \"Wake Me Up\"\n    PERFORMER \"Avicii\"\n    INDEX 01 00:00:00\n"
+                + "  TRACK 02 AUDIO\n    TITLE \"track07\"\n    INDEX 01 04:02:30\n",
+            sheet
+        );
+    }
+
+    [Fact]
+    public void A_tracklist_gives_each_song_s_time_into_the_recording()
+    {
+        var tracks = new (TimeSpan, string)[] { (TimeSpan.Zero, History[0].Item2), (TimeSpan.FromMinutes(62), History[2].Item2) };
+        Assert.Equal("Mix\n\n0:00:00  Avicii - Wake Me Up\n1:02:00  Alan Walker - Faded\n", PlayHistory.Tracklist(tracks, "Mix", SongAt));
+        Assert.Equal("Mix\n\n0:00  Avicii - Wake Me Up\n", PlayHistory.Tracklist(tracks.Take(1).ToList(), "Mix", SongAt));
+    }
 }
 
 /// <summary>

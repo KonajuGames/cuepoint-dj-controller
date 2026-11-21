@@ -71,6 +71,108 @@ static class PlayHistory
     }
 
     /// <summary>
+    /// The songs heard in a recording that started at <paramref name="started"/>, from <paramref name="from"/> into it
+    /// until <paramref name="to"/>, with how far into that stretch each starts. A song already playing as the stretch
+    /// begins (the last to start before it, if its length says it isn't over by then) is there from the start.
+    /// </summary>
+    public static IReadOnlyList<(TimeSpan At, string Path)> Recorded(
+        IReadOnlyList<(DateTime Started, string Path)> history,
+        DateTime started,
+        TimeSpan from,
+        TimeSpan to,
+        Func<string, Song?> songAt
+    )
+    {
+        var tracks = new List<(TimeSpan At, string Path)>();
+        (DateTime Started, string Path)? playing = null;
+        // In the order they started, which isn't quite the history's: a song goes in once it's played ten seconds.
+        foreach (var entry in history.OrderBy(entry => entry.Started))
+        {
+            var at = entry.Started - started;
+            if (at < from)
+                playing = entry;
+            else if (at < to)
+                tracks.Add((at - from, entry.Path));
+        }
+        if (playing is { } before && (tracks.Count == 0 || tracks[0].At > TimeSpan.Zero))
+        {
+            if (songAt(before.Path)?.Duration is not { } length || before.Started + length > started + from)
+                tracks.Insert(0, (TimeSpan.Zero, before.Path));
+        }
+        return tracks;
+    }
+
+    /// <summary>
+    /// A cue sheet for the WAV file <paramref name="wavName"/>, a recording made at <paramref name="started"/>, marking
+    /// where each of <paramref name="tracks"/> starts in it, so players and mix sites show the tracklist and can skip
+    /// through it.
+    /// </summary>
+    public static string CueSheet(IReadOnlyList<(TimeSpan At, string Path)> tracks, string wavName, DateTime started, Func<string, Song?> songAt)
+    {
+        static string Quoted(string text) => $"\"{text.Replace('"', '\'')}\"";
+
+        var text = new StringBuilder();
+        text.Append(CultureInfo.InvariantCulture, $"REM DATE {started:yyyy-MM-dd}\n");
+        text.Append("REM COMMENT \"Recorded with Cuepoint\"\n");
+        text.Append(CultureInfo.InvariantCulture, $"TITLE {Quoted(Path.GetFileNameWithoutExtension(wavName))}\n");
+        text.Append(CultureInfo.InvariantCulture, $"FILE {Quoted(wavName)} WAVE\n");
+        for (var i = 0; i < tracks.Count; i++)
+        {
+            var (at, path) = tracks[i];
+            var song = songAt(path);
+            text.Append(CultureInfo.InvariantCulture, $"  TRACK {i + 1:00} AUDIO\n");
+            text.Append(CultureInfo.InvariantCulture, $"    TITLE {Quoted(song is { Title.Length: > 0 } ? song.Title : Path.GetFileNameWithoutExtension(path))}\n");
+            if (song is { Artist.Length: > 0 })
+                text.Append(CultureInfo.InvariantCulture, $"    PERFORMER {Quoted(song.Artist)}\n");
+            text.Append(CultureInfo.InvariantCulture, $"    INDEX 01 {CueTime(at)}\n");
+        }
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// A cue sheet's time: minutes, seconds and frames, 75 to the second, as on a CD.
+    /// </summary>
+    internal static string CueTime(TimeSpan at)
+    {
+        var frames = (long)Math.Floor(Math.Max(0, at.TotalSeconds) * 75);
+        return string.Create(CultureInfo.InvariantCulture, $"{frames / 75 / 60:00}:{frames / 75 % 60:00}:{frames % 75:00}");
+    }
+
+    /// <summary>
+    /// A recording's tracklist as text, each song with how far into the recording it starts, to paste under a mix
+    /// put online.
+    /// </summary>
+    public static string Tracklist(IReadOnlyList<(TimeSpan At, string Path)> tracks, string title, Func<string, Song?> songAt)
+    {
+        var text = new StringBuilder(title).Append("\n\n");
+        var hours = tracks.Count > 0 && tracks[^1].At.TotalHours >= 1;
+        foreach (var (at, path) in tracks)
+        {
+            var time = hours ? $"{(int)at.TotalHours}:{at.Minutes:00}:{at.Seconds:00}" : $"{(int)at.TotalMinutes}:{at.Seconds:00}";
+            text.Append(CultureInfo.InvariantCulture, $"{time}  {Name(path, songAt(path))}\n");
+        }
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// Writes a cue sheet to <paramref name="path"/>, in UTF-8 with a byte order mark, so players that read it in the
+    /// system's code page otherwise still show accented names right, and Windows' line endings. Returns why it
+    /// couldn't, if it couldn't.
+    /// </summary>
+    public static string? SaveCueSheet(string path, string text)
+    {
+        try
+        {
+            File.WriteAllText(path, text.Replace("\n", "\r\n"), new UTF8Encoding(true));
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return e.Message;
+        }
+    }
+
+    /// <summary>
     /// Writes <paramref name="text"/> to <paramref name="path"/>, in UTF-8 without a byte order mark, with Windows'
     /// line endings for a text file so Notepad and the rest show it right. Returns why it couldn't, if it couldn't.
     /// </summary>
