@@ -111,6 +111,14 @@ static void Run()
     // Hearing a song from the list in the headphones, without a deck.
     using var preview = new SongPreview(audio);
 
+    // Eight one-shot samples, played into the mix from either deck's pads in SAMPLER mode, kept between runs.
+    using var sampler = new Sampler(audio);
+    for (var slot = 0; slot < Math.Min(Sampler.SLOTS, settings.SamplerSlots?.Count ?? 0); slot++)
+    {
+        if (settings.SamplerSlots![slot] is { } samplePath && File.Exists(samplePath))
+            sampler.Load(slot, samplePath, Path.GetFileNameWithoutExtension(samplePath));
+    }
+
     // The output goes first, as headphones on its channels 3 and 4 need it there.
     audio.CueMix = settings.CueMix;
     audio.HeadphoneVolume = settings.HeadphoneVolume;
@@ -120,6 +128,8 @@ static void Run()
     var headphonesFound = audio.UseHeadphoneDevice(settings.HeadphoneDevice);
     // Those not plugged in are still the ones chosen, gone to as soon as they are.
     audio.Choose(settings.OutputDevice, settings.HeadphoneDevice);
+    audio.BoothVolume = settings.BoothVolume;
+    var boothFound = settings.BoothDevice is null || audio.UseBoothDevice(settings.BoothDevice);
     void SaveSettings()
     {
         // The devices chosen, even while one's missing and the mix is on the default instead.
@@ -127,6 +137,8 @@ static void Run()
         settings.HeadphoneDevice = audio.ChosenHeadphoneDevice;
         settings.CueMix = audio.CueMix;
         settings.HeadphoneVolume = audio.HeadphoneVolume;
+        settings.BoothDevice = audio.ChosenBoothDevice;
+        settings.BoothVolume = audio.BoothVolume;
         settings.Effects = decks.ToDictionary(
             deck => deck.Name,
             deck => new AppSettings.DeckEffectSettings
@@ -137,9 +149,11 @@ static void Run()
                 FlangerBeats = deck.Effects.BeatsOf(DeckEffect.Flanger),
             }
         );
+        settings.SamplerSlots = sampler.Paths.Any(path => path is not null) ? [.. sampler.Paths] : null;
         settings.UnquantizedDecks = decks.Where(deck => !deck.Quantize).Select(deck => deck.Name).ToList() is { Count: > 0 } off ? off : null;
         settings.Save(settingsPath);
     }
+    sampler.Changed += SaveSettings;
 
     static string FolderKey(string path) => Path.TrimEndingDirectorySeparator(path);
 
@@ -297,6 +311,10 @@ static void Run()
     var jumpPads = gridEditors.Select((editor, i) => new JumpPads(editor.Deck, editor, rollPads[i])).ToArray();
     JumpPads? JumpPadsFor(Deck deck) => jumpPads.FirstOrDefault(jump => jump.Deck == deck);
 
+    // Or samples, with them in SAMPLER mode.
+    var samplerPads = gridEditors.Select((editor, i) => new SamplerPads(editor.Deck, sampler, editor, rollPads[i], jumpPads[i])).ToArray();
+    SamplerPads? SamplerPadsFor(Deck deck) => samplerPads.FirstOrDefault(pads => pads.Deck == deck);
+
     // Quantise is on for each deck unless it was turned off.
     foreach (var deck in decks)
     {
@@ -311,7 +329,8 @@ static void Run()
     }
 
     var ui = new Root { TooltipFont = fonts.Body };
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor, JumpPadsFor));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor, JumpPadsFor, SamplerPadsFor));
+    sampler.LoadFailed += (slot, error) => screen.Log($"Couldn't put that on sampler pad {slot + 1}: {error}");
     foreach (var editor in gridEditors)
         editor.Log += screen.Log;
     using var input = new GlfwUiInput(window, ui);
@@ -668,6 +687,13 @@ static void Run()
         screen.Log($"Couldn't find {settings.OutputDevice} for the main output, so it's on the system default until it's plugged in");
     if (!headphonesFound)
         screen.Log($"Couldn't find {settings.HeadphoneDevice} for the headphones; they'll go on it when it's plugged in");
+    if (!boothFound)
+        screen.Log($"Couldn't find {settings.BoothDevice} for the booth; it'll go on it when it's plugged in");
+    screen.Options.BoothChanged += device =>
+    {
+        SaveSettings();
+        screen.Log(device is null ? "Booth output off" : audio.BoothDevice is null ? $"Couldn't open {device} for the booth; it'll go on it when it can" : $"Booth output on {device}");
+    };
     screen.TitleItems.AudioWarning = () => audio.Missing;
     if (OperatingSystem.IsWindows())
         WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
@@ -1016,6 +1042,14 @@ static void Run()
                 jump.Down(pad);
                 return true;
             }
+            if (SamplerPadsFor(deck) is { Active: true } samples)
+            {
+                if (shifted)
+                    samples.Clear(pad);
+                else
+                    samples.Down(pad);
+                return true;
+            }
             if (GridEditorFor(deck) is not { Active: true } editor)
                 return false;
             editor.Pad(pad, fine: shifted);
@@ -1038,6 +1072,8 @@ static void Run()
                 editor.Active = false;
             if (JumpPadsFor(deck) is { } jump)
                 jump.Active = false;
+            if (SamplerPadsFor(deck) is { } samples)
+                samples.Active = false;
         };
         controllers.IsRollMode = deck => RollPadsFor(deck)?.Active == true;
 
@@ -1141,6 +1177,13 @@ static void Run()
                 gridEditors[hotcue.Deck].Pad(hotcue.Hotcue, fine: (mods & GlfwModifier.Shift) != 0);
             else if (pressed && hotcue.Deck < decks.Length && jumpPads[hotcue.Deck].Active)
                 jumpPads[hotcue.Deck].Down(hotcue.Hotcue);
+            else if (pressed && hotcue.Deck < decks.Length && samplerPads[hotcue.Deck].Active)
+            {
+                if ((mods & GlfwModifier.Shift) != 0)
+                    samplerPads[hotcue.Deck].Clear(hotcue.Hotcue);
+                else
+                    samplerPads[hotcue.Deck].Down(hotcue.Hotcue);
+            }
             else if (pressed && hotcue.Deck < decks.Length)
             {
                 if ((mods & GlfwModifier.Shift) != 0)
@@ -1846,6 +1889,24 @@ static void Run()
         browser.Refilter();
     }
 
+    // A song onto one of the sampler's pads, in place of whatever was there.
+    MenuItem SamplerMenu(IReadOnlyList<Song> songs) =>
+        new(
+            "Put on sampler pad",
+            Enumerable
+                .Range(0, Sampler.SLOTS)
+                .Select(slot => new MenuItem(
+                    sampler.NameOf(slot) is { } there ? $"{slot + 1}: {there}" : $"{slot + 1}",
+                    () =>
+                    {
+                        sampler.Load(slot, songs[0].Path, songs[0].Title);
+                        screen.Log($"{songs[0].Title} is on sampler pad {slot + 1}: play it with the pads in SAMPLER mode");
+                    }
+                ))
+                .ToList(),
+            enabled: songs.Count == 1
+        );
+
     MenuItem RatingMenu(IReadOnlyList<Song> songs) =>
         new(
             "Rating",
@@ -1888,6 +1949,7 @@ static void Run()
                     () => TogglePreview(songs[0]),
                     Enabled: songs.Count > 0 && audio.HasHeadphones
                 ),
+                SamplerMenu(songs),
                 RatingMenu(songs),
                 ColourMenu(songs),
                 new MenuItem(
@@ -2109,6 +2171,7 @@ static void Run()
                 foreach (var deck in decks)
                     deck.Update();
                 preview.Update();
+                sampler.Update();
             }
         );
 

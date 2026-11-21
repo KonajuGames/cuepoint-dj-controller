@@ -343,6 +343,12 @@ sealed class MidiControls : IDisposable
             return;
         }
 
+        if (action == "censor")
+        {
+            deck.Censor(pressed);
+            return;
+        }
+
         // Touching the jog wheel holds the record, for scratching; letting go sets it free.
         if (action == "jog.touch")
         {
@@ -525,6 +531,8 @@ sealed class MidiControls : IDisposable
         {
             if (action == "crossfader")
                 _engine.Crossfader = position;
+            else if (action == "master")
+                _engine.MasterVolume = position;
             return;
         }
 

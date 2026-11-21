@@ -172,6 +172,7 @@ sealed class TitleBarItems
 {
     readonly AudioEngine _engine;
     readonly LevelMeter _master;
+    readonly Knob _masterVolume;
     readonly Label _masterLabel;
     readonly Label _limit;
 
@@ -249,6 +250,22 @@ sealed class TitleBarItems
         bar.Centre.Add(new BeatTrackers(decks, small));
         bar.Centre.Add(new Spacer(20));
         _masterLabel = bar.Centre.Add(new Label(small, "MASTER") { Color = Theme.Muted });
+        bar.Centre.Add(new Spacer(6));
+        _masterVolume = bar.Centre.Add(
+            new Knob(images.Knob, images.Dot)
+            {
+                Min = 0,
+                Max = 1,
+                DefaultValue = 1,
+                FillFrom = 0,
+                Diameter = 18,
+                Value = engine.MasterVolume,
+                FocusColor = Theme.Focus,
+                Tooltip = "Master volume: the whole mix, as the speakers, the recording and the headphones' main mix hear it. Double-click for full",
+            }
+        );
+        _masterVolume.Changed += knob => engine.MasterVolume = knob.Value;
+        bar.Centre.Add(new Spacer(6));
         _master = bar.Centre.Add(new LevelMeter(2) { Orientation = Orientation.Horizontal, Length = MASTER_LENGTH, BarThickness = 4, BarGap = 2, Segments = MASTER_SEGMENTS });
         // Lit while the master limiter is turning the mix down: a sign the decks are too loud together.
         _limit = bar.Centre.Add(new Label(small, "LIMIT") { Color = Theme.Faint });
@@ -307,6 +324,8 @@ sealed class TitleBarItems
             _limitedAt = Clock.Seconds();
         _limit.Visible = limiter.Enabled;
         _limit.Color = Clock.Seconds() - _limitedAt < LIMIT_LIGHT_HOLD ? Theme.Accent : Theme.Faint;
+        if (!_masterVolume.IsDragging)
+            _masterVolume.Value = _engine.MasterVolume;
         var (left, right) = _engine.Meter.TakePeaks();
         _master.Push(left, right);
 

@@ -24,7 +24,9 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 - **Load protection:** a song can't be loaded onto a deck that's playing into the main mix, so a stray key press or drag can't stop the music. A deck with its fader down, or only in the headphones, can still be loaded. It can be turned off in the options.
 - **Loops:** from 1/16 to 32 beats, fitted to the beat grid, with halve and double.
 - **Loops set by hand:** **IN** marks where a loop starts and **OUT** loops back to it from there, on the beat with quantise on. Pressed while it loops, OUT moves its end. Halve and double work on it too, and reloop goes back to the loop's start, or plays the last loop again. They work without a beat grid as well.
-- **Pad modes:** the list beside SYNC sets what the pads do: HOT CUE, ROLL, JUMP or GRID.
+- **Censor:** hold Ctrl with a deck's play key (Ctrl + X for A, Ctrl + M for B), or a controller button learned to it, and the song plays backwards at the deck's speed, as a word kept off the air is. Let go and it drops back in where the song would have got to, whether **SLIP** is lit or not.
+- **Pad modes:** the list beside SYNC sets what the pads do: HOT CUE, ROLL, JUMP, SAMPLER or GRID.
+- **Sampler:** eight one-shot samples, an air horn or a drop, say, played into the main mix from the pads in SAMPLER mode, the same eight on either deck, whether or not it has a song loaded. Right-click a song and choose **Put on sampler pad** to put it on one; hitting its pad (or its key) plays it from the start, lit while it plays, and Shift-click or right-click takes it off. They're kept between runs, and play past the crossfader, under the master volume.
 - **Loop rolls:** on the pads in ROLL mode. A roll loops for as long as its pad is held, then drops back in where the song would have got to.
 - **Beat jumps:** on the pads in JUMP mode (Shift + HOT CUE on the DDJ-SB3), back or on by 1, 4, 16 or 32 beats, staying in time. A loop moves with the jump.
 - **Quantise:** with a deck's **Q** lit, hotcues and the cue point go on the nearest beat, and jumping to a hotcue while playing lands in time. It's on to begin with.
@@ -64,9 +66,11 @@ Each song is analysed in the background as it comes into view in the list. The a
 - **Knobs:** the trim, EQ and filter are knobs, as on a mixer. Drag up to turn one up and down to turn it down; Shift or Ctrl turns it finely, the mouse wheel nudges it, and a double-click puts it back to the top. A band turned all the way down is killed and lights red.
 - **Crossfader**, and automatic gain for each song (in the options).
 - **Headphones:** the headphones button in the title bar, lit while a deck is cued, drops down what they hear (the cued decks, the main mix, or a blend) and their volume.
+- **Master volume:** the knob by the master meter in the title bar turns the whole mix down before the limiter, so the speakers, the recording and the headphones' main mix all follow it. Double-click it for full. A controller's knob can be learned to it.
 - **Master limiter:** keeps the mix under 1 dB below full scale when the decks are loud together, turning it down smoothly just before each peak rather than clipping. LIMIT by the master meter lights while it's working. It can be turned off in the options.
 - **Recording the mix:** the record button in the title bar records the main mix, as the room hears it, to a 24-bit WAV file in `Music\Cuepoint Recordings`, showing how long it's been going. A set of over four hours carries on into a second file. When it stops, a cue sheet (`.cue`) beside each file marks where each song played starts in it, so players and mix sites can show the tracklist and skip through it, and a `.txt` beside the first file lists the songs with their times, ready to paste under the mix. Songs count once they've played for ten seconds, as in History, and a song already playing as the recording starts is there from the start.
 - **Outputs:** the main mix and the headphones can go to separate sound cards, or the headphones can use channels 3 and 4 of a four-channel controller's sound card.
+- **Booth output:** the main mix can go to another sound card too, for monitors in the DJ booth, at its own volume, set in the options, which the master volume doesn't move. If its sound card is unplugged, it's back on it when it's plugged in again.
 
 ### Library
 
@@ -133,6 +137,7 @@ Each deck has its own side of the keyboard.
 | Nudge slower / faster, while held | Ctrl + Shift + 5 / 6 | Ctrl + Shift + 7 / 8 |
 | Headphone cue, key lock | T, G | Y, H |
 | Slip | Shift + G | Shift + H |
+| Censor (backwards while held) | Ctrl + X | Ctrl + M |
 | Key shift down / up, put back | Alt + 5 / 6, Alt + G | Alt + 7 / 8, Alt + H |
 | Key match | Ctrl + G | Ctrl + H |
 | Previous memory cue, add or remove, next | Alt + Z X C | Alt + N M , |

@@ -51,12 +51,12 @@ sealed unsafe class SdlHeadphones : IHeadphoneOutput
     /// Opens <paramref name="deviceId"/> to play <paramref name="format"/>, which SDL converts to whatever the device
     /// wants. Throws <see cref="SdlException"/> if it can't.
     /// </summary>
-    public SdlHeadphones(uint deviceId, string deviceName, SdlAudioSpec format)
+    public SdlHeadphones(uint deviceId, string deviceName, SdlAudioSpec format, string purpose = "headphones")
     {
         DeviceName = deviceName;
         _stream = Sdl.PInvoke.OpenAudioDeviceStream(deviceId, &format, null, null);
         if (_stream.IsNull())
-            throw new SdlException($"Couldn't open {deviceName} for headphones: {Sdl.PInvoke.GetError()}");
+            throw new SdlException($"Couldn't open {deviceName} for {purpose}: {Sdl.PInvoke.GetError()}");
         Sdl.PInvoke.ResumeAudioStreamDevice(_stream);
         _maxQueuedBytes = (int)(MAX_QUEUED_SECONDS * format.freq * format.channels * sizeof(float));
     }

@@ -118,7 +118,8 @@ sealed class MainScreen : Panel
         Func<int, DeckKeyHints?>? deckKeys = null,
         Func<Deck, GridEditor?>? gridEditors = null,
         Func<Deck, RollPads?>? rollPads = null,
-        Func<Deck, JumpPads?>? jumpPads = null
+        Func<Deck, JumpPads?>? jumpPads = null,
+        Func<Deck, SamplerPads?>? samplerPads = null
     )
     {
         Background = Theme.Background;
@@ -142,7 +143,7 @@ sealed class MainScreen : Panel
         // Left to right: the first half of the decks, the mixer, the rest.
         // Decks right of the mixer are laid out as reflections, so each deck's mixing controls sit nearest the mixer.
         var deckPanels = decks
-            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, fonts.Badge, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i), gridEditors?.Invoke(deck), images, rollPads?.Invoke(deck), jumpPads?.Invoke(deck))
+            .Select((deck, i) => new DeckPanel(deck, fonts.Small, fonts.Body, fonts.Bold, fonts.Big, fonts.Badge, hotcueKeys?.Invoke(i), deckKeys?.Invoke(i), gridEditors?.Invoke(deck), images, rollPads?.Invoke(deck), jumpPads?.Invoke(deck), samplerPads?.Invoke(deck))
             {
                 Mirrored = i >= (decks.Count + 1) / 2,
             })

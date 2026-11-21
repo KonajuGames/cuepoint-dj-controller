@@ -188,6 +188,13 @@ sealed class KeyboardControls
 
     void DeckKey(Deck deck, DeckKeys keys, GlfwKey key, bool pressed, GlfwModifier mods)
     {
+        // Ctrl with play is censor, backwards while held, so it acts on the release too, however Ctrl's let go.
+        if (key == keys.Play && (pressed ? (mods & GlfwModifier.Control) != 0 && (mods & GlfwModifier.Shift) == 0 : deck.IsCensoring))
+        {
+            deck.Censor(pressed);
+            return;
+        }
+
         // Cue previews while held, so it acts on the release too.
         if (key == keys.Cue)
         {

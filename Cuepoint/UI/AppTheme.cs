@@ -18,6 +18,11 @@ static class AppTheme
     /// </summary>
     public static readonly float4 Loop = Colors.Hex(0x48D17A);
 
+    /// <summary>
+    /// The pads in SAMPLER mode.
+    /// </summary>
+    public static readonly float4 Sampler = Colors.Hex(0xB57BE0);
+
     public static readonly float4 DeckA = Colors.Hex(0x2F8FFF);
     public static readonly float4 DeckB = Colors.Hex(0xEE4444);
 

@@ -45,6 +45,7 @@ static class ControlCatalog
                 [
                     new($"{deck}.play", $"Deck {deck} play", ControlKind.Button, HasLight: true),
                     new($"{deck}.cue", $"Deck {deck} cue", ControlKind.Button, HasLight: true),
+                    new($"{deck}.censor", $"Deck {deck} censor (plays backwards while held, then drops back in where the song would be)", ControlKind.Button),
                     new($"{deck}.sync", $"Deck {deck} sync", ControlKind.Button, HasLight: true),
                     new($"{deck}.load", $"Load deck {deck}", ControlKind.Button),
                     new($"{deck}.pfl", $"Deck {deck} headphones", ControlKind.Button, HasLight: true),
@@ -117,6 +118,7 @@ static class ControlCatalog
         controls.AddRange(
             [
                 new("crossfader", "Crossfader", ControlKind.Fader),
+                new("master", "Master volume", ControlKind.Knob),
                 new("browse", "Browse songs", ControlKind.Encoder),
                 new("browse.folders", "Browse folders", ControlKind.Encoder),
                 new("browse.press", "Open or close folder", ControlKind.Button),

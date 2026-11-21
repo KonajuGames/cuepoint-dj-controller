@@ -84,6 +84,39 @@ public sealed class SlipAndKeyShiftTests : IDisposable
     }
 
     [Fact]
+    public void Censor_plays_backwards_then_drops_back_in_where_the_song_would_be_even_without_slip()
+    {
+        PlayingFromTen();
+
+        _deck.Censor(true);
+        Assert.True(_deck.IsCensoring);
+        Assert.Equal(PlatterMode.Reverse, _deck.Platter);
+        Assert.True(_deck.IsPlaying);
+        // Turning slip on and off meanwhile doesn't lose its place.
+        _deck.Slip = true;
+        _deck.Slip = false;
+        Thread.Sleep(400);
+        _deck.Censor(false);
+
+        Assert.False(_deck.IsCensoring);
+        Assert.False(_deck.IsSlipping);
+        Assert.Equal(PlatterMode.Off, _deck.Platter);
+        Assert.True(_deck.IsPlaying);
+        Assert.InRange(_deck.Position.TotalSeconds, 10.3, 12);
+    }
+
+    [Fact]
+    public void Censor_does_nothing_on_a_deck_that_isn_t_playing()
+    {
+        _deck.Seek(TimeSpan.FromSeconds(10));
+        _deck.Censor(true);
+        Assert.False(_deck.IsCensoring);
+        Assert.Equal(PlatterMode.Off, _deck.Platter);
+        _deck.Censor(false);
+        Assert.InRange(_deck.Position.TotalSeconds, 9.9, 10.1);
+    }
+
+    [Fact]
     public void Without_slip_letting_go_of_a_hotcue_stays_where_it_jumped()
     {
         PlayingFromTen();

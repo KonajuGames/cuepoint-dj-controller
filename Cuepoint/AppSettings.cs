@@ -37,6 +37,13 @@ sealed class AppSettings
     public float HeadphoneVolume { get; set; } = 0.8f;
 
     /// <summary>
+    /// The playback device carrying the main mix to the booth monitors too, or null for none; and their volume.
+    /// </summary>
+    public string? BoothDevice { get; set; }
+
+    public float BoothVolume { get; set; } = 0.8f;
+
+    /// <summary>
     /// The output's buffer size asked for, in sample frames; null for the driver's own.
     /// </summary>
     public int? BufferFrames { get; set; }
@@ -111,6 +118,11 @@ sealed class AppSettings
     /// Lighting software to connect to as well as any found on the network, as host:port; null for none.
     /// </summary>
     public string? Os2lAddress { get; set; }
+
+    /// <summary>
+    /// The file on each sampler pad, in order; null for an empty one.
+    /// </summary>
+    public List<string?>? SamplerSlots { get; set; }
 
     /// <summary>
     /// The folder the music library is made from; null for Windows' own Music folder.

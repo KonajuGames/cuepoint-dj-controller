@@ -1740,6 +1740,7 @@ sealed partial class Deck : IDisposable
         Platter = 1,
         Hotcue = 2,
         Loop = 4,
+        Censor = 8,
     }
 
     bool _slip;
@@ -1763,8 +1764,9 @@ sealed partial class Deck : IDisposable
         set
         {
             _slip = value;
+            // A censor held down keeps its own, to come back from when it's let go.
             if (!value)
-                _slipCauses = SlipCause.None;
+                _slipCauses &= SlipCause.Censor;
         }
     }
 
@@ -1788,12 +1790,12 @@ sealed partial class Deck : IDisposable
     }
 
     /// <summary>
-    /// Starts a slip for <paramref name="cause"/>, from where the deck is, if slip's on and it's playing; one already
-    /// going keeps its place. Returns whether there's a slip for it.
+    /// Starts a slip for <paramref name="cause"/>, from where the deck is, if slip's on (or <paramref name="always"/>)
+    /// and it's playing; one already going keeps its place. Returns whether there's a slip for it.
     /// </summary>
-    bool BeginSlip(SlipCause cause)
+    bool BeginSlip(SlipCause cause, bool always = false)
     {
-        if (!_slip || !IsLoaded || _pcm is null)
+        if (!_slip && !always || !IsLoaded || _pcm is null)
             return false;
         if (!IsSlipping)
         {

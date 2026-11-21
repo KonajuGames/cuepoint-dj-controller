@@ -89,6 +89,13 @@ sealed class OptionsDialog : Panel
     public event Action? BufferSizeChanged;
 
     readonly Dropdown<string?> _headphones;
+    readonly Dropdown<string?> _booth;
+    readonly Slider _boothVolume;
+
+    /// <summary>
+    /// The booth output was moved to another device, or turned off; the one chosen, or null.
+    /// </summary>
+    public event Action<string?>? BoothChanged;
     readonly Label _controller;
     readonly Checkbox _lighting;
     readonly Checkbox _largeListText;
@@ -305,6 +312,43 @@ sealed class OptionsDialog : Panel
             }
         );
 
+        // And the booth's: the main mix again on another sound card, for monitors in the DJ booth, at its own volume.
+        var boothRow = Row("Booth output", body);
+        _booth = boothRow.Add(
+            new Dropdown<string?>(body)
+            {
+                Width = 300,
+                Items = () => [null, .. AudioEngine.PlaybackDevices().Select(device => device.Name).Where(name => name != engine.OutputDevice)],
+                Text = name => name ?? "Off",
+            }
+        );
+        _booth.Chosen += name =>
+        {
+            engine.UseBoothDevice(name);
+            BoothChanged?.Invoke(engine.ChosenBoothDevice);
+        };
+        var boothVolumeRow = Row("Booth volume", body);
+        _boothVolume = boothVolumeRow.Add(
+            new Slider
+            {
+                Length = 300,
+                Thickness = 18,
+                HandleLength = 10,
+                DefaultValue = 0.8f,
+                Value = engine.BoothVolume,
+                ShowFill = true,
+                FocusColor = Theme.Focus,
+                Tooltip = "How loud the booth monitors are, whatever the master volume. Double-click for the usual level",
+            }
+        );
+        _boothVolume.Changed += slider => engine.BoothVolume = slider.Value;
+        _content.Add(
+            new Label(body, "The main mix again, before the master volume, on a sound card of its own for monitors in the DJ booth.")
+            {
+                Color = Theme.Muted,
+            }
+        );
+
         var bufferRow = Row("Buffer size", body);
         _bufferSize = bufferRow.Add(
             new Dropdown<int?>(body)
@@ -446,6 +490,9 @@ sealed class OptionsDialog : Panel
         _crossfaderCurve.Selected = _engine.CrossfaderCurve;
         _output.Selected = _engine.OutputDevice;
         _headphones.Selected = _engine.HeadphoneDevice;
+        _booth.Selected = _engine.ChosenBoothDevice;
+        if (!_boothVolume.IsDragging)
+            _boothVolume.Value = _engine.BoothVolume;
         _bufferSize.Selected = _engine.BufferFrames;
         _latency.Text = LatencyText(_engine.OutputBuffer, _engine.OutputMixAhead);
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";

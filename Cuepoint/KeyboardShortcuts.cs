@@ -38,6 +38,7 @@ static class KeyboardShortcuts
                 Row("Halve / double the loop", (k, _) => $"{L(k.HalveLoop)} / {L(k.DoubleLoop)}"),
                 Row("Loop in / out", (k, _) => $"Shift + {L(k.HalveLoop)} / {L(k.DoubleLoop)}"),
                 Row("Reloop", (k, _) => $"Shift + {L(k.Loop)}"),
+                Row("Censor: backwards while held", (k, _) => $"Ctrl + {L(k.Play)}"),
                 Row("Tempo down / up (hold); both resets it", (k, _) => $"{L(k.TempoDown)} / {L(k.TempoUp)}"),
                 Row("Volume down / up (hold)", (k, _) => $"Shift + {L(k.TempoDown)} / {L(k.TempoUp)}"),
                 Row("Nudge slower / faster (hold)", (k, _) => $"Ctrl + Shift + {L(k.TempoDown)} / {L(k.TempoUp)}"),

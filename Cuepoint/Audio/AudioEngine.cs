@@ -66,6 +66,144 @@ sealed unsafe class AudioEngine : IDisposable
 
     MixRecorder? _recorder;
 
+    float _masterVolume = 1;
+    float _appliedMaster = 1;
+
+    // The booth output: a sound card of its own carrying the main mix, at its own volume, to monitors in the DJ booth.
+    SdlHeadphones? _booth;
+    string? _chosenBooth;
+    long _retryBoothAt;
+    float _boothVolume = 0.8f;
+    float[] _boothMix = [];
+
+    /// <summary>
+    /// The booth's volume, from 0 to 1, through the same taper as the faders. It's the booth's own, so the master
+    /// volume doesn't move it.
+    /// </summary>
+    public float BoothVolume
+    {
+        get => _boothVolume;
+        set => Volatile.Write(ref _boothVolume, Math.Clamp(value, 0, 1));
+    }
+
+    /// <summary>
+    /// The device the booth output is on, while it's open.
+    /// </summary>
+    public string? BoothDevice => _booth?.DeviceName;
+
+    /// <summary>
+    /// The device chosen for the booth, or null for none; <see cref="BoothDevice"/> is null instead while it's missing.
+    /// </summary>
+    public string? ChosenBoothDevice => _chosenBooth;
+
+    /// <summary>
+    /// Sends the main mix to the playback device called <paramref name="deviceName"/> too, as a booth output, or stops
+    /// with null. Not the main output's own device, which already has it. Returns false, with the booth off, if there's
+    /// no such device or it won't open; it's still the one chosen, gone to when it's plugged in.
+    /// </summary>
+    public bool UseBoothDevice(string? deviceName)
+    {
+        _chosenBooth = deviceName == _output?.DeviceName ? null : deviceName;
+        if (_chosenBooth is null)
+        {
+            SetBooth(null);
+            return true;
+        }
+        return OpenBooth(_chosenBooth);
+    }
+
+    bool OpenBooth(string deviceName)
+    {
+        if (Find(deviceName) is not { } id)
+        {
+            SetBooth(null);
+            return false;
+        }
+        SdlAudioSpec format;
+        Mixer.GetFormat(&format);
+        try
+        {
+            SetBooth(new SdlHeadphones(id, deviceName, format, "the booth"));
+            return true;
+        }
+        catch (SdlException)
+        {
+            SetBooth(null);
+            return false;
+        }
+    }
+
+    // Swapped with the mix held, so the audio thread never writes to one that's going.
+    void SetBooth(SdlHeadphones? booth)
+    {
+        SdlHeadphones? old;
+        Mixer.Lock();
+        try
+        {
+            (old, _booth) = (_booth, booth);
+        }
+        finally
+        {
+            Mixer.Unlock();
+        }
+        if (old != booth)
+            old?.Dispose();
+    }
+
+    /// <summary>
+    /// The mix for the booth, before the master volume (and the limiter, which it's under), at the booth's volume and
+    /// held within full scale. On the audio thread.
+    /// </summary>
+    internal static void BoothMix(ReadOnlySpan<float> mix, Span<float> output, float volume)
+    {
+        var gain = Deck.VolumeTaper(Math.Clamp(volume, 0, 1));
+        for (var i = 0; i < output.Length; i++)
+            output[i] = Math.Clamp((i < mix.Length ? mix[i] : 0) * gain, -1, 1);
+    }
+
+    void FeedBooth(float* samples, int count)
+    {
+        if (_booth is not { } booth)
+            return;
+        if (_boothMix.Length < count)
+            Array.Resize(ref _boothMix, count);
+        BoothMix(new ReadOnlySpan<float>(samples, count), _boothMix.AsSpan(0, count), Volatile.Read(ref _boothVolume));
+        fixed (float* mix = _boothMix)
+            booth.Write(mix, count);
+    }
+
+    /// <summary>
+    /// The master volume knob, from 0 (silent) to 1 (the mix as it is). It turns the whole mix down before the
+    /// limiter, so what's measured, recorded and heard in the speakers and the headphones' main mix all follow it.
+    /// </summary>
+    public float MasterVolume
+    {
+        get => Volatile.Read(ref _masterVolume);
+        set => Volatile.Write(ref _masterVolume, Math.Clamp(value, 0, 1));
+    }
+
+    /// <summary>
+    /// The gain for the master knob at <paramref name="position"/>, as a volume pot's taper: its square, so halfway is
+    /// about 12 dB down, as on a DJ mixer, rather than a barely noticeable 6.
+    /// </summary>
+    public static float MasterGain(float position) => position * position;
+
+    /// <summary>
+    /// Turns <paramref name="count"/> interleaved samples down by the master volume, easing from the last buffer's
+    /// gain to this one's so a turn of the knob doesn't click. On the audio thread.
+    /// </summary>
+    internal void ApplyMaster(float* samples, int count, int channels)
+    {
+        var target = MasterGain(MasterVolume);
+        var from = _appliedMaster;
+        _appliedMaster = target;
+        if (from == 1 && target == 1)
+            return;
+        var frames = Math.Max(1, count / Math.Max(1, channels));
+        for (var i = 0; i < count; i++)
+            samples[i] *= from + (target - from) * ((float)(i / channels + 1) / frames);
+    }
+
     /// <summary>
     /// Where the final mix is recorded to, as it goes to the speakers; none if null. Set it to null before stopping
     /// the recorder, so the audio thread lets go of it.
@@ -358,6 +496,8 @@ sealed unsafe class AudioEngine : IDisposable
                 missing.Add(output);
             if (_chosenHeadphones is { } phones && phones != _chosenOutput && HeadphoneDevice != phones)
                 missing.Add(phones);
+            if (_chosenBooth is { } booth && BoothDevice != booth && !missing.Contains(booth))
+                missing.Add(booth);
             return missing.Count == 0 ? null : string.Join(" and ", missing) + " missing";
         }
     }
@@ -438,6 +578,28 @@ sealed unsafe class AudioEngine : IDisposable
                     news.Add($"{_chosenHeadphones} is back, so the headphones are on it again");
                 else
                     _retryHeadphonesAt = retryLater;
+                break;
+        }
+
+        // The booth, on a sound card of its own, comes and goes as headphones on one do.
+        var boothStep = DeviceRecovery.ForHeadphones(
+            _chosenBooth,
+            _chosenOutput,
+            BoothDevice,
+            _chosenBooth is not null && present.Contains(_chosenBooth),
+            now >= _retryBoothAt
+        );
+        switch (boothStep)
+        {
+            case HeadphoneStep.Drop:
+                SetBooth(null);
+                news.Add($"Lost {_chosenBooth}, the booth's sound card; the booth will be back on it when it is");
+                break;
+            case HeadphoneStep.Return:
+                if (OpenBooth(_chosenBooth!))
+                    news.Add($"{_chosenBooth} is back, so the booth is on it again");
+                else
+                    _retryBoothAt = retryLater;
                 break;
         }
         return news;
@@ -698,7 +860,7 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// SDL_mixer's callback once the mix is done, on the audio thread: limits it, measures it, records it if it's
+    /// SDL_mixer's callback once the mix is done, on the audio thread: turns it to the master volume, limits it, measures it, records it if it's
     /// being recorded, and sends the headphones their mix of it and the cue.
     /// </summary>
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
@@ -707,6 +869,9 @@ sealed unsafe class AudioEngine : IDisposable
         try
         {
             var engine = (AudioEngine)GCHandle.FromIntPtr((nint)userData).Target!;
+            if (spec->channels == AudioOutput.CHANNELS)
+                engine.FeedBooth(samples, count);
+            engine.ApplyMaster(samples, count, spec->channels);
             if (spec->channels == AudioOutput.CHANNELS)
                 engine.Limiter.Process(new Span<float>(samples, count));
             engine.Meter.Measure(samples, count, spec->channels);
@@ -749,6 +914,8 @@ sealed unsafe class AudioEngine : IDisposable
         Mixer.Dispose();
         _headphones?.Dispose();
         _headphones = null;
+        _booth?.Dispose();
+        _booth = null;
         if (_self.IsAllocated)
             _self.Free();
         SdlMixer.Quit();

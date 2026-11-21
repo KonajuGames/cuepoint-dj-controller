@@ -16,6 +16,9 @@ enum PlatterMode
 
     /// <summary>Spinning back, slowing to a stop, then paused there.</summary>
     Backspin,
+
+    /// <summary>Censor: playing backwards at the deck's speed for as long as it's held.</summary>
+    Reverse,
 }
 
 /// <summary>
@@ -82,7 +85,7 @@ sealed partial class Deck
     /// </summary>
     public void Scratch(int steps)
     {
-        if (!_touched || Platter == PlatterMode.Backspin || steps == 0)
+        if (!_touched || Platter is PlatterMode.Backspin or PlatterMode.Reverse || steps == 0)
             return;
         if (Platter != PlatterMode.Held && !TakePlatter(PlatterMode.Held, IsPlaying ? _speed : 0))
             return;
@@ -102,6 +105,33 @@ sealed partial class Deck
         _motor = false;
         Volatile.Write(ref _backspinSlowing, BACKSPIN_SPEED / seconds);
     }
+
+    /// <summary>
+    /// Censor, held down or let go: while it's held, the song plays backwards at the deck's speed, as a word to be kept
+    /// off the air is; let go, the deck drops back in where the song would have got to, playing on, as if under slip
+    /// whether <see cref="Slip"/> is on or not. Only while the deck's playing, and not over a scratch or backspin.
+    /// </summary>
+    public void Censor(bool held)
+    {
+        if (held)
+        {
+            if (!IsPlaying || IsPlatterActive || !BeginSlip(SlipCause.Censor, always: true))
+                return;
+            if (!TakePlatter(PlatterMode.Reverse, -Volatile.Read(ref _speed)))
+                _slipCauses &= ~SlipCause.Censor;
+            return;
+        }
+        if (!_slipCauses.HasFlag(SlipCause.Censor))
+            return;
+        // The censor's own slip brings it back, whatever slip's set to: it holds the place under a scratch's too.
+        _slipCauses &= ~SlipCause.Platter;
+        EndSlip(SlipCause.Censor);
+    }
+
+    /// <summary>
+    /// Whether censor's held, playing the song backwards.
+    /// </summary>
+    public bool IsCensoring => _slipCauses.HasFlag(SlipCause.Censor);
 
     /// <summary>
     /// Takes the sound over from the track, from where it is, in <paramref name="mode"/>, moving at
@@ -224,6 +254,10 @@ sealed partial class Deck
                     velocity += Volatile.Read(ref _backspinSlowing) * chunkSeconds;
                     if (velocity >= 0)
                         (velocity, settled) = (0, true);
+                    break;
+                case PlatterMode.Reverse:
+                    // Backwards at the deck's speed, the tempo fader and a pause included, until it's let go.
+                    velocity = -motorSpeed;
                     break;
             }
 
