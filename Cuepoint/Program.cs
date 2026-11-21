@@ -813,19 +813,29 @@ static void Run()
         }
     };
 
-    void Load(Song song, Deck deck)
+    // A song loaded by hand comes off Up next, if it's waiting there: set once Auto-Mix is made.
+    Action<Song>? loadedByHand = null;
+
+    // Shift + 1 or 2: the first song still to come in Up next, onto that deck. Set once Auto-Mix is made.
+    Action<Deck>? loadNextUp = null;
+
+    // Returns whether it's loading, as a playing deck can be protected.
+    bool Load(Song song, Deck deck, bool byHand = true)
     {
         // One stray key press or drag mustn't stop the music.
         if (settings.ProtectPlayingDecks && deck.IsAudible)
         {
             screen.Log($"Deck {deck.Name} is playing, so {song.Title} wasn't loaded: pause it or turn it down first");
-            return;
+            return false;
         }
         // Analysis goes to the front of the queue, so the deck has its gain and tempo as soon as possible.
         analyser.Request(song);
         deck.BeginLoad(song.Path, $"{song.Artist} - {song.Title}");
         history.Add(song);
         screen.Log($"Deck {deck.Name}: loading {song.Artist} - {song.Title}");
+        if (byHand)
+            loadedByHand?.Invoke(song);
+        return true;
     }
 
     browser.LoadRequested += (song, deckName) => Load(song, decks.First(deck => deck.Name == deckName));
@@ -1159,6 +1169,12 @@ static void Run()
                 else if (controllerDialog?.Escape() != true)
                     screen.Options.Close();
                 break;
+            case GlfwKey.Number1 when pressed && (mods & GlfwModifier.Shift) != 0:
+                loadNextUp?.Invoke(deckA);
+                break;
+            case GlfwKey.Number2 when pressed && (mods & GlfwModifier.Shift) != 0:
+                loadNextUp?.Invoke(deckB);
+                break;
             case GlfwKey.Number1 when pressed && browser.SelectedSong is { } song:
                 Load(song, deckA);
                 break;
@@ -1459,8 +1475,31 @@ static void Run()
         [new MixDeck(deckA, 0), new MixDeck(deckB, 1)],
         () => audio.Crossfader,
         value => audio.Crossfader = value,
-        (song, deck) => Load(song, ((MixDeck)deck).Deck)
+        (song, deck) => Load(song, ((MixDeck)deck).Deck, byHand: false)
     );
+    loadedByHand = song => autoMix.TakeLoaded(song.Path);
+
+    // Songs put on Up next: on the end of whatever list Auto-Mix has, analysed first, as it'll want them.
+    void AddToUpNext(IReadOnlyList<Song> songs)
+    {
+        if (songs.Count == 0)
+            return;
+        analyser.LookUp(songs);
+        analyser.Request(songs);
+        autoMix.Add(songs);
+        screen.ShowAutoMix();
+        screen.Log(songs.Count == 1 ? $"Added {songs[0].Title} to {autoMix.Name}" : $"Added {songs.Count} songs to {autoMix.Name}");
+    }
+    screen.AutoMix.SongsDropped += AddToUpNext;
+
+    // It comes off the list as it loads.
+    loadNextUp = deck =>
+    {
+        if (autoMix.NextWaiting is { } song)
+            Load(song, deck);
+        else
+            screen.Log(autoMix.Songs.Count == 0 ? "Up next is empty: right-click songs and choose Add to Up next" : "Nothing's waiting in Up next");
+    };
     autoMix.Log += screen.Log;
     screen.AutoMix.Mix = autoMix;
     screen.AutoMix.PlayPressed += () =>
@@ -1503,9 +1542,13 @@ static void Run()
                     }
                     autoMix.Stop("Replaced");
                     analyser.LookUp(songs);
+                    // What could trip the set up, said before it starts: those not analysed yet are on their way.
+                    var check = SetCheck.Of(paths, songs, SetCheck.DriveThere);
                     analyser.Request(songs);
                     autoMix.Open(node.Name, songs);
                     screen.ShowAutoMix();
+                    if (!check.AllGood)
+                        screen.Log($"{node.Name}: {check.Summary}{(check.NotAnalysed > 0 ? " They're being analysed now." : "")}");
                 }
             );
         }
@@ -1516,6 +1559,32 @@ static void Run()
     }
 
     MenuItem AutoMixFor(LibraryNode node) => new("Open in Auto-Mix", () => OpenInAutoMix(node), Enabled: (node.SongPaths?.Invoke().Count ?? 0) > 0);
+
+    // Before a set: whether a list's songs are all there and analysed, with the chance to analyse those that aren't.
+    MenuItem CheckFor(LibraryNode node) =>
+        new(
+            "Check for a set",
+            () =>
+            {
+                var paths = node.SongPaths?.Invoke() ?? [];
+                library.LoadSongsAt(
+                    paths,
+                    songs =>
+                    {
+                        analyser.LookUp(songs);
+                        var check = SetCheck.Of(paths, songs, SetCheck.DriveThere);
+                        var unanalysed = songs.Where(song => song.Analysis is null).ToList();
+                        if (check.AllGood)
+                            screen.Log($"{node.Name}: {check.Summary}");
+                        else if (unanalysed.Count > 0)
+                            confirmation.Show($"{node.Name} isn't quite ready", check.Summary, "Analyse them", () => screen.Log($"Analysing {analyser.QueueAll(unanalysed)} songs from {node.Name}"), "Not now", () => { });
+                        else
+                            confirmation.Show($"{node.Name} isn't quite ready", check.Summary, "OK", () => { });
+                    }
+                );
+            },
+            Enabled: (node.SongPaths?.Invoke().Count ?? 0) > 0
+        );
 
     // Looks under a folder for exact copies, in the background, and lists them.
     MenuItem FindDuplicatesIn(string folder) =>
@@ -1648,6 +1717,7 @@ static void Run()
                     new MenuItem("Edit search...", () => prompt.Show("What should it find?", smart.Search, SmartPlaylists.CheckSearch, search => smartPlaylists.SetSearch(smart, search))),
                     ExportFor(node),
                     AutoMixFor(node),
+                    CheckFor(node),
                     new MenuItem(
                         "Delete...",
                         () =>
@@ -1698,6 +1768,7 @@ static void Run()
                 [
                     new MenuItem("Rename...", () => RenameVirtualFolder(folder)),
                     AutoMixFor(node),
+                    CheckFor(node),
                     SeratoCuesFor(node),
                     ExportFor(node),
                     new MenuItem(
@@ -1730,7 +1801,7 @@ static void Run()
             );
         // Lists, filters, and Rekordbox's playlists and Serato's crates: the songs they list.
         else if (node.HasSongs)
-            menu.Show(point, node.Kind == LibraryNodeKind.Imported ? [AutoMixFor(node), SeratoCuesFor(node), ExportFor(node)] : [SeratoCuesFor(node)]);
+            menu.Show(point, node.Kind == LibraryNodeKind.Imported ? [AutoMixFor(node), CheckFor(node), SeratoCuesFor(node), ExportFor(node)] : [SeratoCuesFor(node)]);
     };
 
     screen.FolderTree.AcceptsDrop = (node, payload) => node.Folder is not null && payload is IReadOnlyList<Song> { Count: > 0 };
@@ -1811,6 +1882,7 @@ static void Run()
         menu.Show(
             at,
             [
+                new MenuItem(songs.Count > 1 ? $"Add {songs.Count} songs to Up next" : "Add to Up next", () => AddToUpNext(songs), Enabled: songs.Count > 0),
                 new MenuItem(
                     preview.Song is { } hearing && songs.Contains(hearing) ? "Stop preview" : "Preview in headphones",
                     () => TogglePreview(songs[0]),
@@ -1913,7 +1985,7 @@ static void Run()
             deck.KeyLocked = state.KeyLocked;
             deck.Slip = state.Slip;
             restoring[deck] = (resume ? left.PositionAt(state, DateTime.UtcNow) : state.Position, resume && state.Playing, state.KeyShift);
-            Load(song, deck);
+            Load(song, deck, byHand: false);
         }
         if (restoring.Count > 0)
             screen.Log(

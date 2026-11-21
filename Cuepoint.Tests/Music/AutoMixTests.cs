@@ -680,17 +680,97 @@ public sealed class AutoMixTests
         Assert.True(rig.Mix.Total.TotalSeconds > 300);
     }
 
+    static string Titles(AutoMix mix) => string.Join(" ", mix.Songs.Select(song => song.Title.Replace("Song ", "")));
+
+    static Song Extra(string name) => Song($@"C:\Music\{name}.mp3", title: $"Song {name}");
+
     [Fact]
-    public void Starting_again_after_it_s_stopped_goes_from_the_top()
+    public void Before_it_starts_the_list_can_be_added_to_reordered_and_cut()
     {
-        var rig = new Rig().Started();
-        rig.Run(5);
+        var rig = new Rig(4);
+
+        rig.Mix.Add([Extra("x")], before: 1);
+        Assert.Equal("1 x 2 3 4", Titles(rig.Mix));
+        rig.Mix.Move([3, 4], 0);
+        Assert.Equal("3 4 1 x 2", Titles(rig.Mix));
+        // Moving down counts the rows in their old places: before the 2, which is now last.
+        rig.Mix.Move([0], 4);
+        Assert.Equal("4 1 x 3 2", Titles(rig.Mix));
+        Assert.Equal(2, rig.Mix.Remove([1, 2]));
+        Assert.Equal("4 3 2", Titles(rig.Mix));
+    }
+
+    [Fact]
+    public void While_it_runs_what_s_playing_and_loaded_next_stays_put()
+    {
+        var rig = new Rig(4).Started();
+        rig.Run(0.1);
+
+        // Song 1 is playing and song 2 is loaded on deck B, so they stay where they are.
+        Assert.Equal(1, rig.Mix.Locked);
+        Assert.Equal(0, rig.Mix.Remove([0, 1]));
+        rig.Mix.Move([3], 0);
+        Assert.Equal("1 2 4 3", Titles(rig.Mix));
+        rig.Mix.Add([Extra("x")], before: 0);
+        Assert.Equal("1 2 x 4 3", Titles(rig.Mix));
+
+        // And the mix carries on in the new order.
+        rig.Run(300);
+        Assert.Equal("Song x", rig.Loads[^1].Song.Title);
+    }
+
+    [Fact]
+    public void Songs_added_to_nothing_make_up_next()
+    {
+        var mix = new Rig(0).Mix;
+        mix.Open("", []);
+        mix.Add([Extra("x"), Extra("y")]);
+        Assert.Equal(AutoMix.UP_NEXT, mix.Name);
+        Assert.Equal("x y", Titles(mix));
+    }
+
+    [Fact]
+    public void A_song_loaded_by_hand_comes_off_the_list()
+    {
+        var rig = new Rig(3);
+        Assert.Equal("Song 1", rig.Mix.NextWaiting?.Title);
+        Assert.True(rig.Mix.TakeLoaded(@"C:\Music\1.mp3"));
+        Assert.Equal("2 3", Titles(rig.Mix));
+        Assert.False(rig.Mix.TakeLoaded(@"C:\Music\nowhere.mp3"));
+    }
+
+    [Fact]
+    public void Started_again_after_a_stop_it_carries_on_from_the_next_song()
+    {
+        var rig = new Rig(3).Started();
         rig.Mix.Stop("Stopped");
-        rig.A.Pause();
+        rig.A.IsAudible = rig.A.IsPlaying = false;
 
+        Assert.True(rig.Mix.IsWaiting(1));
+        Assert.False(rig.Mix.IsWaiting(0));
         Assert.Null(rig.Mix.Start());
+        Assert.Equal(1, rig.Mix.CurrentIndex);
+        Assert.Equal("Song 2", rig.Loads[^1].Song.Title);
+    }
 
-        Assert.Equal(0, rig.Mix.CurrentIndex);
-        Assert.Equal(rig.Mix.Songs[0], rig.Loads[^1].Song);
+    [Fact]
+    public void A_song_s_intro_and_outro_are_its_sparse_ends_to_the_bar()
+    {
+        var bar = 4 * 60.0 / 125;
+        var (introEnd, outroStart) = TransitionPlanner.Sections(Song_(125, AMinor, levels: Beats(125, introEnd: 80, outroFrom: 220)));
+
+        Assert.InRange(introEnd!.Value, 80 - bar, 80 + bar);
+        Assert.InRange(outroStart!.Value, 220 - bar, 220 + bar);
+        // Each on a downbeat.
+        var grid = BeatGrid.Constant(125, FIRST_BEAT, 300);
+        Assert.True(grid.IsBarStart(Math.Round(grid.BeatNumberAt(introEnd.Value))));
+        Assert.True(grid.IsBarStart(Math.Round(grid.BeatNumberAt(outroStart.Value))));
+    }
+
+    [Fact]
+    public void A_song_full_on_from_end_to_end_has_no_intro_or_outro()
+    {
+        Assert.Equal((null, null), TransitionPlanner.Sections(Song_(125, AMinor)));
+        Assert.Equal((null, null), TransitionPlanner.Sections(new MixSong(null, 300, 0, Beats(125))));
     }
 }

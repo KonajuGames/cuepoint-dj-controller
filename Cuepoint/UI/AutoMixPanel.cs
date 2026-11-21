@@ -9,9 +9,11 @@ namespace Cuepoint.UI;
 sealed record AutoMixRow(int Index, Song Song);
 
 /// <summary>
-/// The panel beside the song list for an auto-mix: a tab down its left edge that folds it away, a small toolbar saying
-/// how far through it is with a play/pause button, and the songs in order, the one playing picked out. It raises events
-/// rather than doing anything itself. Call <see cref="Update"/> once a frame.
+/// The panel beside the song list for an auto-mix, or for Up next, a queue of songs to load by hand or mix: a tab down
+/// its left edge that folds it away, a small toolbar saying how far through it is with a play/pause button, and the
+/// songs in order, the one playing picked out and those played or loaded next dimmed. Songs dragged onto it from the
+/// song list go on the end; those still to come can be dragged into another order, or taken out with Delete. It
+/// raises events rather than doing anything itself. Call <see cref="Update"/> once a frame.
 /// </summary>
 sealed class AutoMixPanel : Panel
 {
@@ -39,6 +41,7 @@ sealed class AutoMixPanel : Panel
     readonly Image _unfoldIcon;
     readonly ListColumn<AutoMixRow> _titleColumn;
     IReadOnlyList<Song> _listed = [];
+    string _listedName = "";
     int _shownIndex = -1;
 
     public ListView<AutoMixRow> List { get; }
@@ -64,6 +67,11 @@ sealed class AutoMixPanel : Panel
     /// The cross was pressed, to close it.
     /// </summary>
     public event Action? CloseRequested;
+
+    /// <summary>
+    /// Songs were dropped on it from the song list, to go on the end.
+    /// </summary>
+    public event Action<IReadOnlyList<Song>>? SongsDropped;
 
     public AutoMixPanel(Font body, Font bold, Images images)
     {
@@ -97,8 +105,20 @@ sealed class AutoMixPanel : Panel
         _close = Flat("Close Auto-Mix", images.Cross);
         _close.Clicked += _ => CloseRequested?.Invoke();
 
-        List = new ListView<AutoMixRow>(body) { EmptyText = "No songs", AlternateRow = Colors.Hex(0xFFFFFF, 0.03f) };
-        float4? Pick(AutoMixRow row) => row.Index == Mix?.CurrentIndex && Mix.IsRunning ? Theme.Accent : row.Index < Mix?.CurrentIndex ? Theme.Muted : null;
+        List = new ListView<AutoMixRow>(body)
+        {
+            EmptyText = "Drag songs here",
+            AlternateRow = Colors.Hex(0xFFFFFF, 0.03f),
+            CanReorder = true,
+            DragLabel = row => row.Song.Title,
+        };
+        List.Reordered += (rows, before) => Mix?.Move(rows.Select(row => row.Index).ToList(), before);
+        List.DeleteRequested += rows => Mix?.Remove(rows.Select(row => row.Index));
+        float4? Pick(AutoMixRow row) =>
+            Mix is not { } mix ? null
+            : row.Index == mix.CurrentIndex && mix.IsRunning ? Theme.Accent
+            : !mix.IsWaiting(row.Index) ? Theme.Muted
+            : null;
         _titleColumn = new ListColumn<AutoMixRow>("Title", 160, row => row.Song.Title) { Color = Pick, Resizable = false };
         List.Columns.Add(new ListColumn<AutoMixRow>("#", 36, row => (row.Index + 1).ToString()) { AlignRight = true, Color = Pick, Resizable = false });
         List.Columns.Add(_titleColumn);
@@ -109,6 +129,25 @@ sealed class AutoMixPanel : Panel
         _scroll.Add(List);
         List.ScrollOwner = _scroll;
         _status = Add(new Label(body) { Color = Theme.Muted });
+    }
+
+    // Songs from the song list, not this list's own rows, which it reorders itself.
+    public override bool CanDrop(object payload, float2 point) => payload is IReadOnlyList<Song> { Count: > 0 };
+
+    public override void Drop(object payload, float2 point)
+    {
+        if (payload is IReadOnlyList<Song> { Count: > 0 } songs)
+            SongsDropped?.Invoke(songs);
+    }
+
+    public override void Draw(Batch batch)
+    {
+        base.Draw(batch);
+        if (IsDropTarget)
+        {
+            batch.AddRect(ScreenPosition, Size, Theme.Fade(Theme.Accent, 0.1f));
+            batch.AddBorder(ScreenPosition, Size, 2, Theme.Accent);
+        }
     }
 
     static string Length(Song song) => song.Duration is { } time ? $"{(int)time.TotalMinutes}:{time.Seconds:00}" : "";
@@ -122,9 +161,12 @@ sealed class AutoMixPanel : Panel
             return;
         if (mix.Songs != _listed)
         {
+            // An edit keeps the place; another list starts at its top.
             _listed = mix.Songs;
             List.Items = mix.Songs.Select((song, i) => new AutoMixRow(i, song)).ToList();
-            _scroll.ScrollTo(float2.Zero);
+            if (mix.Name != _listedName)
+                _scroll.ScrollTo(float2.Zero);
+            _listedName = mix.Name;
         }
         _name.Text = mix.Name;
         _track.Text = $"{(mix.CurrentIndex < 0 ? 0 : mix.CurrentIndex + 1)} / {mix.Songs.Count}";

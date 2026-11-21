@@ -266,6 +266,28 @@ static class TransitionPlanner
     static double BarSeconds(BeatGrid grid) => BeatGrid.BEATS_PER_BAR * 60 / grid.MainBpm;
 
     /// <summary>
+    /// Where a song's intro ends and its outro starts, in seconds: the bars at either end with sparse bass, as a
+    /// transition looks for, to mix in and out over. Null for an end that hasn't one, and for both if the song's sparse
+    /// all through, or not analysed.
+    /// </summary>
+    public static (double? IntroEnd, double? OutroStart) Sections(MixSong song)
+    {
+        if (song.Analysis is not { } analysis)
+            return (null, null);
+        var grid = analysis.Grid;
+        var first = FirstDownbeat(grid);
+        var intro = IntroBars(song, grid, first);
+        var end = AudibleEnd(song);
+        var outro = OutroBars(song, grid, end);
+        var lastBar = first + Math.Floor((grid.BeatNumberAt(end) - first) / BeatGrid.BEATS_PER_BAR) * BeatGrid.BEATS_PER_BAR;
+        var introEnd = grid.TimeOfBeat(first + intro * BeatGrid.BEATS_PER_BAR);
+        var outroStart = grid.TimeOfBeat(lastBar - outro * BeatGrid.BEATS_PER_BAR);
+        if (introEnd >= outroStart)
+            return (null, null);
+        return (intro > 0 ? introEnd : null, outro > 0 ? outroStart : null);
+    }
+
+    /// <summary>
     /// The number of the first downbeat in the song.
     /// </summary>
     static double FirstDownbeat(BeatGrid grid)

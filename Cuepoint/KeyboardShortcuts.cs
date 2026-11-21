@@ -67,6 +67,7 @@ static class KeyboardShortcuts
         new("Move a fader a quarter as fast", "Ctrl with its key"),
         new("Load the selected song onto deck A / B", "1 / 2"),
         new("Load it onto a free deck", "Enter"),
+        new("Load the next song in Up next onto deck A / B", "Shift + 1 / 2"),
         new("Move through the songs", "Up / Down, Page Up / Down, Home / End"),
         new("Move through the folders; open one out", "Shift + Up / Down, Shift + Left / Right"),
         new("Search", "Ctrl + F; then Enter for the songs, Esc to clear"),

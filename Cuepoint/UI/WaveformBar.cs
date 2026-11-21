@@ -75,6 +75,17 @@ sealed class WaveformBar : Slider
     public float4 RegionColor { get; set; } = Colors.Hex(0x48D17A);
 
     /// <summary>
+    /// The song's intro, from the start to where it ends, and its outro, from where it starts to the end, in seconds:
+    /// shown as a strip along the bottom in <see cref="SectionColor"/>, with an edge where each meets the body of the
+    /// song, to mix in and out over. Null for an end with none.
+    /// </summary>
+    public (float? IntroEnd, float? OutroStart) Sections { get; set; }
+
+    public float4 SectionColor { get; set; } = Colors.Hex(0x5AC8D9);
+
+    const float SECTION_HEIGHT = 3;
+
+    /// <summary>
     /// Where to shade from to the end, in <see cref="WarningColor"/>, for a song about to run out; none if null.
     /// </summary>
     public float? WarningFrom { get; set; }
@@ -177,6 +188,7 @@ sealed class WaveformBar : Slider
         }
 
         DrawRegion(batch, left);
+        DrawSections(batch, left);
         DrawWarning(batch, left);
         DrawGrid(batch, left);
         DrawPins(batch, left);
@@ -242,6 +254,24 @@ sealed class WaveformBar : Slider
         batch.AddRect(new float2(start, ScreenPosition.Y), new float2(end - start, Size.Y), Faded(Theme.Fade(RegionColor, 0.35f)));
         batch.AddRect(new float2(start, ScreenPosition.Y), new float2(1, Size.Y), Faded(RegionColor));
         batch.AddRect(new float2(end - 1, ScreenPosition.Y), new float2(1, Size.Y), Faded(RegionColor));
+    }
+
+    void DrawSections(Batch batch, float left)
+    {
+        if (Max <= Min)
+            return;
+        float X(float seconds) => MathF.Round(left + OffsetOf(Math.Clamp((seconds - Min) / (Max - Min), 0, 1)));
+        var bottom = ScreenPosition.Y + Size.Y - SECTION_HEIGHT;
+        var color = Faded(SectionColor);
+        void Strip(float from, float to, float edge)
+        {
+            batch.AddRect(new float2(from, bottom), new float2(MathF.Max(1, to - from), SECTION_HEIGHT), Faded(Theme.Fade(SectionColor, 0.6f)));
+            batch.AddRect(new float2(edge, ScreenPosition.Y + Size.Y / 2), new float2(1, Size.Y / 2), color);
+        }
+        if (Sections.IntroEnd is { } introEnd)
+            Strip(X(Min), X(introEnd), X(introEnd) - 1);
+        if (Sections.OutroStart is { } outroStart)
+            Strip(X(outroStart), X(Max), X(outroStart));
     }
 
     void DrawFlags(Batch batch, float left)

@@ -1,5 +1,6 @@
 using Brutal.Numerics;
 using Cuepoint.Audio;
+using Cuepoint.Audio.Analysis;
 using Cuepoint.Music;
 
 namespace Cuepoint.UI;
@@ -701,6 +702,7 @@ sealed class DeckPanel : Panel
             _overview.Detail = null;
             _overview.MemoryCues = [];
             _overview.Grid = null;
+            _overview.Sections = (null, null);
             _overview.Flags = [];
             _overview.Region = null;
             _overview.Pins = [];
@@ -746,6 +748,7 @@ sealed class DeckPanel : Panel
         _overview.Detail = _deck.Detail;
         _overview.MemoryCues = _deck.MemoryCues;
         _overview.Grid = _deck.Analysis?.Grid;
+        _overview.Sections = Sections();
         _overview.Pins = _grid?.Pins ?? [];
         _overview.Max = (float)_deck.Duration.TotalSeconds;
         // While it's being dragged the slider leads and the deck follows, so don't pull it back.
@@ -1108,13 +1111,39 @@ sealed class DeckPanel : Panel
         }
     }
 
-    // Several songs dragged at once load the first.
-    public override bool CanDrop(object payload, float2 point) => payload is IReadOnlyList<Song> { Count: > 0 };
+    // Several songs dragged at once load the first, from the song list or Up next.
+    public override bool CanDrop(object payload, float2 point) => payload is IReadOnlyList<Song> { Count: > 0 } or IReadOnlyList<AutoMixRow> { Count: > 0 };
 
     public override void Drop(object payload, float2 point)
     {
         if (payload is IReadOnlyList<Song> { Count: > 0 } songs)
             SongDropped?.Invoke(this, songs[0]);
+        else if (payload is IReadOnlyList<AutoMixRow> { Count: > 0 } rows)
+            SongDropped?.Invoke(this, rows[0].Song);
+    }
+
+    // The song's intro and outro, worked out again only when its analysis or waveform changes.
+    (TrackAnalysis? Analysis, DetailWaveform? Detail, (float?, float?) Sections) _sections;
+
+    (float? IntroEnd, float? OutroStart) Sections()
+    {
+        var (analysis, detail) = (_deck.Analysis, _deck.Detail);
+        if (_sections.Analysis != analysis || _sections.Detail != detail)
+        {
+            (float?, float?) found = (null, null);
+            if (analysis is not null && detail is not null)
+            {
+                var song = new MixSong(analysis, _deck.Duration.TotalSeconds, 0, (start, end) =>
+                {
+                    var (peak, bass, mids, treble) = detail.Between(start, end);
+                    return new BandLevels(peak, bass, mids, treble);
+                });
+                var (introEnd, outroStart) = TransitionPlanner.Sections(song);
+                found = ((float?)introEnd, (float?)outroStart);
+            }
+            _sections = (analysis, detail, found);
+        }
+        return _sections.Sections;
     }
 
     static string Format(TimeSpan time) =>

@@ -293,18 +293,110 @@ sealed class AutoMix
     static double LengthOf(Song song) => (song.Duration ?? TimeSpan.FromSeconds(song.Analysis?.Grid.Duration ?? 0)).TotalSeconds;
 
     /// <summary>
+    /// What the list is called when songs are added to it before anything's opened: it's a queue to load by hand, or
+    /// to mix.
+    /// </summary>
+    public const string UP_NEXT = "Up next";
+
+    /// <summary>
+    /// The last song in the list that can't be moved or taken out, as it's played, playing or loaded to come in next;
+    /// -1 while it isn't running, when any can.
+    /// </summary>
+    public int Locked => !IsRunning ? -1 : Math.Max(CurrentIndex, _nextAsked ? _next : _nextToTry - 1);
+
+    /// <summary>
+    /// Whether the song at <paramref name="index"/> is still to come: not played, playing or loaded to come in next.
+    /// Before it's started, they all are; once it's stopped, those after where it got to.
+    /// </summary>
+    public bool IsWaiting(int index) => index > Math.Max(Locked, IsRunning ? -1 : CurrentIndex);
+
+    /// <summary>
+    /// Raised whenever the list changes, by an edit or by opening another.
+    /// </summary>
+    public event Action? SongsChanged;
+
+    /// <summary>
+    /// Puts <paramref name="songs"/> in the list before <paramref name="before"/> (at the end if null), though never
+    /// ahead of what's playing or loaded next, which it carries on with first.
+    /// </summary>
+    public void Add(IReadOnlyList<Song> songs, int? before = null)
+    {
+        if (songs.Count == 0)
+            return;
+        var at = Math.Clamp(before ?? Songs.Count, Locked + 1, Songs.Count);
+        var list = Songs.ToList();
+        list.InsertRange(at, songs);
+        if (Name.Length == 0)
+            Name = UP_NEXT;
+        Changed(list);
+    }
+
+    /// <summary>
+    /// Takes the songs at <paramref name="indices"/> out of the list, but not one that's played, playing or loaded to
+    /// come in next. Returns how many it took.
+    /// </summary>
+    public int Remove(IEnumerable<int> indices)
+    {
+        var gone = indices.Where(i => i > Locked && i < Songs.Count).ToHashSet();
+        if (gone.Count == 0)
+            return 0;
+        // Where it got to stays with its song, past one taken out ahead of it after a stop.
+        if (!IsRunning && CurrentIndex >= 0)
+            CurrentIndex -= gone.Count(i => i < CurrentIndex);
+        Changed(Songs.Where((_, i) => !gone.Contains(i)).ToList());
+        return gone.Count;
+    }
+
+    /// <summary>
+    /// Moves the songs at <paramref name="indices"/>, in their order, to before the song now at
+    /// <paramref name="before"/> (the end for <see cref="Songs"/>' count), keeping clear of those that can't move.
+    /// </summary>
+    public void Move(IReadOnlyList<int> indices, int before)
+    {
+        var moving = indices.Where(i => i > Locked && i < Songs.Count).Distinct().Order().ToList();
+        if (moving.Count == 0)
+            return;
+        var at = Math.Clamp(before, Locked + 1, Songs.Count) - moving.Count(i => i < before);
+        var list = Songs.Where((_, i) => !moving.Contains(i)).ToList();
+        list.InsertRange(Math.Clamp(at, Locked + 1, list.Count), moving.Select(i => Songs[i]));
+        Changed(list);
+    }
+
+    /// <summary>
+    /// The first song still to come, for loading by hand; null if there's none.
+    /// </summary>
+    public Song? NextWaiting => Enumerable.Range(0, Songs.Count).Where(IsWaiting).Select(i => Songs[i]).FirstOrDefault();
+
+    /// <summary>
+    /// Takes the first of the songs still to come at <paramref name="path"/> out of the list, as it's been loaded by
+    /// hand. Returns whether there was one.
+    /// </summary>
+    public bool TakeLoaded(string path)
+    {
+        var index = Enumerable.Range(0, Songs.Count).FirstOrDefault(i => IsWaiting(i) && string.Equals(Songs[i].Path, path, StringComparison.OrdinalIgnoreCase), -1);
+        return index >= 0 && Remove([index]) > 0;
+    }
+
+    void Changed(IReadOnlyList<Song> songs)
+    {
+        Songs = songs;
+        SongsChanged?.Invoke();
+    }
+
+    /// <summary>
     /// Makes <paramref name="songs"/> what's to be mixed, from the top. Not while one's running.
     /// </summary>
     public void Open(string name, IReadOnlyList<Song> songs)
     {
         if (IsRunning)
             throw new InvalidOperationException("Auto-Mix is running");
-        (Name, Songs, CurrentIndex, Status, _played) = (name, songs, -1, "", 0);
+        (Name, CurrentIndex, Status, _played) = (name, -1, "", 0);
+        Changed(songs);
     }
 
     /// <summary>
-    /// Starts from the top: the mixer set straight and the first song on the first deck. Returns why it can't, if it
-    /// can't, leaving everything as it was.
+    /// Starts from the first song still to come (the top, unless it's been stopped partway): the mixer set straight
+    /// and that song on the first deck. Returns why it can't, if it can't, leaving everything as it was.
     /// </summary>
     public string? Start()
     {
@@ -315,6 +407,7 @@ sealed class AutoMix
         if (_decks.FirstOrDefault(deck => deck.IsAudible) is { } playing)
             return $"Deck {playing.Name} is playing. Stop it or turn it down first";
 
+        var first = CurrentIndex >= 0 && CurrentIndex + 1 < Songs.Count ? CurrentIndex + 1 : 0;
         foreach (var deck in _decks)
         {
             deck.Pause();
@@ -326,12 +419,12 @@ sealed class AutoMix
         }
         (_current, _other) = (_decks[0], _decks[1]);
         _setCrossfader(_current.CrossfaderEnd);
-        (CurrentIndex, _next, _nextToTry, _nextAsked, _plan, _incomingPlaying, _resynced, _currentEnded, _played, _glideLeft, IsPaused) = (0, -1, 1, false, null, false, false, false, 0, 0, false);
+        (CurrentIndex, _next, _nextToTry, _nextAsked, _plan, _incomingPlaying, _resynced, _currentEnded, _played, _glideLeft, IsPaused) = (first, -1, first + 1, false, null, false, false, false, 0, 0, false);
         _failed.Clear();
         _loading.Clear();
         Status = "Loading the first song";
         _phase = Phase.LoadingFirst;
-        LoadOnto(_current, Songs[0]);
+        LoadOnto(_current, Songs[first]);
         LeaveAsIs();
         return null;
     }
