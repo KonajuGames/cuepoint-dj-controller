@@ -1,5 +1,6 @@
 using Brutal.Numerics;
 using Cuepoint.Audio;
+using Cuepoint.Audio.Analysis;
 using Cuepoint.Music;
 
 namespace Cuepoint.UI;
@@ -290,6 +291,67 @@ sealed class ScrollingWaveform : Element
             var text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "No track loaded";
             batch.AddText(_font, text, new float2(at.X + badge.X + 8, MathF.Round(at.Y + (badge.Y - _font.Measure(text).Y) / 2)), Theme.Faint);
         }
+        else if (_deck.Analysis?.Grid is { } grid)
+        {
+            DrawCounter(batch, grid, new float2(at.X + badge.X + 6, at.Y), badge.Y);
+        }
+    }
+
+    /// <summary>
+    /// How close to the end of a countdown it turns orange, in beats: the last bar.
+    /// </summary>
+    const int COUNTDOWN_WARNING_BEATS = 4;
+
+    /// <summary>
+    /// Where the deck is in bars and beats, as "Bar 12.3", and beside it the bars and beats to the next hotcue or memory
+    /// cue ahead, as "Hot cue 3 in 4.2" (or its name, if it has one), orange in the last bar. Each on a strip of the
+    /// background, so they read over the waveform.
+    /// </summary>
+    void DrawCounter(Batch batch, BeatGrid grid, float2 at, float height)
+    {
+        var (bar, beat) = Quantizing.BarAndBeat(grid, _shown);
+        var x = Chip(batch, $"Bar {bar}.{beat}", at, height, Theme.Text);
+
+        if (NextCue(_deck.Hotcues, _deck.MemoryCues, _shown) is not var (cueAt, hotcue))
+            return;
+        var beats = Quantizing.BeatsUntil(grid, _shown, cueAt);
+        var name = hotcue < 0 ? "Memory cue" : _deck.DetailOf(hotcue)?.Name is { Length: > 0 } named ? named : $"Hot cue {hotcue + 1}";
+        Chip(batch, $"{name} in {Quantizing.FormatBars(beats)}", new float2(x + 4, at.Y), height, beats <= COUNTDOWN_WARNING_BEATS ? Theme.Accent : Theme.Muted);
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> on a strip of the background, its text centred down <paramref name="height"/>; returns
+    /// where the strip ends.
+    /// </summary>
+    float Chip(Batch batch, string text, float2 at, float height, float4 color)
+    {
+        var size = _font.Measure(text);
+        var strip = new float2(MathF.Ceiling(size.X) + 8, height);
+        batch.AddRect(at, strip, Theme.Fade(Background, 0.85f));
+        batch.AddText(_font, text, new float2(at.X + 4, MathF.Round(at.Y + (height - size.Y) / 2)), color);
+        return at.X + strip.X;
+    }
+
+    /// <summary>
+    /// The first hotcue or memory cue after <paramref name="seconds"/>, and which hotcue it is (from 0), or -1 for a
+    /// memory cue. A hotcue wins over a memory cue in the same place, having a number (and maybe a name) to show.
+    /// </summary>
+    internal static (double At, int Hotcue)? NextCue(IReadOnlyList<TimeSpan?> hotcues, IReadOnlyList<TimeSpan> memoryCues, double seconds)
+    {
+        // Not one the deck's just on, quantised a hair early.
+        const double PAST = 0.002;
+        (double At, int Hotcue)? next = null;
+        for (var i = 0; i < hotcues.Count; i++)
+        {
+            if (hotcues[i] is { } cue && cue.TotalSeconds > seconds + PAST && (next is null || cue.TotalSeconds < next.Value.At))
+                next = (cue.TotalSeconds, i);
+        }
+        foreach (var cue in memoryCues)
+        {
+            if (cue.TotalSeconds > seconds + PAST && (next is null || cue.TotalSeconds < next.Value.At - PAST))
+                next = (cue.TotalSeconds, -1);
+        }
+        return next;
     }
 
     void DrawBeats(Batch batch, double position, float centre)

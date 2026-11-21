@@ -44,4 +44,33 @@ static class Quantizing
     }
 
     static double Fraction(double value) => value - Math.Floor(value);
+
+    /// <summary>
+    /// Which bar and beat <paramref name="seconds"/> is in, both from 1: bars counted from the one holding the song's
+    /// first beat, so the bars before it (in an intro the grid runs back into) are 0, -1 and so on.
+    /// </summary>
+    public static (long Bar, int Beat) BarAndBeat(BeatGrid grid, double seconds)
+    {
+        var beat = (long)Math.Floor(grid.BeatNumberAt(seconds) + 1e-6);
+        var first = (long)Math.Floor(grid.BeatNumberAt(grid.FirstBeat) + 1e-6);
+        var sinceFirstBar = beat - (first - grid.BarPosition(first));
+        return (Math.DivRem(sinceFirstBar, BeatGrid.BEATS_PER_BAR) switch
+        {
+            // Rounded down, so the beats before the first bar count back through whole bars too.
+            var (bars, rest) when rest < 0 => bars - 1,
+            var (bars, _) => bars,
+        } + 1, grid.BarPosition(beat) + 1);
+    }
+
+    /// <summary>
+    /// How many beats from <paramref name="seconds"/> until <paramref name="target"/>, counting the one it's partway
+    /// through: 1 from anywhere in the beat before it. 0 once it's there or past.
+    /// </summary>
+    public static int BeatsUntil(BeatGrid grid, double seconds, double target) =>
+        Math.Max(0, (int)Math.Ceiling(grid.BeatNumberAt(target) - grid.BeatNumberAt(seconds) - 1e-6));
+
+    /// <summary>
+    /// <paramref name="beats"/> as bars and beats, as DJ software counts them down: 18 is "4.2", four bars and two.
+    /// </summary>
+    public static string FormatBars(int beats) => $"{beats / BeatGrid.BEATS_PER_BAR}.{beats % BeatGrid.BEATS_PER_BAR}";
 }

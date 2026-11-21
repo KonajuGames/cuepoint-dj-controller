@@ -99,4 +99,46 @@ public class QuantizingTests
         Assert.Equal(-1, JumpPads.Direction(1));
         Assert.Equal(1, JumpPads.Direction(6));
     }
+
+    [Theory]
+    // The song's first beat starts bar 1, and 10.3 s is just past the twentieth beat after it: the first of bar 6.
+    [InlineData(0.25, 1, 1)]
+    [InlineData(1.80, 1, 4)]
+    [InlineData(10.3, 6, 1)]
+    // Before the first beat, the grid counts back into bar 0.
+    [InlineData(0.1, 0, 4)]
+    public void The_bar_and_beat_count_from_the_song_s_first_bar(double seconds, long bar, int beat)
+    {
+        Assert.Equal((bar, beat), Quantizing.BarAndBeat(Steady, seconds));
+    }
+
+    [Fact]
+    public void Bars_start_on_the_downbeat()
+    {
+        // With the downbeat two beats on, the song's first beat is the third of its bar, and the next bar starts after it.
+        var grid = Steady.WithDownbeat(2);
+        Assert.Equal((1L, 3), Quantizing.BarAndBeat(grid, 0.25));
+        Assert.Equal((2L, 1), Quantizing.BarAndBeat(grid, 1.25));
+    }
+
+    [Theory]
+    [InlineData(10.25, 12.25, 4)]
+    // Partway through a beat counts it.
+    [InlineData(10.30, 12.25, 4)]
+    [InlineData(12.20, 12.25, 1)]
+    [InlineData(12.25, 12.25, 0)]
+    [InlineData(13.00, 12.25, 0)]
+    public void Beats_until_a_cue_count_the_one_under_way(double seconds, double target, int expected)
+    {
+        Assert.Equal(expected, Quantizing.BeatsUntil(Steady, seconds, target));
+    }
+
+    [Theory]
+    [InlineData(18, "4.2")]
+    [InlineData(16, "4.0")]
+    [InlineData(3, "0.3")]
+    public void A_countdown_reads_as_bars_and_beats(int beats, string expected)
+    {
+        Assert.Equal(expected, Quantizing.FormatBars(beats));
+    }
 }

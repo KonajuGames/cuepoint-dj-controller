@@ -28,13 +28,9 @@ sealed class BeatTrackers(IReadOnlyList<Deck> decks, Font font) : Element
     /// </summary>
     public static (int Beat, int Bar) Place(BeatGrid grid, double seconds)
     {
-        var beat = (long)Math.Floor(grid.BeatNumberAt(seconds) + 1e-6);
-        var first = (long)Math.Floor(grid.BeatNumberAt(grid.FirstBeat) + 1e-6);
-        var firstBar = first - grid.BarPosition(first);
-        // Rounded down, so the bars before the first count back 3, 2, 1, 0 as well.
-        var sinceFirst = beat - firstBar;
-        var bar = sinceFirst >= 0 ? sinceFirst / BeatGrid.BEATS_PER_BAR : (sinceFirst - BeatGrid.BEATS_PER_BAR + 1) / BeatGrid.BEATS_PER_BAR;
-        return (grid.BarPosition(beat), (int)(((bar % 4) + 4) % 4));
+        // The bars before the first count back 3, 2, 1, 0 as well.
+        var (bar, beat) = Quantizing.BarAndBeat(grid, seconds);
+        return (beat - 1, (int)((((bar - 1) % 4) + 4) % 4));
     }
 
     public override float2 Measure() =>
