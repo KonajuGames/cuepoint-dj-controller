@@ -53,6 +53,8 @@ Each song is analysed in the background as it comes into view in the list. The a
 - its loudness, for automatic gain
 - its energy, from 1 to 10, from how loud and fast it is and how much of it is full-on rather than breakdowns, in the Energy column; songs analysed before this was worked out get theirs in idle time, once every song has been analysed
 
+**Tempo range:** tempos are found from 80 to 160 BPM, and **Tempo range** in the options shows them in another octave instead, from 60–120 to 100–200: 88–176 reads drum & bass at 174 rather than 87, and 70–140 hip-hop at 90 rather than 180. A tempo outside the range is doubled or halved into it, beat grid and all, as the song's looked up, so nothing's analysed again and changing it shows every song afresh straight away. A beat grid fixed by hand, or brought in from Rekordbox or Serato, is left as it is.
+
 **Analysing when idle:** while no deck is playing, songs not analysed yet are done one at a time, those in the list you're looking at first and then the music library, so finding them by tempo or key doesn't wait for them to be scrolled to. It can be turned off in the options.
 
 **Analysing a whole list:** right-click a song and choose **Analyse All** to queue every song in the list that isn't analysed yet. A bar above the list shows how far it's got, and the cross beside it stops it. Songs scrolled into view still go first.
@@ -94,6 +96,7 @@ Each song is analysed in the background as it comes into view in the list. The a
   - resizable columns, which can be shown or hidden
   - marks the songs loaded on each deck and those played this session
 - **Editing details:** right-click a song and choose **Edit details...** to change its title, artist and album. They're written into the file's own tags, as File Explorer does, so other apps see them too, and its analysis, cues and notes stay with it rather than it being analysed again. Windows writes MP3, M4A and FLAC tags; for a kind of file it can't, it says so.
+- **Editing several songs' details:** with several songs selected, **Edit details...** sets their artist or album together, each box starting with what they all share, or blank where they differ. A box left blank leaves each song's own, and their titles stay as they are. The files are written in the background, and the status line says how many were saved and why any weren't.
 - **Ratings, comments and colours:** right-click songs to rate them from one to five, tag them with a colour or write a comment, on as many as are selected. The Rating, Colour and Comment columns appear when first used, and they're hidden again from the column headings' menu. They're kept with the rest of what's known about a song, and go with it when it's exported.
 - **Smart playlists:** saved searches that keep themselves up to date. Right-click **Smart playlists** in the folder list and choose **New smart playlist...**, starting from what's in the search box, then rename, change or delete one from its own menu. Each looks through the music library and every song in the database on the drives plugged in, even in folders not opened this run.
 - **Preview in the headphones:** right-click a song and choose **Preview in headphones**, or press Ctrl + P, to hear it from the list without a deck. A bar under the list moves through it. Only the headphones hear it, and it needs them set up.

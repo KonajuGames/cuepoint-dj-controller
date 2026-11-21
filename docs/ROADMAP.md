@@ -18,7 +18,8 @@ order to build in.
 | — | BEAT LOOP and KEY SHIFT pads, the DDJ-400's FX ON following CH SELECT, sync lock kept after a crash | `1eb46f7` |
 | 6 | Suggested next, past sets kept with `played:` and `notplayed:` searches, ordering Auto-Mix's list for mixing | `33bb825` |
 | — | Auto-Mix's Order list: for mixing, by title, artist, tempo, key or energy, or shuffled | `d540af9` |
-| 7 | Editing hot cues, auto cue, moving a loop, gate and bit-crusher, master FX, a microphone with talkover | this commit |
+| 7 | Editing hot cues, auto cue, moving a loop, gate and bit-crusher, master FX, a microphone with talkover | `fc52ec9` |
+| 8 | Editing several songs' artist and album at once, a tempo range in the options | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -47,7 +48,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 | 7 | **More effects**: a beat-timed gate, a bit-crusher, and effects across the whole mix | M–L | The gate and crusher join echo, reverb and flanger in `DeckEffects`; a master effect needs a slot in the mix after the decks, before the limiter. |
 | 8 | **Microphone with talkover** | M | An input mixed into the main mix with its own level, and talkover turning the music down while it's spoken into. Needs an input device chosen in the options, as the outputs are. |
 
-## Phase 8: Library
+## Phase 8: Library (done)
 
 | # | Item | Size | Notes |
 |---|---|---|---|
@@ -65,7 +66,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Order and dependencies
 
-- **Next:** Phase 8, (9) first.
+- **Next:** Phase 9, (14) or (12) first: both small. Genre was left out of (9), as Cuepoint doesn't keep genres yet.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.
 - **Biggest:** live streaming (11), for its encoder and network handling; master effects (7) touch the mix itself.

@@ -104,6 +104,11 @@ sealed class AppSettings
     public bool AutoCue { get; set; } = true;
 
     /// <summary>
+    /// The slowest tempo songs are shown at; the fastest is just under twice it.
+    /// </summary>
+    public double TempoRangeMin { get; set; } = 80;
+
+    /// <summary>
     /// The saved searches listed under Smart playlists.
     /// </summary>
     public List<Music.SmartPlaylist> SmartPlaylists { get; set; } = [];

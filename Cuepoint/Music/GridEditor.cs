@@ -142,7 +142,7 @@ sealed class GridEditor
         {
             if (!_database.HasGridEdit(path))
                 return;
-            var analysed = song is not null && _database.TryGetAnalysed(song, out var stored, out _) && stored is not null ? stored : analysis;
+            var analysed = song is not null && _database.TryGetAnalysed(song, out var stored, out _) && stored is not null ? TempoRange.Fold(stored) : analysis;
             Use(path, song, analysed, null);
             Log?.Invoke($"Deck {Deck.Name}: grid back as analysed, {analysed.Grid}");
             return;

@@ -1,5 +1,6 @@
 using Brutal.Numerics;
 using Cuepoint.Audio;
+using Cuepoint.Audio.Analysis;
 
 namespace Cuepoint.UI;
 
@@ -41,6 +42,13 @@ sealed class OptionsDialog : Panel
     /// Whether songs not analysed yet are analysed while nothing's playing.
     /// </summary>
     public Checkbox AnalyseWhenIdle { get; }
+
+    /// <summary>
+    /// Another tempo range was chosen: the slowest tempo of the octave songs are shown in.
+    /// </summary>
+    public event Action<double>? TempoRangeChanged;
+
+    readonly Dropdown<double> _tempoRange;
 
     public Checkbox AutoCue { get; }
 
@@ -270,6 +278,20 @@ sealed class OptionsDialog : Panel
                 Tooltip = "Songs in the list you're looking at, then the music library, are analysed one at a time while no deck is playing, so finding them by tempo or key works without scrolling to them first",
             }
         );
+
+        var tempoRow = Row("Tempo range", body);
+        _tempoRange = tempoRow.Add(
+            new Dropdown<double>(body)
+            {
+                Width = 160,
+                Items = () => TempoRange.Choices,
+                Text = TempoRange.Name,
+                Selected = TempoRange.Min,
+                Tooltip = "Songs' tempos are doubled or halved into this range, beat grid and all: 88–176 shows drum & bass at 174 rather than 87, 70–140 shows hip-hop at 90 rather than 180. A grid fixed by hand, or from other DJ software, is left as it is",
+            }
+        );
+        _tempoRange.Chosen += min => TempoRangeChanged?.Invoke(min);
+        _content.Add(new Label(body, "The octave analysed tempos are shown in; nothing's analysed again.") { Color = Theme.Muted });
 
         var limiterRow = Row("Master limiter", body);
         _limiter = limiterRow.Add(new Checkbox(body));
@@ -581,6 +603,7 @@ sealed class OptionsDialog : Panel
         _headphones.Selected = _engine.HeadphoneDevice;
         _booth.Selected = _engine.ChosenBoothDevice;
         _microphone.Selected = _engine.ChosenMicrophoneDevice;
+        _tempoRange.Selected = TempoRange.Min;
         if (!_boothVolume.IsDragging)
             _boothVolume.Value = _engine.BoothVolume;
         _bufferSize.Selected = _engine.BufferFrames;

@@ -322,6 +322,20 @@ sealed class LibraryAnalyser : IDisposable
     }
 
     /// <summary>
+    /// Puts what the database knows on every song it's been put on, again: after the tempo range is changed, say.
+    /// </summary>
+    public void LookAgainAll()
+    {
+        lock (_lock)
+        {
+            var songs = _lookedUp.ToList();
+            _lookedUp.Clear();
+            foreach (var song in songs)
+                LookUp(song);
+        }
+    }
+
+    /// <summary>
     /// Puts what the database knows about <paramref name="song"/> on it again, after that's changed.
     /// </summary>
     public void LookAgain(Song song)

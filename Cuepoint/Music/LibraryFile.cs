@@ -454,10 +454,10 @@ sealed class LibraryFile
 
     /// <summary>
     /// <paramref name="analysis"/> of the song at <paramref name="path"/>, with its beat grid as fixed by hand if it
-    /// was.
+    /// was, or else with its tempo in the range chosen (see <see cref="TempoRange"/>).
     /// </summary>
     public TrackAnalysis WithEdits(string path, TrackAnalysis analysis) =>
-        GetGridEdit(path, analysis.Grid.Duration) is { } edit ? analysis with { Grid = edit.Grid } : analysis;
+        GetGridEdit(path, analysis.Grid.Duration) is { } edit ? analysis with { Grid = edit.Grid } : TempoRange.Fold(analysis);
 
     /// <summary>
     /// The beat grid fixed by hand for the song at <paramref name="path"/>, with its pins, if it was;

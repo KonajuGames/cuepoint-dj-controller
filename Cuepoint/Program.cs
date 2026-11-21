@@ -107,6 +107,8 @@ static void Run()
     var keyMap = KeyMap.Load(keysPath);
     keyMap.Apply();
     var settings = AppSettings.Load(settingsPath);
+    // Before any song's looked up, as its tempo's shown in this range.
+    TempoRange.Min = settings.TempoRangeMin;
 
     // The look, before anything's made, as elements take their colours as they're made.
     Theme.Use(Enum.TryParse<ThemeKind>(settings.Theme, out var look) ? look : ThemeKind.Dark);
@@ -1051,6 +1053,20 @@ static void Run()
     {
         settings.ProtectPlayingDecks = box.Checked;
         SaveSettings();
+    };
+    // Another tempo range: every song shown afresh in it, on the decks too, and the lists sorted and searched again.
+    screen.Options.TempoRangeChanged += min =>
+    {
+        TempoRange.Min = settings.TempoRangeMin = min;
+        SaveSettings();
+        analyser.LookAgainAll();
+        foreach (var deck in decks)
+        {
+            if (deck.FilePath is { } path && library.Find(path)?.Analysis is { } shown)
+                deck.Analysis = shown;
+        }
+        browser.Refilter();
+        screen.Log($"Tempos shown from {TempoRange.Name(TempoRange.Min)}");
     };
     screen.Options.AutoCue.Checked = settings.AutoCue;
     foreach (var deck in decks)
@@ -2314,6 +2330,57 @@ static void Run()
         );
     }
 
+    // Several songs' artist or album, written into each file's tags in the background, then what's known of each
+    // moved on to its file as it now is.
+    void EditManyDetails(IReadOnlyList<Song> songs)
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        string? Shared(Func<Song, string> of) => songs.Select(of).Distinct(StringComparer.Ordinal).Count() == 1 ? of(songs[0]) : null;
+        details.ShowMany(
+            songs.Count,
+            Shared(song => song.Artist),
+            Shared(song => song.Album),
+            (artist, album) =>
+            {
+                var paths = songs.Select(song => song.Path).ToList();
+                screen.Log($"Saving the details of {songs.Count} songs...");
+                library.Background.Start(
+                    () => paths.Select(path => OperatingSystem.IsWindows() ? WindowsTags.Write(path, null, artist, album) : "Not on Windows").ToList(),
+                    errors =>
+                    {
+                        var saved = 0;
+                        string? firstError = null;
+                        for (var i = 0; i < songs.Count; i++)
+                        {
+                            if (errors[i] is { } error)
+                            {
+                                firstError ??= $"{Path.GetFileName(songs[i].Path)}: {error}";
+                                continue;
+                            }
+                            var song = songs[i];
+                            var file = new FileInfo(song.Path);
+                            if (artist.Length > 0)
+                                song.Artist = artist;
+                            if (album.Length > 0)
+                                song.Album = album;
+                            database.Retag(song, file.Length, file.LastWriteTimeUtc);
+                            (song.Size, song.Modified) = (file.Length, file.LastWriteTimeUtc);
+                            saved++;
+                        }
+                        browser.Refilter();
+                        screen.Log(
+                            firstError is null
+                                ? $"Saved the details of {saved} songs"
+                                : $"Saved the details of {saved} of {songs.Count} songs; couldn't save the rest, as {firstError}"
+                        );
+                    },
+                    () => screen.Log("Couldn't save the songs' details")
+                );
+            }
+        );
+    }
+
     MenuItem RatingMenu(IReadOnlyList<Song> songs) =>
         new(
             "Rating",
@@ -2357,7 +2424,17 @@ static void Run()
                     Enabled: songs.Count > 0 && audio.HasHeadphones
                 ),
                 SamplerMenu(songs),
-                new MenuItem("Edit details...", () => EditDetails(songs[0]), Enabled: songs.Count == 1 && OperatingSystem.IsWindows()),
+                new MenuItem(
+                    "Edit details...",
+                    () =>
+                    {
+                        if (songs.Count == 1)
+                            EditDetails(songs[0]);
+                        else
+                            EditManyDetails(songs);
+                    },
+                    Enabled: songs.Count > 0 && OperatingSystem.IsWindows()
+                ),
                 RatingMenu(songs),
                 ColourMenu(songs),
                 new MenuItem(

@@ -3,9 +3,9 @@ using Brutal.Numerics;
 namespace Cuepoint.UI;
 
 /// <summary>
-/// A song's title, artist and album to change, in a box over the dimmed screen: Tab between them, Enter or Save to
-/// write them into the file's tags, Escape or Cancel to leave them. Whatever stops them being saved is shown under the
-/// boxes, and the dialog stays up.
+/// A song's title, artist and album to change, in a box over the dimmed screen, or several songs' artist and album
+/// together: Tab between them, Enter or Save to write them into the files' tags, Escape or Cancel to leave them.
+/// Whatever stops them being saved is shown under the boxes, and the dialog stays up.
 /// </summary>
 sealed class DetailsDialog : Panel
 {
@@ -16,7 +16,10 @@ sealed class DetailsDialog : Panel
     readonly TextBox _title;
     readonly TextBox _artist;
     readonly TextBox _album;
+    readonly Panel _titleRow;
+    readonly Label _note;
     Action<string, string, string> _save = (_, _, _) => { };
+    bool _many;
 
     public float2 ScreenSize { get; set; }
 
@@ -41,6 +44,7 @@ sealed class DetailsDialog : Panel
         TextBox Field(string name)
         {
             var row = _box.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
+            _lastRow = row;
             row.Add(new Panel { MinSize = new float2(60, 0) }).Add(new Label(body, name) { Color = Theme.Muted });
             var box = row.Add(new TextBox(body) { Width = 340, FocusColor = Theme.Focus });
             box.Submitted += _ => Save();
@@ -49,16 +53,19 @@ sealed class DetailsDialog : Panel
             return box;
         }
         _title = Field("Title");
+        _titleRow = _lastRow!;
         _artist = Field("Artist");
         _album = Field("Album");
-        _problem = _box.Add(new Label(body) { Color = Theme.Warning, MaxWidth = 420 });
-        _box.Add(new Label(body, "Saved in the file's tags; its analysis and cues stay.") { Color = Theme.Muted, MaxWidth = 420 });
+        _problem = _box.Add(new Label(body) { Color = Theme.Warning, MaxWidth = 420, Wrap = true });
+        _note = _box.Add(new Label(body) { Color = Theme.Muted, MaxWidth = 420, Wrap = true });
         var buttons = _box.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
         var save = buttons.Add(new Button(bold, "Save") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
         var cancel = buttons.Add(new Button(bold, "Cancel") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
         save.Clicked += _ => Save();
         cancel.Clicked += _ => Close();
     }
+
+    Panel? _lastRow;
 
     public override bool IsInteractive => true;
     public override bool IsModal => true;
@@ -72,12 +79,39 @@ sealed class DetailsDialog : Panel
     {
         _heading.Text = "Edit details";
         (_title.Text, _artist.Text, _album.Text) = (title, artist, album);
+        (_artist.Placeholder, _album.Placeholder) = ("", "");
+        _note.Text = "Saved in the file's tags; its analysis and cues stay.";
+        (_many, _titleRow.Visible) = (false, true);
         _save = save;
         _problem.Text = "";
         Visible = true;
         _root.Focus(_title);
         _title.SelectAll();
     }
+
+    /// <summary>
+    /// Shows <paramref name="count"/> songs' artist and album to change together, each starting with what they all
+    /// share, or blank if they differ. <paramref name="save"/> takes the artist and album, either blank to leave each
+    /// song's own, and may throw <see cref="InvalidOperationException"/> to say why it couldn't.
+    /// </summary>
+    public void ShowMany(int count, string? artist, string? album, Action<string, string> save)
+    {
+        _heading.Text = $"Edit details of {count} songs";
+        (_title.Text, _artist.Text, _album.Text) = ("", artist ?? "", album ?? "");
+        (_artist.Placeholder, _album.Placeholder) = (artist is null ? "Various: left as they are" : "", album is null ? "Various: left as they are" : "");
+        _note.Text = "Saved in each file's tags; their titles, analysis and cues stay. A box left blank leaves each song's own.";
+        (_many, _titleRow.Visible) = (true, false);
+        _save = (_, newArtist, newAlbum) => save(newArtist, newAlbum);
+        _problem.Text = "";
+        Visible = true;
+        _root.Focus(_artist);
+        _artist.SelectAll();
+    }
+
+    /// <summary>
+    /// Whether it's showing several songs' details, for tests.
+    /// </summary>
+    internal bool IsForMany => _many;
 
     public void Close()
     {
@@ -89,9 +123,14 @@ sealed class DetailsDialog : Panel
 
     void Save()
     {
-        if (string.IsNullOrWhiteSpace(_title.Text))
+        if (!_many && string.IsNullOrWhiteSpace(_title.Text))
         {
             _problem.Text = "A song needs a title";
+            return;
+        }
+        if (_many && string.IsNullOrWhiteSpace(_artist.Text) && string.IsNullOrWhiteSpace(_album.Text))
+        {
+            _problem.Text = "Nothing to change: give them an artist or an album";
             return;
         }
         try
