@@ -119,6 +119,14 @@ sealed class MidiControls : IDisposable
     public Func<Deck, bool>? IsJumpMode { get; set; }
 
     /// <summary>
+    /// A deck's sampler mode button was pressed, to put the pads in SAMPLER mode; and whether that deck's in it, for
+    /// its light.
+    /// </summary>
+    public event Action<Deck>? SamplerModePressed;
+
+    public Func<Deck, bool>? IsSamplerMode { get; set; }
+
+    /// <summary>
     /// A deck's grid mode button was pressed, and whether that deck's grid mode is on, for its light.
     /// </summary>
     public event Action<Deck>? GridModePressed;
@@ -488,6 +496,9 @@ sealed class MidiControls : IDisposable
             case "jump":
                 JumpModePressed?.Invoke(deck);
                 break;
+            case "sampler":
+                SamplerModePressed?.Invoke(deck);
+                break;
             default:
                 if (Hotcue(action) is { } hotcue)
                 {
@@ -638,7 +649,8 @@ sealed class MidiControls : IDisposable
             "grid" => IsGridMode?.Invoke(deck) == true,
             "roll" => IsRollMode?.Invoke(deck) == true,
             "jump" => IsJumpMode?.Invoke(deck) == true,
-            "hotcues" => IsRollMode?.Invoke(deck) != true && IsGridMode?.Invoke(deck) != true && IsJumpMode?.Invoke(deck) != true,
+            "sampler" => IsSamplerMode?.Invoke(deck) == true,
+            "hotcues" => IsRollMode?.Invoke(deck) != true && IsGridMode?.Invoke(deck) != true && IsJumpMode?.Invoke(deck) != true && IsSamplerMode?.Invoke(deck) != true,
             // The beat jump pads light while they're beat jumps, so the mode shows on the controller.
             _ when Jump(action) is not null => IsJumpMode?.Invoke(deck) == true,
             _ when Roll(action) is { } roll => deck.RollBeats == RollPads.Sizes[roll],

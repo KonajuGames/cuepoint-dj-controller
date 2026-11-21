@@ -1151,6 +1151,14 @@ static void Run()
                 jump.Active = true;
         };
         controllers.IsJumpMode = deck => JumpPadsFor(deck)?.Active == true;
+
+        // The controller's SAMPLER button puts the deck's pads in SAMPLER mode to match its own.
+        controllers.SamplerModePressed += deck =>
+        {
+            if (SamplerPadsFor(deck) is { } samples)
+                samples.Active = true;
+        };
+        controllers.IsSamplerMode = deck => SamplerPadsFor(deck)?.Active == true;
         controllers.GridModePressed += deck =>
         {
             if (GridEditorFor(deck) is { } editor)

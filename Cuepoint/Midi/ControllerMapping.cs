@@ -81,6 +81,7 @@ static class ControlCatalog
                     new($"{deck}.roll", $"Deck {deck} roll mode (pads roll loops)", ControlKind.Button, HasLight: true),
                     new($"{deck}.hotcues", $"Deck {deck} hotcue mode (pads back to hotcues)", ControlKind.Button, HasLight: true),
                     new($"{deck}.jump", $"Deck {deck} beat jump mode (pads jump by beats)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.sampler", $"Deck {deck} sampler mode (pads play samples)", ControlKind.Button, HasLight: true),
                 ]
             );
             for (var i = 1; i <= HOTCUES; i++)

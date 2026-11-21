@@ -1,6 +1,6 @@
 # Cuepoint
 
-Cuepoint is a two-deck DJ app for Windows, built for mixing from a library of music files with a keyboard, a mouse or a DJ controller. It analyses every song's tempo, beat grid, key and loudness, keeps the decks in sync, and works with Pioneer's DDJ-SB3 out of the box, including its FX FADE and PAD SCRATCH effects.
+Cuepoint is a two-deck DJ app for Windows, built for mixing from a library of music files with a keyboard, a mouse or a DJ controller. It analyses every song's tempo, beat grid, key and loudness, keeps the decks in sync, and works with Pioneer's DDJ-SB3, DDJ-FLX4 and DDJ-400 out of the box, including the SB3's FX FADE and PAD SCRATCH effects.
 
 ![Cuepoint with a song on each deck: the scrolling waveforms across the top, the decks either side of the mixer, and the folder list and song list below](docs/screenshot.png)
 
@@ -116,6 +116,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 
 - **MIDI controllers:** they're found as they're plugged in. Any control can be learned to any function, and lit buttons follow what the decks are doing. A controller mapped out of the box keeps what you've learned or unbound on top of its built-in mapping, so controls added to the built-in mapping in later versions still arrive.
 - **Pioneer DDJ-SB3:** mapped out of the box. That includes slip (Shift + VINYL), its loop rolls (Shift + FX FADE), beat jumps (Shift + HOT CUE), loop in and out (Shift + 1/2X and 2X), reloop (Shift + AUTO LOOP), the FX FADE transitions (filter sweeps, loop fade out, loop chop and backspins) and the PAD SCRATCH patterns.
+- **Pioneer DDJ-FLX4 and DDJ-400:** mapped out of the box, from Pioneer's own lists of MIDI messages for them, but not yet tried on the hardware. The transport, mixer, browser and jog wheels work as on the SB3 (the wheel's top scratches; with Shift it searches), and the CFX or FILTER knobs are each channel's filter. The pads follow the controller's modes: HOT CUE (Shift clears), PAD FX 1 as loop rolls, BEAT JUMP and SAMPLER, each mode's button putting the deck's pads in that mode here too; KEYBOARD, PAD FX 2, BEAT LOOP and KEY SHIFT have nothing to match yet. IN and OUT set loops, CUE/LOOP CALL halves and doubles them, and Shift + CUE/LOOP CALL ▶ adds or removes a memory cue; the FLX4's 4 BEAT/EXIT starts and leaves a four-beat loop, and the 400's RELOOP/EXIT leaves one (with Shift, reloops). The Beat FX section picks, lengthens and sets the level of both decks' effects; the FLX4's FX ON/OFF turns on the effect of the channel it's set to, and the 400's isn't mapped, as it doesn't say which. MASTER LEVEL is left to the controller's own output.
 - **Lighting:** what each deck is doing, and every beat, is sent to lighting software over [OS2L](https://os2l.org/), including the SoundSwitch extensions. The software is found on the network by itself. While OS2L is on, the title bar shows **OS2L** in green once it's connected, and pulsing orange while it's still looking.
 
 ### While a set is running
