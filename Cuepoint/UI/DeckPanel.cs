@@ -292,10 +292,10 @@ sealed class DeckPanel : Panel
             {
                 MinSize = new float2(64, 30),
                 FocusColor = Theme.Focus,
-                Tooltip = "Match the other deck's tempo, and its beats if both are playing; lit while they match",
+                Tooltip = "Sync lock: follow the other deck's tempo, and its beats while both play, until it's pressed again or this deck's tempo is moved. Lit while it follows; faintly while the tempos just happen to match",
             }
         );
-        _sync.Clicked += _ => _deck.Sync();
+        _sync.Clicked += _ => _deck.SyncLocked = !_deck.SyncLocked;
 
         // The loop: halve it, start or stop it (its size on the button), double it.
         _halveLoop = Add(new Button(bold, "") { Icon = images?.TriangleLeft, MinSize = new float2(26, 30), FocusColor = Theme.Focus, Tooltip = "Halve the loop" });
@@ -850,10 +850,13 @@ sealed class DeckPanel : Panel
         _playPause.Background = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Theme.Control;
         _playPause.HoverBackground = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Theme.ControlHover;
 
-        _sync.Enabled = _deck.CanSync;
+        // Lit while locked, and faintly while the tempos only happen to match.
+        _sync.Enabled = _deck.CanSync || _deck.SyncLocked;
+        var locked = _deck.SyncLocked;
         var inSync = _sync.Enabled && _deck.IsInSync;
-        _sync.Background = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Theme.Control;
-        _sync.HoverBackground = inSync ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Theme.ControlHover;
+        var syncLit = locked ? 0.55f : inSync ? 0.25f : 0f;
+        _sync.Background = syncLit > 0 ? Theme.Mix(Theme.PanelRaised, _color, syncLit) : Theme.Control;
+        _sync.HoverBackground = syncLit > 0 ? Theme.Mix(Theme.PanelRaised, _color, syncLit + 0.15f) : Theme.ControlHover;
     }
 
     /// <summary>

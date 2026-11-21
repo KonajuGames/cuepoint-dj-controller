@@ -251,7 +251,7 @@ sealed class KeyboardControls
         if (key == keys.Play)
             deck.TogglePlay();
         else if (key == keys.Sync)
-            deck.Sync();
+            deck.SyncLocked = !deck.SyncLocked;
         else if (key == keys.Loop && shifted)
             deck.Reloop();
         else if (key == keys.HalveLoop && shifted)

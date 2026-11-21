@@ -11,6 +11,7 @@ It's written in C# on .NET 10. It draws its own interface with Vulkan through [B
 ### Decks
 
 - **Two decks:** play, cue (with a preview while held), sync and key lock on each.
+- **Sync lock:** **SYNC** (C or `,`, or a controller's SYNC) locks a deck to the other: it takes the other's tempo and follows it as it changes, and while both play it keeps to the other's beat too, leaning on its speed rather than jumping, as Auto-Mix does. A deck that starts playing while locked comes in on the beat. SYNC is lit while it's locked, and faintly while the tempos only happen to match. One deck follows at a time, so locking one unlocks the other, which leads. Press SYNC again to let go, or move the locked deck's own tempo, which lets go too.
 - **Cover pictures:** a song's cover, as tagged in an MP3 or M4A (and a FLAC, where Windows reads FLAC tags), shows small beside its title and artist, so which song is on which deck reads at a glance. A song without one leaves a plain square there. Windows decodes the pictures, so this is on Windows only.
 - **Tempo fader:** ±8%, ±16% or ±50%.
 - **Key shift:** a deck's **-** and **+** (beside its key) move the key down or up a semitone, as far as an octave, without changing the tempo, to bring a song into a key that mixes with the other deck. The key shown moves with it. Right-click either to put the key back. A new song starts in its own key.

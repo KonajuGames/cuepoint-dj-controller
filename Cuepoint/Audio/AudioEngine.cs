@@ -299,6 +299,11 @@ sealed unsafe class AudioEngine : IDisposable
     /// The deck <paramref name="deck"/> should sync to: another deck with an analysed song, a playing one if there
     /// is one, or null if there's none.
     /// </summary>
+    /// <summary>
+    /// Every deck but <paramref name="deck"/>.
+    /// </summary>
+    internal IEnumerable<Deck> DecksBesides(Deck deck) => _decks.Where(other => other != deck).ToList();
+
     internal Deck? SyncMasterFor(Deck deck)
     {
         var candidates = _decks.Where(other => other != deck && other.IsLoaded && other.Bpm is not null).ToList();

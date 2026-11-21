@@ -398,7 +398,7 @@ sealed class MidiControls : IDisposable
                 deck.TogglePlay();
                 break;
             case "sync":
-                deck.Sync();
+                deck.SyncLocked = !deck.SyncLocked;
                 break;
             case "load":
                 LoadRequested?.Invoke(deck);
@@ -638,7 +638,7 @@ sealed class MidiControls : IDisposable
             // Steady while playing; flashing while a song's loaded and paused, ready to go.
             "play" => deck.IsPlaying || deck.IsLoaded && FlashOn,
             "cue" => deck.IsLoaded && !deck.IsPlaying,
-            "sync" => deck.IsInSync,
+            "sync" => deck.SyncLocked,
             "pfl" => deck.Headphones,
             "keylock" => deck.KeyLocked,
             "slip" => deck.Slip,

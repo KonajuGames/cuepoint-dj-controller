@@ -108,7 +108,7 @@ sealed class AutoMixPanel : Panel
         List = new ListView<AutoMixRow>(body)
         {
             EmptyText = "Drag songs here",
-            AlternateRow = Theme.Tint(0.03f),
+            AlternateRow = Theme.AlternateRow,
             CanReorder = true,
             DragLabel = row => row.Song.Title,
         };

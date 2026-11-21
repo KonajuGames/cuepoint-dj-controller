@@ -221,7 +221,7 @@ sealed class SongBrowser : Panel
             DragLabel = song => $"{song.Artist} - {song.Title}",
             RowProgress = analyser.ProgressOf,
             ProgressColor = Theme.Fade(Theme.Accent, 0.1f),
-            AlternateRow = Theme.Tint(0.03f),
+            AlternateRow = Theme.AlternateRow,
         };
         // The title takes whatever width the rest leave, so it's the one column that isn't sized by hand.
         _titleColumn = new ListColumn<Song>("Title", 300, song => song.Title) { SortKey = song => Text(song.Title), Resizable = false };

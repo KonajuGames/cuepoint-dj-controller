@@ -674,6 +674,78 @@ sealed partial class Deck : IDisposable
         Bend = 0;
     }
 
+    bool _syncLocked;
+
+    // The tempo the lock last left the fader at, to tell when someone else has moved it; and whether both decks were
+    // playing at the last update, to put this one on the beat as they start to.
+    double _lockedTempo;
+    bool _lockFollowing;
+
+    /// <summary>
+    /// Sync lock, as SYNC lit: this deck keeps to its <see cref="SyncMaster"/>'s tempo, following it as it changes, and
+    /// while both play, to its beat too, leaning on the speed as Auto-Mix does rather than jumping. One deck follows at
+    /// a time, so locking this one unlocks the others, and the deck it follows leads. Moving this deck's own tempo, by
+    /// hand or by anything else, lets go. Turning it on syncs straight away; it can't come on with nothing to follow.
+    /// Kept up by <see cref="Update"/>.
+    /// </summary>
+    public bool SyncLocked
+    {
+        get => _syncLocked;
+        set
+        {
+            if (value == _syncLocked)
+                return;
+            if (!value)
+            {
+                _syncLocked = false;
+                StopFollowing();
+                return;
+            }
+            if (!CanSync)
+                return;
+            foreach (var other in _engine.DecksBesides(this))
+                other.SyncLocked = false;
+            Sync();
+            (_syncLocked, _lockedTempo, _lockFollowing) = (true, _tempo, IsPlaying && SyncMaster is { IsPlaying: true });
+        }
+    }
+
+    /// <summary>
+    /// Keeps a locked deck with the deck it follows: its beat while both play, its tempo otherwise.
+    /// </summary>
+    void UpdateSyncLock()
+    {
+        if (!_syncLocked)
+            return;
+        // Someone else has moved the tempo: they've taken over.
+        if (Math.Abs(_tempo - _lockedTempo) > 1e-9)
+        {
+            SyncLocked = false;
+            return;
+        }
+        if (SyncMaster is not { Bpm: { } masterBpm } master || _analysis?.Grid is not { } grid)
+        {
+            // Nothing to follow for now (the other deck's empty, say), so it waits, still locked.
+            StopFollowing();
+            _lockFollowing = false;
+            return;
+        }
+
+        var following = IsPlaying && master.IsPlaying;
+        if (following && !_lockFollowing)
+            // Both have just started: onto the beat at once, then held there.
+            Sync();
+        if (following)
+            FollowBeat(0);
+        else
+        {
+            StopFollowing();
+            MatchTempo(grid.BpmAt(Position.TotalSeconds), masterBpm);
+        }
+        _lockFollowing = following;
+        _lockedTempo = _tempo;
+    }
+
     /// <summary>
     /// How many seconds further on this deck should be for its beats to land on <paramref name="master"/>'s, less than
     /// half a beat either way; null if one of them hasn't a grid.
@@ -818,6 +890,7 @@ sealed partial class Deck : IDisposable
     {
         UpdatePlatter();
         UpdateRoll();
+        UpdateSyncLock();
         // The effects keep time with the beat coming out, or 120 BPM without one.
         Effects.BeatSeconds = 60 / (Bpm is > 0 and var bpm ? bpm : 120);
         if (IsSlipping)

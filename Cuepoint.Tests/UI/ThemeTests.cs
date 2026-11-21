@@ -34,10 +34,7 @@ public class ThemeTests
         {
             // Body text at the 7:1 of WCAG's AAA, labels at AA's 4.5:1.
             Assert.True(Contrast(look.Text, panel) >= 7, $"{name}: text on {panel}");
-            // Dark's muted labels on its unlit buttons are a shade under, as they've always been; the newer looks
-            // are held to it everywhere.
-            if (name != "Dark" || panel != look.Control)
-                Assert.True(Contrast(look.Muted, panel) >= 4.5, $"{name}: labels on {panel}");
+            Assert.True(Contrast(look.Muted, panel) >= 4.5, $"{name}: labels on {panel}");
         }
     }
 
@@ -55,5 +52,12 @@ public class ThemeTests
         Assert.True(Luminance(Theme.Light.Ink) < 0.01);
         Assert.True(Theme.Light.IsLight);
         Assert.False(Theme.HighContrast.IsLight);
+    }
+
+    [Fact]
+    public void Dark_s_list_rows_are_striped_more_faintly_than_the_others()
+    {
+        Assert.True(Theme.Dark.AlternateRowTint < Theme.Light.AlternateRowTint);
+        Assert.True(Theme.Dark.AlternateRowTint * Theme.Dark.InkStrength < Theme.HighContrast.AlternateRowTint * Theme.HighContrast.InkStrength);
     }
 }
