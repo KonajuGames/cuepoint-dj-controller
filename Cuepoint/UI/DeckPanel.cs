@@ -975,6 +975,25 @@ sealed class DeckPanel : Panel
     }
 
     /// <summary>
+    /// Labels the buttons and pads with the keys for them, as they've been changed to.
+    /// </summary>
+    public void SetKeys(DeckKeyHints? keys, IReadOnlyList<string>? padKeys)
+    {
+        _hints.Clear();
+        if (keys is not null)
+        {
+            foreach (var (button, hint) in new[] { (_cue, keys.Cue), (_playPause, keys.Play), (_sync, keys.Sync), (_halveLoop, keys.HalveLoop), (_loop, keys.Loop), (_doubleLoop, keys.DoubleLoop), (_keyLock, keys.KeyLock) })
+            {
+                button.KeyHint = _compact && button != _keyLock ? null : hint;
+                if (button != _keyLock)
+                    _hints.Add((button, hint));
+            }
+        }
+        for (var i = 0; i < _pads.Count; i++)
+            _pads[i].KeyHint = padKeys is not null && i < padKeys.Count ? padKeys[i] : null;
+    }
+
+    /// <summary>
     /// Shorter buttons without their key hints, or as they were, measured.
     /// </summary>
     void Compact(bool compact)

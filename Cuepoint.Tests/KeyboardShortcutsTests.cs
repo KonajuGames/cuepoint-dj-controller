@@ -1,5 +1,6 @@
 namespace Cuepoint.Tests;
 
+[Collection(AudioEngineTests.NAME)]
 public class KeyboardShortcutsTests
 {
     [Fact]

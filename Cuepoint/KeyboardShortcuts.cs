@@ -63,7 +63,7 @@ static class KeyboardShortcuts
     [
         new(
             "Crossfader left / right (hold); centre",
-            $"{DeckKeys.Label(KeyboardControls.CROSSFADER_LEFT)} / {DeckKeys.Label(KeyboardControls.CROSSFADER_RIGHT)}, {DeckKeys.Label(KeyboardControls.CROSSFADER_CENTRE)}"
+            $"{DeckKeys.Label(KeyboardControls.CrossfaderLeft)} / {DeckKeys.Label(KeyboardControls.CrossfaderRight)}, {DeckKeys.Label(KeyboardControls.CrossfaderCentre)}"
         ),
         new("Move a fader a quarter as fast", "Ctrl with its key"),
         new("Load the selected song onto deck A / B", "1 / 2"),

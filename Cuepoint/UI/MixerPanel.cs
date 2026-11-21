@@ -137,6 +137,15 @@ sealed class MixerPanel : Panel
         Refresh();
     }
 
+    /// <summary>
+    /// Labels each deck's PFL button with its key, as they've been changed to.
+    /// </summary>
+    public void SetPflKeys(IReadOnlyList<string?> keys)
+    {
+        for (var i = 0; i < _channels.Count; i++)
+            _channels[i].Pfl.KeyHint = keys.ElementAtOrDefault(i);
+    }
+
     static void SetEq(Deck deck, int row, float value)
     {
         switch (row)

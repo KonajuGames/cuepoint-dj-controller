@@ -8,11 +8,16 @@ namespace Cuepoint;
 /// </summary>
 static class HotcueKeys
 {
-    static readonly GlfwKey[][] Keys =
+    /// <summary>
+    /// The keys each deck's pads come with; <see cref="Keys"/> are those in use, as changed in the keys dialog.
+    /// </summary>
+    public static readonly IReadOnlyList<IReadOnlyList<GlfwKey>> UsualKeys =
     [
         [GlfwKey.Q, GlfwKey.W, GlfwKey.E, GlfwKey.R, GlfwKey.A, GlfwKey.S, GlfwKey.D, GlfwKey.F],
         [GlfwKey.U, GlfwKey.I, GlfwKey.O, GlfwKey.P, GlfwKey.J, GlfwKey.K, GlfwKey.L, GlfwKey.Semicolon],
     ];
+
+    public static GlfwKey[][] Keys { get; set; } = [.. UsualKeys.Select(keys => keys.ToArray())];
 
     /// <summary>
     /// Which deck (by position, from 0) and hotcue (from 0) <paramref name="key"/> is for, if any.
@@ -33,5 +38,5 @@ static class HotcueKeys
     /// pads; empty for a deck without keys.
     /// </summary>
     public static IReadOnlyList<string> Labels(int deck) =>
-        deck >= 0 && deck < Keys.Length ? Keys[deck].Select(key => key == GlfwKey.Semicolon ? ";" : key.ToString()).ToList() : [];
+        deck >= 0 && deck < Keys.Length ? Keys[deck].Select(DeckKeys.Label).ToList() : [];
 }

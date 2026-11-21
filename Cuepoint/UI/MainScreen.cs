@@ -81,6 +81,24 @@ sealed class MainScreen : Panel
     public ShortcutsDialog Shortcuts { get; }
 
     /// <summary>
+    /// The keys to change, opened from the shortcuts or the options.
+    /// </summary>
+    public KeysDialog Keys { get; }
+
+    readonly Func<int, IReadOnlyList<string>>? _hotcueKeys;
+    readonly Func<int, DeckKeyHints?>? _deckKeys;
+
+    /// <summary>
+    /// Labels the decks' and mixer's buttons with their keys again, after they've been changed.
+    /// </summary>
+    public void RefreshKeys()
+    {
+        for (var i = 0; i < _decks.Count; i++)
+            _decks[i].SetKeys(_deckKeys?.Invoke(i), _hotcueKeys?.Invoke(i));
+        _mixer.SetPflKeys(_decks.Select((_, i) => _deckKeys?.Invoke(i)?.Pfl).ToList());
+    }
+
+    /// <summary>
     /// Whether the folder list and song list are in large text, for reading in the dark or without glasses. The
     /// folder list widens to fit.
     /// </summary>
@@ -197,6 +215,18 @@ sealed class MainScreen : Panel
 
         Options = Add(new OptionsDialog(engine, library.Root, databasePath, fonts.Body, fonts.Bold, fonts.Heading));
         Shortcuts = Add(new ShortcutsDialog(fonts.Body, fonts.Bold, fonts.Heading));
+        Keys = Add(new KeysDialog(fonts.Body, fonts.Bold, fonts.Heading));
+        (_hotcueKeys, _deckKeys) = (hotcueKeys, deckKeys);
+        Shortcuts.ChangeKeysClicked += () =>
+        {
+            Shortcuts.Close();
+            Keys.Open();
+        };
+        Options.ChangeKeysClicked += () =>
+        {
+            Options.Close();
+            Keys.Open();
+        };
         Options.ShortcutsClicked += () =>
         {
             Options.Close();
@@ -339,6 +369,7 @@ sealed class MainScreen : Panel
         AutoMix.FixedSize = new float2(AutoMixPanel.OPEN_WIDTH, browserHeight);
         Options.ScreenSize = ScreenSize;
         Shortcuts.ScreenSize = ScreenSize;
+        Keys.ScreenSize = ScreenSize;
 
         foreach (var child in Children)
         {
@@ -414,5 +445,7 @@ sealed class MainScreen : Panel
             Options.Arrange(position);
         if (Shortcuts.Visible)
             Shortcuts.Arrange(position);
+        if (Keys.Visible)
+            Keys.Arrange(position);
     }
 }

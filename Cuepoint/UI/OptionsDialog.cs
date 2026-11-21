@@ -70,6 +70,18 @@ sealed class OptionsDialog : Panel
     public event Action? ShortcutsClicked;
 
     /// <summary>
+    /// Change keys was clicked.
+    /// </summary>
+    public event Action? ChangeKeysClicked;
+
+    /// <summary>
+    /// Back up or Restore was clicked, for the settings.
+    /// </summary>
+    public event Action? BackUpClicked;
+
+    public event Action? RestoreClicked;
+
+    /// <summary>
     /// The headphones were moved to another device, or turned off; the new device's name, or null.
     /// </summary>
     public event Action<string?>? HeadphonesChanged;
@@ -441,7 +453,21 @@ sealed class OptionsDialog : Panel
         var keysRow = Row("Keyboard", body);
         var showKeys = keysRow.Add(new Button(body, "Show the shortcuts") { FocusColor = Theme.Focus });
         showKeys.Clicked += _ => ShortcutsClicked?.Invoke();
+        var changeKeys = keysRow.Add(new Button(body, "Change keys...") { FocusColor = Theme.Focus });
+        changeKeys.Clicked += _ => ChangeKeysClicked?.Invoke();
         keysRow.Add(new Label(body, "or press ? at any time") { Color = Theme.Muted });
+
+        var backupRow = Row("Settings", body);
+        var backUp = backupRow.Add(new Button(body, "Back up...") { FocusColor = Theme.Focus });
+        backUp.Clicked += _ => BackUpClicked?.Invoke();
+        var restore = backupRow.Add(new Button(body, "Restore...") { FocusColor = Theme.Focus });
+        restore.Clicked += _ => RestoreClicked?.Invoke();
+        _content.Add(
+            new Label(body, "Everything set up here, the keys and controller mappings and virtual folders too, in one file.")
+            {
+                Color = Theme.Muted,
+            }
+        );
 
         var close = _content.Add(new Button(bold, "Close") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
         close.Clicked += _ => Close();

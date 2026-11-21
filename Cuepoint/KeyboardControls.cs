@@ -45,6 +45,13 @@ sealed record DeckKeys(
             GlfwKey.Semicolon => ";",
             GlfwKey.LeftBracket => "[",
             GlfwKey.RightBracket => "]",
+            GlfwKey.Slash => "/",
+            GlfwKey.Backslash => "\\",
+            GlfwKey.Minus => "-",
+            GlfwKey.Equal => "=",
+            GlfwKey.Apostrophe => "'",
+            GlfwKey.GraveAccent => "`",
+            >= GlfwKey.Kp0 and <= GlfwKey.Kp9 => $"Num {(int)(key - GlfwKey.Kp0)}",
             _ => key.ToString(),
         };
 }
@@ -61,7 +68,10 @@ sealed record DeckKeys(
 /// </summary>
 sealed class KeyboardControls
 {
-    public static readonly DeckKeys[] Keys =
+    /// <summary>
+    /// The keys each deck comes with; <see cref="Keys"/> are those in use, as changed in the keys dialog.
+    /// </summary>
+    public static readonly IReadOnlyList<DeckKeys> UsualKeys =
     [
         new(
             Cue: GlfwKey.Z,
@@ -101,9 +111,14 @@ sealed class KeyboardControls
         ),
     ];
 
-    public const GlfwKey CROSSFADER_LEFT = GlfwKey.LeftBracket;
-    public const GlfwKey CROSSFADER_RIGHT = GlfwKey.RightBracket;
-    public const GlfwKey CROSSFADER_CENTRE = GlfwKey.B;
+    /// <summary>
+    /// The keys in use for each deck, by position; see <see cref="KeyMap"/>.
+    /// </summary>
+    public static DeckKeys[] Keys { get; set; } = [.. UsualKeys];
+
+    public static GlfwKey CrossfaderLeft { get; set; } = GlfwKey.LeftBracket;
+    public static GlfwKey CrossfaderRight { get; set; } = GlfwKey.RightBracket;
+    public static GlfwKey CrossfaderCentre { get; set; } = GlfwKey.B;
 
     /// <summary>
     /// How much of a fader's travel a held key covers in a second, and with Ctrl.
@@ -180,7 +195,7 @@ sealed class KeyboardControls
         else
             _held.Remove(key);
 
-        if (key == CROSSFADER_CENTRE && pressed)
+        if (key == CrossfaderCentre && pressed)
             _engine.Crossfader = 0.5f;
         for (var i = 0; i < Keys.Length && i < _decks.Count; i++)
             DeckKey(_decks[i], Keys[i], key, pressed, mods);
@@ -321,7 +336,7 @@ sealed class KeyboardControls
             return;
         var dt = (float)Math.Min(seconds, 0.1);
 
-        _engine.Crossfader += Direction(CROSSFADER_LEFT, CROSSFADER_RIGHT, shift: false) * dt;
+        _engine.Crossfader += Direction(CrossfaderLeft, CrossfaderRight, shift: false) * dt;
 
         for (var i = 0; i < Keys.Length && i < _decks.Count; i++)
         {

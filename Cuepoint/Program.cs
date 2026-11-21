@@ -101,6 +101,11 @@ static void Run()
     // Settings kept between runs, beside the library's database; read before the audio starts, which opens its
     // devices with the buffer size kept.
     var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "settings.json");
+
+    // The keys for the decks, their pads and the crossfader, as changed from the usual ones.
+    var keysPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "keys.json");
+    var keyMap = KeyMap.Load(keysPath);
+    keyMap.Apply();
     var settings = AppSettings.Load(settingsPath);
 
     using var audio = new AudioEngine(settings.BufferFrames is { } frames && AudioEngine.BufferSizes.Contains(frames) ? frames : null);
@@ -130,8 +135,13 @@ static void Run()
     audio.Choose(settings.OutputDevice, settings.HeadphoneDevice);
     audio.BoothVolume = settings.BoothVolume;
     var boothFound = settings.BoothDevice is null || audio.UseBoothDevice(settings.BoothDevice);
+    // Once settings have been restored from a backup, nothing's saved over them as the app closes to take them in.
+    var settingsRestored = false;
+
     void SaveSettings()
     {
+        if (settingsRestored)
+            return;
         // The devices chosen, even while one's missing and the mix is on the default instead.
         settings.OutputDevice = audio.ChosenOutputDevice;
         settings.HeadphoneDevice = audio.ChosenHeadphoneDevice;
@@ -722,6 +732,7 @@ static void Run()
     }
     browser.IsPlayed = song => plays.Contains(song.Path);
 
+
     // Decks being put back after the app didn't close properly, and where each goes once its song is in.
     var restoring = new Dictionary<Deck, (double Position, bool Play, int KeyShift)>();
 
@@ -1012,6 +1023,51 @@ static void Run()
     var details = new DetailsDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
 
+    // Everything set up, in one file to keep or take to another computer, and back again.
+    var appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint");
+    void BackUpSettings()
+    {
+        SaveSettings();
+        var owner = OperatingSystem.IsWindows() ? WindowChrome.Handle : 0;
+        if (WindowsShell.AskWhereToSave(owner, "Back up Cuepoint's settings", [("Cuepoint settings", "*.zip")], $"Cuepoint settings {DateTime.Now:yyyy-MM-dd}", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)) is not { } chosen)
+            return;
+        var (count, error) = SettingsBackup.Write(chosen.Path, appFolder);
+        screen.Log(error is not null ? $"Couldn't back up the settings: {error}" : $"Backed up {count} files of settings to {chosen.Path}");
+    }
+    void RestoreSettings()
+    {
+        var owner = OperatingSystem.IsWindows() ? WindowChrome.Handle : 0;
+        if (WindowsShell.AskForFile(owner, "Restore Cuepoint's settings", ("Cuepoint settings", "*.zip"), Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)) is not { } path)
+            return;
+        confirmation.Show(
+            "Restore these settings?",
+            $"Everything set up now is replaced by what's in {Path.GetFileName(path)}. Cuepoint closes to take it in; start it again after. Your songs, their analysis and cues aren't touched.",
+            "Restore and close",
+            () =>
+            {
+                var (count, error) = SettingsBackup.Restore(path, appFolder);
+                if (error is not null)
+                {
+                    screen.Log($"Couldn't restore the settings: {error}");
+                    return;
+                }
+                settingsRestored = true;
+                screen.Log($"Restored {count} files of settings; closing to take them in");
+                window.ShouldClose = true;
+            }
+        );
+    }
+    screen.Options.BackUpClicked += () =>
+    {
+        screen.Options.Close();
+        afterEvents.Enqueue(BackUpSettings);
+    };
+    screen.Options.RestoreClicked += () =>
+    {
+        screen.Options.Close();
+        afterEvents.Enqueue(RestoreSettings);
+    };
+
     var controls = new KeyboardControls(decks, audio);
 
     // DJ controllers, found as they're plugged in. The load buttons take the selected song; the browse knob works
@@ -1120,8 +1176,43 @@ static void Run()
         ui.Focus(browser.List);
     };
 
+    // Changing keys: the next key pressed goes to the one listening for it, and no key works anything meanwhile.
+    screen.Keys.Bindings = () => keyMap.Bindings;
+    screen.Keys.Chosen = (id, key) =>
+    {
+        KeyBinding? swapped;
+        try
+        {
+            swapped = keyMap.Set(id, key);
+        }
+        catch (ArgumentException e)
+        {
+            return e.ParamName is null ? e.Message : e.Message[..e.Message.LastIndexOf(" (Parameter", StringComparison.Ordinal)];
+        }
+        keyMap.Apply();
+        screen.RefreshKeys();
+        if (!settingsRestored && keyMap.Save(keysPath) is { } error)
+            return $"Couldn't keep the keys: {error}";
+        return swapped is null ? $"{DeckKeys.Label(key)} it is" : $"{DeckKeys.Label(key)} it is; {swapped.Name.ToLowerInvariant()}{(swapped.Deck >= 0 ? $" on deck {(char)('A' + swapped.Deck)}" : "")} is on {DeckKeys.Label(swapped.Key)} now";
+    };
+    screen.Keys.ResetClicked += () =>
+    {
+        keyMap = KeyMap.Usual();
+        keyMap.Apply();
+        screen.RefreshKeys();
+        if (!settingsRestored)
+            keyMap.Save(keysPath);
+    };
+
     input.UnhandledKey += (key, action, mods) =>
     {
+        if (screen.Keys.Visible)
+        {
+            if (action == GlfwKeyAction.Press)
+                screen.Keys.Learn(key);
+            return;
+        }
+
         // The arrow keys work the lists wherever the focus is, as a controller's browse knob does, repeating as
         // they're held.
         if (!screen.Options.Visible && !screen.Shortcuts.Visible && BrowseKey(key, mods) is var (target, browseKey))

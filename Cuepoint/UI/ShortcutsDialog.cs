@@ -14,7 +14,16 @@ sealed class ShortcutsDialog : Panel
     const float KEYS_WIDTH = 190;
 
     readonly ScrollPanel _box;
+    readonly Panel _content;
+    readonly Font _body;
+    readonly Font _bold;
+    readonly Font _heading;
     bool _pressedInBox;
+
+    /// <summary>
+    /// Change keys was clicked, to open the keys dialog.
+    /// </summary>
+    public event Action? ChangeKeysClicked;
 
     public float2 ScreenSize { get; set; }
 
@@ -23,8 +32,27 @@ sealed class ShortcutsDialog : Panel
         Visible = false;
         Background = Colors.Hex(0x000000, 0.75f);
 
+        (_body, _bold, _heading) = (body, bold, heading);
         _box = Add(new ScrollPanel { Padding = 20, Background = Theme.PanelRaised, BorderColor = Theme.PanelBorder, BorderWidth = 1 });
-        var content = _box.Add(new Panel { Spacing = 14 });
+        _content = _box.Add(new Panel { Spacing = 14 });
+        Build();
+
+        // A click on the dimmed screen around it closes it too; one on the box's own empty space doesn't.
+        Clicked += _ =>
+        {
+            if (!_pressedInBox)
+                Close();
+        };
+    }
+
+    /// <summary>
+    /// The shortcuts as the keys are now, which can change.
+    /// </summary>
+    void Build()
+    {
+        var (body, bold, heading) = (_body, _bold, _heading);
+        var content = _content;
+        content.Children.Clear();
         content.Add(new Label(heading, "Keyboard shortcuts") { Color = Theme.Text });
 
         var decks = content.Add(new Panel { Spacing = 3 });
@@ -37,15 +65,11 @@ sealed class ShortcutsDialog : Panel
         foreach (var shortcut in KeyboardShortcuts.Everywhere)
             Row(everywhere, body, shortcut.Action, shortcut.DeckA, null, Theme.Muted, Theme.Text, Theme.Text);
 
-        var close = content.Add(new Button(bold, "Close") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
+        var buttons = content.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
+        var change = buttons.Add(new Button(bold, "Change keys...") { FocusColor = Theme.Focus });
+        change.Clicked += _ => ChangeKeysClicked?.Invoke();
+        var close = buttons.Add(new Button(bold, "Close") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
         close.Clicked += _ => Close();
-
-        // A click on the dimmed screen around it closes it too; one on the box's own empty space doesn't.
-        Clicked += _ =>
-        {
-            if (!_pressedInBox)
-                Close();
-        };
     }
 
     /// <summary>
@@ -73,7 +97,10 @@ sealed class ShortcutsDialog : Panel
         if (Visible)
             Close();
         else
+        {
+            Build();
             Visible = true;
+        }
     }
 
     public void Close() => Visible = false;

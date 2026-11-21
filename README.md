@@ -125,10 +125,13 @@ Each song is analysed in the background as it comes into view in the list. The a
 - **Picks up after a crash:** where each deck is gets written down every couple of seconds. If the app didn't close properly, the next start puts each deck's song back with its tempo, key lock, key shift and slip. A deck that was playing moments before carries on from where it would have got to.
 - **Keeps the computer awake:** while the window is visible, the computer won't sleep and the screen won't switch off.
 - **Remembered between runs:** the audio devices, the music library's folder, the song list's layout and the last folder or virtual folder chosen.
+- **Backing up settings:** **Back up...** under Settings in the options saves everything set up, the options, smart playlists, sampler pads, keys, controller mappings and the virtual folders kept in the app's own folder, in one .zip, to keep or take to another computer. **Restore...** puts one back, replacing what's set up now, then closes Cuepoint to take it in. Songs, their analysis and cues aren't in it, as they're kept with the songs.
 
 ## Keyboard
 
 Press `?` to see every shortcut over the screen (or **Show the shortcuts** in the options), drawn from the keys as they really are; `?` or Esc hides it again.
+
+The decks', pads' and crossfader's keys can be changed: **Change keys...** there or in the options lists them, deck by deck. Click one, then press the key to use instead; a key already doing something else swaps with it, so none does two things. Shift, Ctrl and Alt go on working with whichever key's chosen. **Put back the usual keys** undoes it all. The keys for browsing, loading, searching and this list stay as they are. The table below is the usual keys.
 
 Each deck has its own side of the keyboard.
 
