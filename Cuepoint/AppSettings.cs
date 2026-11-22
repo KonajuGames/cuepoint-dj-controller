@@ -109,6 +109,24 @@ sealed class AppSettings
     public double TempoRangeMin { get; set; } = 80;
 
     /// <summary>
+    /// How big everything's drawn, as a share of its designed size; null for Windows' own scale for the screen.
+    /// </summary>
+    public float? ScreenScale { get; set; }
+
+    /// <summary>
+    /// The Icecast server streamed to live, and how: its address, port and mount point, the stream's name, its
+    /// bitrate in kbps, and the source password, encrypted for this Windows account (see
+    /// <see cref="Streaming.SavedSecret"/>).
+    /// </summary>
+    public string? StreamHost { get; set; }
+
+    public int StreamPort { get; set; } = 8000;
+    public string StreamMount { get; set; } = "live";
+    public string? StreamName { get; set; }
+    public int StreamKbps { get; set; } = 128;
+    public string? StreamPassword { get; set; }
+
+    /// <summary>
     /// The saved searches listed under Smart playlists.
     /// </summary>
     public List<Music.SmartPlaylist> SmartPlaylists { get; set; } = [];

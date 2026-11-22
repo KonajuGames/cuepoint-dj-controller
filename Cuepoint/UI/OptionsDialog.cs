@@ -85,6 +85,27 @@ sealed class OptionsDialog : Panel
     public event Action<ThemeKind>? LookChosen;
 
     /// <summary>
+    /// Another screen size was chosen: a share of the designed size, or null for Windows' own for the screen.
+    /// </summary>
+    public event Action<float?>? ScreenSizeChosen;
+
+    readonly Dropdown<float?> _screenSize;
+
+    /// <summary>
+    /// The screen size chosen, to show it.
+    /// </summary>
+    public float? ChosenScreenSize
+    {
+        get => _screenSize.Selected;
+        set => _screenSize.Selected = value;
+    }
+
+    /// <summary>
+    /// Windows' own scale for the screen, to say what "As Windows has it" is.
+    /// </summary>
+    public float WindowsScale { get; set; } = 1;
+
+    /// <summary>
     /// Change keys was clicked.
     /// </summary>
     public event Action? ChangeKeysClicked;
@@ -504,6 +525,24 @@ sealed class OptionsDialog : Panel
         look.Chosen += kind => LookChosen?.Invoke(kind);
         _content.Add(
             new Label(body, "Dark for dark rooms, Light for daylight, High contrast for bright rooms. It changes the next time Cuepoint starts.")
+            {
+                Color = Theme.Muted,
+            }
+        );
+
+        // How big everything's drawn, also taken on as the app starts.
+        var screenRow = Row("Screen size", body);
+        _screenSize = screenRow.Add(
+            new Dropdown<float?>(body)
+            {
+                Width = 300,
+                Items = () => [null, .. ScreenScale.Choices.Select(choice => (float?)choice)],
+                Text = scale => ScreenScale.Name(scale, WindowsScale),
+            }
+        );
+        _screenSize.Chosen += scale => ScreenSizeChosen?.Invoke(scale);
+        _content.Add(
+            new Label(body, "Everything drawn bigger, for a 4K screen or one seen from further away. It changes the next time Cuepoint starts.")
             {
                 Color = Theme.Muted,
             }

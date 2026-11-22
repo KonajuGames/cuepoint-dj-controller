@@ -62,6 +62,11 @@ sealed unsafe class MixRecorder : IDisposable
     public DateTime Started { get; } = DateTime.Now;
 
     /// <summary>
+    /// How long each file of a recording holds before it carries on in the next, as recordings are made.
+    /// </summary>
+    public static TimeSpan FileLength => TimeSpan.FromSeconds((double)MAX_DATA_BYTES / FRAME_BYTES / RATE);
+
+    /// <summary>
     /// How long each file holds before the recording carries on in the next.
     /// </summary>
     public TimeSpan FileDuration => TimeSpan.FromSeconds((double)_maxDataBytes / FRAME_BYTES / RATE);

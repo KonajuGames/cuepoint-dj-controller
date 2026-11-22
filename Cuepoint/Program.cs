@@ -12,9 +12,15 @@ using Cuepoint.UI;
 
 WindowsShell.AttachParentConsole();
 
+// The screenshot tool (--capture <folder> [--look Light|HighContrast]) runs on a scratch app folder and made-up
+// songs, leaving the user's alone.
+var capture = ScreenshotTool.Parse(args);
+if (capture is { } scratch)
+    ScreenshotTool.UseScratch(scratch.Look);
+
 // What goes wrong is written down beside the settings, to look into after a set; even on another thread, where it
 // still ends the app.
-ErrorLog.FilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "errors.log");
+ErrorLog.FilePath = Path.Combine(AppFolder.Path, "errors.log");
 AppDomain.CurrentDomain.UnhandledException += (_, args) =>
 {
     if (args.ExceptionObject is Exception e)
@@ -34,7 +40,7 @@ try
 
     try
     {
-        Run();
+        Run(capture);
     }
     finally
     {
@@ -51,7 +57,7 @@ catch (Exception e)
 
 return 0;
 
-static void Run()
+static void Run((string Folder, string? Look)? capture)
 {
     Glfw.WindowHint(GlfwWindowHint.ClientApi, Glfw.Constants.GLFW_NO_API);
 
@@ -59,12 +65,25 @@ static void Run()
     // while the app gets going, white where it was first sized and black beyond. It's shown once the first frame is
     // drawn.
     Glfw.WindowHint(GlfwWindowHint.Visible, 0);
-    Glfw.WindowHint(GlfwWindowHint.Maximized, 1);
+    Glfw.WindowHint(GlfwWindowHint.Maximized, capture is null ? 1 : 0);
 
     // Declared first so it's disposed last, after the GPU objects that draw to it. It can't be made too small for the
     // decks and mixer to fit side by side.
-    using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Cuepoint", Size = new int2(1440, 860) });
-    window.SetSizeLimits(new int2(1280, 720), new int2(-1, -1));
+    using var window = Glfw.CreateWindow(new GlfwWindow.CreateInfo { Title = "Cuepoint", Size = capture is null ? new int2(1440, 860) : ScreenshotTool.Size });
+
+    // How big everything's drawn: as chosen, or as Windows has it for the screen; the screenshot's always as designed.
+    var windowsScale = Glfw.PrimaryMonitor.ContentScale.X;
+    // "--scale 1.5" on the command line tries another for one run, leaving the setting as it is.
+    var arguments = Environment.GetCommandLineArgs();
+    var scaleAt = Array.IndexOf(arguments, "--scale");
+    float? tried = scaleAt >= 0 && scaleAt + 1 < arguments.Length && float.TryParse(arguments[scaleAt + 1], System.Globalization.CultureInfo.InvariantCulture, out var given) ? given : null;
+    var screenScale = capture is null ? ScreenScale.Use(tried ?? AppSettings.Load(Path.Combine(AppFolder.Path, "settings.json")).ScreenScale, windowsScale) : 1;
+    // Never so small that the decks and mixer can't fit side by side, nor bigger than the screen.
+    var screenPixels = Glfw.PrimaryMonitor.VideoMode;
+    window.SetSizeLimits(
+        new int2((int)Math.Min(1280 * screenScale, screenPixels.Width), (int)Math.Min(720 * screenScale, screenPixels.Height)),
+        new int2(-1, -1)
+    );
 
 #if DEBUG
     const bool ENABLE_VALIDATION = true;
@@ -72,7 +91,8 @@ static void Run()
     const bool ENABLE_VALIDATION = false;
 #endif
 
-    var atlas = new FontAtlas();
+    // Text's rasterised at the size it's drawn, so it's sharp.
+    var atlas = new FontAtlas { Scale = screenScale };
     var regular = FindFont(bold: false);
     var bold = FindFont(bold: true);
     var fonts = new Fonts(
@@ -100,10 +120,10 @@ static void Run()
 
     // Settings kept between runs, beside the library's database; read before the audio starts, which opens its
     // devices with the buffer size kept.
-    var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "settings.json");
+    var settingsPath = Path.Combine(AppFolder.Path, "settings.json");
 
     // The keys for the decks, their pads and the crossfader, as changed from the usual ones.
-    var keysPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "keys.json");
+    var keysPath = Path.Combine(AppFolder.Path, "keys.json");
     var keyMap = KeyMap.Load(keysPath);
     keyMap.Apply();
     var settings = AppSettings.Load(settingsPath);
@@ -204,7 +224,7 @@ static void Run()
 
     // Songs are analysed as they come into view in the list, and the results kept between runs.
     var database = LibraryDatabase.Load(
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "library.json")
+        Path.Combine(AppFolder.Path, "library.json")
     );
     using var analyser = new LibraryAnalyser(library.Songs, database);
 
@@ -219,7 +239,7 @@ static void Run()
     // delete straight away on that drive.
     var virtualFolders = new VirtualFolders(
         library,
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), VirtualFolders.DriveFolder),
+        Path.Combine(AppFolder.Path, "VirtualFolders"),
         () => VirtualFolders.ReadyDrives(WindowsShell.IsReadOnlyVolume)
     );
     if (OperatingSystem.IsWindows())
@@ -231,7 +251,7 @@ static void Run()
     // coming back.
     // They're looked for in the background once the screen's up, as a big collection takes a while to read.
     var imports = new ImportedLibraries();
-    var importRecordPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "imports.json");
+    var importRecordPath = Path.Combine(AppFolder.Path, "imports.json");
     var importRecord = ImportRecord.Load(importRecordPath);
     // A collection's hot cues, memory cues and beat grids, each for its songs here with none of their own: a
     // Rekordbox grid takes the analysed one's place, as one fixed by hand here would. What came in, as "hot cues for
@@ -314,7 +334,7 @@ static void Run()
     var repairing = false;
     var smartPlaylists = new SmartPlaylists(settings.SmartPlaylists, library, database, analyser);
     // Every set played, kept between runs, this one as it goes.
-    var playLog = new PlayLog(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "history"));
+    var playLog = new PlayLog(Path.Combine(AppFolder.Path, "history"));
     var sessionStarted = DateTime.Now;
     var keptPlays = 0;
     SongQuery.LastPlayed = playLog.LastPlayed;
@@ -373,7 +393,7 @@ static void Run()
         }
     }
 
-    var ui = new Root { TooltipFont = fonts.Body };
+    var ui = new Root { TooltipFont = fonts.Body, Scale = screenScale };
     var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor, JumpPadsFor, SamplerPadsFor));
     sampler.LoadFailed += (slot, error) => screen.Log($"Couldn't put that on sampler pad {slot + 1}: {error}");
     foreach (var editor in gridEditors)
@@ -603,7 +623,16 @@ static void Run()
         recursiveNode = recursive ? node : null;
         if (node.Kind == LibraryNodeKind.Library)
         {
-            library.BeginScan(library.Root, recursive, AfterLibraryScan);
+            // Said again once it's looked through, as how many songs there are has changed.
+            library.BeginScan(
+                library.Root,
+                recursive,
+                () =>
+                {
+                    AfterLibraryScan();
+                    LogLibrary(recursive ? "every song under it listed" : null);
+                }
+            );
             WatchLibrary();
         }
         else
@@ -639,7 +668,10 @@ static void Run()
         settings.RecordingsFolder ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "Cuepoint Recordings");
     screen.Options.RecordingsFolder = recordingsFolder;
     notWatched = path => path.StartsWith(LibraryFile.WithSeparator(recordingsFolder), StringComparison.OrdinalIgnoreCase);
+    var tracklistDialog = new TracklistDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
     MixRecorder? recorder = null;
+    // The last recording made this run, for editing its tracklist.
+    string? lastRecording = null;
     void StartRecording()
     {
         var path = Path.Combine(recordingsFolder, $"Mix {DateTime.Now:yyyy-MM-dd HH-mm-ss}.wav");
@@ -663,6 +695,7 @@ static void Run()
         recorder = null;
         stopping.Dispose();
         var files = stopping.Paths;
+        lastRecording = stopping.Path;
         var saved = files.Count > 1 ? $"{stopping.Path} and {files.Count - 1} more" : stopping.Path;
         var length = stopping.Duration;
         var time = length.TotalHours >= 1 ? $"{(int)length.TotalHours}:{length.Minutes:00}:{length.Seconds:00}" : $"{length.Minutes}:{length.Seconds:00}";
@@ -704,6 +737,51 @@ static void Run()
             screen.Log($"Couldn't save the recording's tracklist: {failed}");
         return failed is null;
     }
+    // A recording's tracklist, read back from its cue sheets to change and write again.
+    void ChooseTracklist()
+    {
+        var owner = OperatingSystem.IsWindows() ? WindowChrome.Handle : 0;
+        if (WindowsShell.AskForFile(owner, "Edit a recording's tracklist", ("Recordings", "*.wav;*.cue"), recordingsFolder) is { } chosen)
+            EditTracklist(chosen);
+    }
+    void EditTracklist(string path)
+    {
+        var first = RecordingTracklist.FirstFile(path);
+        if (!File.Exists(first))
+        {
+            screen.Log($"Couldn't find the recording {first}");
+            return;
+        }
+        if (recorder is not null && string.Equals(recorder.Path, first, StringComparison.OrdinalIgnoreCase))
+        {
+            screen.Log("That's still recording: stop it first, and its tracklist's written");
+            return;
+        }
+        var name = Path.GetFileNameWithoutExtension(first);
+        IReadOnlyList<RecordedTrack> tracks;
+        DateTime date;
+        try
+        {
+            (tracks, date) = RecordingTracklist.Read(first, MixRecorder.FileLength);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            screen.Log($"Couldn't read the tracklist of {name}: {e.Message}");
+            return;
+        }
+        tracklistDialog.Show(
+            name,
+            tracks,
+            edited =>
+            {
+                if (RecordingTracklist.Write(first, edited, date, MixRecorder.FileLength) is { } error)
+                    return $"Couldn't save it: {error}";
+                screen.Log($"Saved the tracklist of {name}: {edited.Count} {(edited.Count == 1 ? "song" : "songs")}");
+                return null;
+            }
+        );
+    }
+
     screen.TitleItems.Recording = () => recorder?.Duration;
     screen.TitleItems.RecordClicked += () =>
     {
@@ -752,7 +830,7 @@ static void Run()
     };
     screen.TitleItems.AudioWarning = () => audio.Missing;
     if (OperatingSystem.IsWindows())
-        WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y)));
+        WindowChrome.Install(window, point => screen.TitleBar.IsCaption(new float2(point.X, point.Y) / screenScale));
 
     // The songs played this session, in order, saved where the DJ says: as an M3U playlist or a plain-text set list,
     // by the type chosen in the Save dialog.
@@ -825,7 +903,10 @@ static void Run()
                     loaded.Play();
             }
             plays.Restart(loaded);
-            screen.Log($"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}");
+            // A file without tags is named as the library knows it, from its folders.
+            if (loaded.FilePath is { } named && library.Find(named) is { } known)
+                loaded.NameUntagged(known.Title, known.Artist);
+            screen.Log(loaded.Artist.Length > 0 ? $"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}" : $"Deck {loaded.Name}: loaded {loaded.Title}");
 
             // Hot cues and a beat grid Serato kept in the file (an MP3, M4A, FLAC or AIFF) come in the first time it's loaded
             // (and again if it changes), if it has none of its own here.
@@ -932,6 +1013,10 @@ static void Run()
     {
         if (song.AnalysisError is { } analysisError)
             screen.Log($"Couldn't analyse {Path.GetFileName(song.Path)}: {analysisError}");
+        // The library's own copy of the song too, if the list had another, as it can after a rescan: a deck loads
+        // its analysis from there.
+        if (library.Find(song.Path) is { } known && !ReferenceEquals(known, song))
+            (known.Analysis, known.AnalysisError) = (song.Analysis, song.AnalysisError);
         // A search by tempo or key finds the song now it has them.
         if (browser.SearchesAnalysis)
             browser.Refilter();
@@ -1068,6 +1153,14 @@ static void Run()
         browser.Refilter();
         screen.Log($"Tempos shown from {TempoRange.Name(TempoRange.Min)}");
     };
+    // A new screen size, taken on the next time the app starts, as the look is.
+    (screen.Options.ChosenScreenSize, screen.Options.WindowsScale) = (settings.ScreenScale, windowsScale);
+    screen.Options.ScreenSizeChosen += scale =>
+    {
+        settings.ScreenScale = scale;
+        SaveSettings();
+        screen.Log($"The screen will be drawn at {ScreenScale.Name(scale, windowsScale)} the next time Cuepoint starts");
+    };
     screen.Options.AutoCue.Checked = settings.AutoCue;
     foreach (var deck in decks)
         deck.AutoCue = settings.AutoCue;
@@ -1132,6 +1225,53 @@ static void Run()
         masterFx.Toggle(screen.TitleItems.MasterFxAnchor);
         ui.Focus(null);
     };
+    // Live streaming drops down from LIVE beside the record button: the main mix, as it's recorded, to an Icecast
+    // server, titled with the song playing.
+    var liveStream = new LiveStreamPanel(
+        ui,
+        new Cuepoint.Streaming.StreamServer(
+            settings.StreamHost ?? "",
+            settings.StreamPort,
+            settings.StreamMount,
+            Cuepoint.Streaming.SavedSecret.Unprotect(settings.StreamPassword),
+            settings.StreamName ?? "Cuepoint",
+            Cuepoint.Streaming.StreamServer.Bitrates.Contains(settings.StreamKbps) ? settings.StreamKbps : 128
+        ),
+        fonts.Small,
+        fonts.Body,
+        fonts.Bold
+    )
+    {
+        Menu = menu,
+    };
+    screen.TitleItems.LiveClicked += () => liveStream.Toggle(screen.TitleItems.LiveAnchor);
+    screen.TitleItems.LiveStream = () => liveStream.Stream;
+    // What's on air: the last song to count as played, as in the recording's tracklist.
+    string OnAir() =>
+        plays.History.Count > 0 && library.SongAt(plays.History[^1].Path) is { } song ? (song.Artist.Length > 0 ? $"{song.Artist} - {song.Title}" : song.Title)
+        : plays.History.Count > 0 ? Path.GetFileNameWithoutExtension(plays.History[^1].Path)
+        : "";
+    liveStream.GoLive += server =>
+    {
+        (settings.StreamHost, settings.StreamPort, settings.StreamMount, settings.StreamName, settings.StreamKbps) = (server.Host, server.Port, server.Mount, server.Name, server.Kbps);
+        settings.StreamPassword = Cuepoint.Streaming.SavedSecret.Protect(server.Password) ?? settings.StreamPassword;
+        SaveSettings();
+        var stream = new Cuepoint.Streaming.LiveStream(server) { Title = OnAir() };
+        (liveStream.Stream, audio.Stream) = (stream, stream);
+        screen.Log($"Going live to {server.ListenAt}");
+    };
+    void StopStreaming()
+    {
+        if (liveStream.Stream is not { } stream)
+            return;
+        // The audio thread lets go of it first.
+        audio.Stream = null;
+        liveStream.Stream = null;
+        stream.Dispose();
+        screen.Log($"Stopped streaming, after {stream.BytesSent / 1024 / 1024.0:F1} MB");
+    }
+    liveStream.StopRequested += StopStreaming;
+
     // The microphone's on, level and talkover drop down from MIC beside it.
     var microphone = new MicrophonePanel(audio, fonts.Small, fonts.Body, fonts.Bold);
     screen.TitleItems.MicClicked += () =>
@@ -1216,7 +1356,7 @@ static void Run()
     };
 
     // Everything set up, in one file to keep or take to another computer, and back again.
-    var appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint");
+    var appFolder = AppFolder.Path;
     void BackUpSettings()
     {
         SaveSettings();
@@ -1270,11 +1410,12 @@ static void Run()
 
     // DJ controllers, found as they're plugged in. The load buttons take the selected song; the browse knob works
     // the list (and with Shift, the folders) as the arrow keys do.
-    using var midiDevices = OperatingSystem.IsWindows() ? new MidiDevices(new WinMidi()) : null;
+    // Not for the screenshot tool, which leaves the user's controllers alone.
+    using var midiDevices = OperatingSystem.IsWindows() && capture is null ? new MidiDevices(new WinMidi()) : null;
     ControllerDialog? controllerDialog = null;
     using var controllers = midiDevices is null
         ? null
-        : new MidiControls(midiDevices, decks, audio, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "controllers"));
+        : new MidiControls(midiDevices, decks, audio, Path.Combine(AppFolder.Path, "controllers"));
     if (controllers is not null)
     {
         controllers.Log += screen.Log;
@@ -1515,10 +1656,14 @@ static void Run()
                     masterFx.Close();
                 else if (microphone.Visible)
                     microphone.Close();
+                else if (liveStream.Visible)
+                    liveStream.Close();
                 else if (prompt.Visible)
                     prompt.Close();
                 else if (confirmation.Visible)
                     confirmation.Close();
+                else if (tracklistDialog.Visible)
+                    tracklistDialog.Close();
                 else if (screen.Shortcuts.Visible)
                     screen.Shortcuts.Close();
                 else if (controllerDialog?.Escape() != true)
@@ -1569,10 +1714,12 @@ static void Run()
     ui.Add(headphones);
     ui.Add(masterFx);
     ui.Add(microphone);
+    ui.Add(liveStream);
     ui.Add(menu);
     ui.Add(prompt);
     ui.Add(details);
     ui.Add(confirmation);
+    ui.Add(tracklistDialog);
 
     // Virtual folders: made from the heading's menu, renamed and deleted from their own, filled by dragging songs
     // onto them, and edited in the list. The list follows whatever changes.
@@ -2171,6 +2318,17 @@ static void Run()
                     // Other DJ software's libraries, one format to a line, more to come.
                     new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox)), SeratoCuesFor(node, "Serato cues and grids")]),
                     new MenuItem("Export", [new MenuItem("Play history...", () => afterEvents.Enqueue(ExportHistory))]),
+                    new MenuItem(
+                        "Recording's tracklist",
+                        [
+                            new MenuItem(
+                                lastRecording is null ? "The last recording's" : $"{Path.GetFileNameWithoutExtension(lastRecording)}'s",
+                                () => EditTracklist(lastRecording!),
+                                Enabled: lastRecording is not null
+                            ),
+                            new MenuItem("Another recording's...", () => afterEvents.Enqueue(ChooseTracklist)),
+                        ]
+                    ),
                     FindDuplicatesIn(library.Root),
                     FindSimilarIn(library.Root),
                     FindMovedSongsIn(library.Root),
@@ -2528,7 +2686,7 @@ static void Run()
     // tempo, key lock, key shift and slip. A deck that was playing a moment ago plays on from where it would have got to; after longer,
     // it waits where it was.
     const double SESSION_SAVE_SECONDS = 2;
-    var sessionPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint", "session.json");
+    var sessionPath = Path.Combine(AppFolder.Path, "session.json");
     if (SessionState.Load(sessionPath) is { } left)
     {
         var resume = DateTime.UtcNow - left.SavedAt < TimeSpan.FromMinutes(2);
@@ -2635,9 +2793,16 @@ static void Run()
         }
     }
 
+    var screenshots = capture is { } shots ? new ScreenshotTool(
+            new(window, renderer, () => browser.ListedSongs, decks, audio, (song, deck) => Load(song, deck), () => SetRecursive(folders.First(node => node.Kind == LibraryNodeKind.Library), true),
+                song => song.Analysis is not null || song.AnalysisError is not null
+            ),
+            shots.Folder,
+            shots.Look
+        ) : null;
     var lastFrame = Glfw.Time;
     var windowShown = false;
-    while (!window.ShouldClose)
+    while (!window.ShouldClose && screenshots?.Done != true)
     {
         // Minimised, there's nothing to draw, but the decks, a controller and lighting software still need seeing to:
         // so everything carries on but the drawing, waking often enough to send lighting software every beat on time.
@@ -2728,6 +2893,9 @@ static void Run()
                 controls.Update(elapsed);
                 plays.Update(decks, elapsed);
                 // The set kept as it grows (or shrinks, a song marked as not played).
+                // The stream's title follows the song playing.
+                if (liveStream.Stream is { } live)
+                    live.Title = OnAir();
                 if (plays.History.Count != keptPlays)
                 {
                     keptPlays = plays.History.Count;
@@ -2801,17 +2969,20 @@ static void Run()
             "drawing the screen",
             () =>
             {
-                screen.ScreenSize = new float2(size.X, size.Y);
+                // In the UI's units: the screen's pixels over the size it's drawn at.
+                screen.ScreenSize = new float2(size.X, size.Y) / screenScale;
                 if (controllerDialog is not null)
                     controllerDialog.ScreenSize = screen.ScreenSize;
-                headphones.ScreenSize = masterFx.ScreenSize = microphone.ScreenSize = menu.ScreenSize = prompt.ScreenSize = details.ScreenSize = confirmation.ScreenSize = screen.ScreenSize;
+                headphones.ScreenSize = masterFx.ScreenSize = microphone.ScreenSize = liveStream.ScreenSize = menu.ScreenSize = prompt.ScreenSize = details.ScreenSize = confirmation.ScreenSize = tracklistDialog.ScreenSize = screen.ScreenSize;
                 screen.Update();
                 headphones.Refresh();
                 masterFx.Refresh();
                 microphone.Refresh();
+                liveStream.Refresh();
                 ui.Layout(screen.ScreenSize);
                 input.UpdateCursor();
                 renderer.DrawFrame(ui);
+                screenshots?.Frame();
             }
         );
         if (!windowShown)
@@ -2825,8 +2996,9 @@ static void Run()
     SessionState.Delete(sessionPath);
     watcher?.Dispose();
 
-    // A recording still going is finished as the app closes, so its file is whole.
+    // A recording still going is finished as the app closes, so its file is whole, and a stream's let go.
     StopRecording();
+    StopStreaming();
 
     // Anything about the library not yet saved (a drive's file to write again with relative paths, say) is saved as
     // the app closes.

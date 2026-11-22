@@ -19,7 +19,8 @@ order to build in.
 | 6 | Suggested next, past sets kept with `played:` and `notplayed:` searches, ordering Auto-Mix's list for mixing | `33bb825` |
 | — | Auto-Mix's Order list: for mixing, by title, artist, tempo, key or energy, or shuffled | `d540af9` |
 | 7 | Editing hot cues, auto cue, moving a loop, gate and bit-crusher, master FX, a microphone with talkover | `fc52ec9` |
-| 8 | Editing several songs' artist and album at once, a tempo range in the options | this commit |
+| 8 | Editing several songs' artist and album at once, a tempo range in the options | `6b3b0e6` |
+| 9 | Live streaming to Icecast in Opus, editing a recording's tracklist, scaling the whole screen (with Cuedeck), a screenshot the app takes itself | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -55,7 +56,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 | 9 | **Editing several songs' details at once**: artist, album or genre for a selection | S–M | Builds on Edit details (`WindowsTags.Write`, `LibraryDatabase.Retag`); a blank field leaves each song's own. |
 | 10 | **Tempo range preference**: analysed tempos folded into a range chosen in the options | S–M | 70–140 or 85–170, say, so drum & bass and hip-hop read as DJs expect. Applied when a grid's looked up, so nothing's analysed again; a grid fixed by hand is left as it is. |
 
-## Phase 9: Sets out, and polish
+## Phase 9: Sets out, and polish (done)
 
 | # | Item | Size | Notes |
 |---|---|---|---|
@@ -66,7 +67,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Order and dependencies
 
-- **Next:** Phase 9, (14) or (12) first: both small. Genre was left out of (9), as Cuepoint doesn't keep genres yet.
+- **Next:** every phase planned is done. Still to come: trying the DDJ-FLX4 and DDJ-400 mappings on the hardware, and live streaming to a real Icecast server (it's tested against a pretend one); genre for editing several songs (8) once Cuepoint keeps genres.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.
 - **Biggest:** live streaming (11), for its encoder and network handling; master effects (7) touch the mix itself.

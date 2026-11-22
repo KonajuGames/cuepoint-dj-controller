@@ -195,6 +195,7 @@ sealed class TitleBarItems
     double _limitedAt = double.NegativeInfinity;
     readonly Os2lIndicator _os2l;
     readonly RecordButton _record;
+    readonly Button _live;
     readonly Label _audioWarning;
     readonly Spacer _audioWarningGap;
     readonly Spacer _os2lGap;
@@ -240,6 +241,21 @@ sealed class TitleBarItems
     /// The bottom right corner of the headphones button, where their settings drop down from.
     /// </summary>
     public float2 HeadphonesAnchor => _headphones.ScreenPosition + _headphones.Size;
+
+    /// <summary>
+    /// The LIVE button was clicked, to show or put away live streaming below it.
+    /// </summary>
+    public event Action? LiveClicked;
+
+    /// <summary>
+    /// The live stream going, if there is one, to light LIVE and say how long it's been.
+    /// </summary>
+    public Func<Streaming.LiveStream?> LiveStream { get; set; } = () => null;
+
+    /// <summary>
+    /// The bottom right corner of the LIVE button, where live streaming drops down from.
+    /// </summary>
+    public float2 LiveAnchor => _live.ScreenPosition + _live.Size;
 
     /// <summary>
     /// The master FX button was clicked, to show or put away the effect on the whole mix below it.
@@ -316,6 +332,10 @@ sealed class TitleBarItems
 
         _audioWarning = bar.Status.Add(new Label(bold) { Color = Theme.Warning, Visible = false });
         _audioWarningGap = bar.Status.Add(new Spacer(16) { Visible = false });
+        // Live streaming, before the record button: lit while it's live, amber while it's trying to get back on.
+        _live = bar.Status.Add(new Button(small, "LIVE") { Padding = 3, MinSize = new float2(38, 18), Tooltip = "Stream the mix live to an Icecast server" });
+        _live.Clicked += _ => LiveClicked?.Invoke();
+        bar.Status.Add(new Spacer(10));
         _record = bar.Status.Add(new RecordButton(body));
         _record.Clicked += _ => RecordClicked?.Invoke();
         bar.Status.Add(new Spacer(12));
@@ -355,6 +375,17 @@ sealed class TitleBarItems
     public void Update()
     {
         _record.Recording = Recording();
+        var live = LiveStream();
+        var (lit, text) = live switch
+        {
+            { State: Streaming.StreamState.Live, LiveSince: { } since } => (Theme.Warning, $"LIVE {(int)(DateTime.Now - since).TotalMinutes}:{(DateTime.Now - since).Seconds:00}"),
+            { State: Streaming.StreamState.Live or Streaming.StreamState.Connecting } => (Theme.Warning, "LIVE"),
+            { State: Streaming.StreamState.Retrying } => (Theme.Accent, "LIVE ..."),
+            _ => (Theme.Control, "LIVE"),
+        };
+        _live.Text = text;
+        _live.Background = live is { State: not Streaming.StreamState.Stopped } ? Theme.Mix(Theme.PanelRaised, lit, 0.6f) : Theme.Control;
+        _live.TextColor = live is { State: not Streaming.StreamState.Stopped } ? Theme.Text : Theme.Muted;
         _headphones.IconColor = Cueing() ? Theme.Accent : Theme.Text;
         var warning = AudioWarning();
         _audioWarning.Visible = _audioWarningGap.Visible = warning is not null;

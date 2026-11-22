@@ -200,8 +200,11 @@ sealed class LibraryAnalyser : IDisposable
             for (var i = songs.Count - 1; i >= 0; i--)
             {
                 var song = songs[i];
-                // Songs from outside the library may have been analysed in an earlier run.
+                // Songs from outside the library may have been analysed in an earlier run; and another copy of the
+                // same song (the library's, and a folder's list's, say) may have been analysed since it was looked up.
                 LookUp(song);
+                if (song.Analysis is null && song.AnalysisError is null && Database.TryGet(song, out var known, out var knownError))
+                    (song.Analysis, song.AnalysisError) = (known, knownError);
                 if (song.Analysis is not null || song.AnalysisError is not null)
                     continue;
                 // Already asked for and not waiting means it's being analysed or just finished.
@@ -393,6 +396,30 @@ sealed class LibraryAnalyser : IDisposable
                     BulkTotal = BulkDone = 0;
             }
             Analysed?.Invoke(song);
+
+            // Any other copy of the same song waiting has the same result, rather than being analysed again.
+            List<Song> twins;
+            lock (_lock)
+            {
+                twins = _queue.Where(other => other != song && string.Equals(other.Path, song.Path, StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var twin in twins)
+                {
+                    _queue.Remove(twin);
+                    _requested.Remove(twin);
+                }
+            }
+            foreach (var twin in twins)
+            {
+                (twin.Analysis, twin.AnalysisError) = (song.Analysis, song.AnalysisError);
+                updated++;
+                if (_bulk.Remove(twin))
+                {
+                    BulkDone++;
+                    if (_bulk.Count == 0)
+                        BulkTotal = BulkDone = 0;
+                }
+                Analysed?.Invoke(twin);
+            }
         }
 
         // Saved in the background and no more often than this, as the whole file's written each time. What's not saved

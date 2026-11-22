@@ -78,6 +78,8 @@ Each song is analysed in the background as it comes into view in the list. The a
 - **Master volume:** the knob by the master meter in the title bar turns the whole mix down before the limiter, so the speakers, the recording and the headphones' main mix all follow it. Double-click it for full. A controller's knob can be learned to it.
 - **Master limiter:** keeps the mix under 1 dB below full scale when the decks are loud together, turning it down smoothly just before each peak rather than clipping. LIMIT by the master meter lights while it's working. It can be turned off in the options.
 - **Recording the mix:** the record button in the title bar records the main mix, as the room hears it, to a 24-bit WAV file in `Music\Cuepoint Recordings`, showing how long it's been going. A set of over four hours carries on into a second file. When it stops, a cue sheet (`.cue`) beside each file marks where each song played starts in it, so players and mix sites can show the tracklist and skip through it, and a `.txt` beside the first file lists the songs with their times, ready to paste under the mix. Songs count once they've played for ten seconds, as in History, and a song already playing as the recording starts is there from the start.
+- **Editing a recording's tracklist:** right-click the Music library and choose **Recording's tracklist**, then the last recording made, or another recording's WAV or cue sheet. Each song's time into the recording, artist and title can be changed, a song taken out with its cross, or one put in with **Add a song**, before it's uploaded. Saving writes the cue sheet beside each of its files and the `.txt` beside the first again, so they always agree; times typed are as `4:05` or `1:04:05`, and one left as it was keeps its exact place.
+- **Live streaming:** **LIVE**, beside the record button, drops down where to stream the main mix to, as it's recorded: an Icecast server's address, port, mount point and source password, a name for the stream, and its quality, then **GO LIVE**. It's sent as Opus (128 kbps sounds about as good as 256 of MP3), with the song playing as the stream's title, which listeners' players show as it changes. LIVE lights with how long it's been live, and the panel says where to listen. If the connection drops it's made again, waiting 2, 4, 8 then up to 30 seconds between tries, carrying on with the mix as it is then rather than falling behind; a password the server turns down stops it and says so. The settings are kept, the password encrypted for your Windows account. Icecast 2.4 or later takes it with PUT, and older ones with SOURCE. Shoutcast doesn't take Opus.
 - **Outputs:** the main mix and the headphones can go to separate sound cards, or the headphones can use channels 3 and 4 of a four-channel controller's sound card.
 - **Booth output:** the main mix can go to another sound card too, for monitors in the DJ booth, at its own volume, set in the options, which the master volume doesn't move. If its sound card is unplugged, it's back on it when it's plugged in again.
 
@@ -121,6 +123,7 @@ Each song is analysed in the background as it comes into view in the list. The a
 - **Drag and drop:** drag songs onto a deck to load them, from the list or from outside the app.
 - **Looks:** **Look** in the options chooses Dark, Light for daylight, or High contrast for bright rooms (black panels, white text and brighter edges), shared with Cuedeck. The scrolling waveforms, overviews, phase meter and beat trackers stay dark in every look, so their beat grids and playheads show; key, tag and folder colours are deepened on Light so they read on white. A new look shows the next time Cuepoint starts.
 - **Large text:** turned on in the options, the folder list and song list use bigger text, and the folder list bigger icons, to read in the dark or without glasses.
+- **Screen size:** in the options, everything drawn bigger, from 100% to 200%, for a 4K screen or one seen from further away; to begin with, as Windows has it for the screen. Text is drawn at that size, so it stays sharp. It changes the next time Cuepoint starts. `--scale 1.5` on the command line tries a size for one run without changing the setting.
 - **Where analyses, hotcues and fixed grids are kept:** with the songs themselves.
   - **On the system drive:** in the app's own `library.json`.
   - **On any other drive:** in a `Cuepoint\library.json` at that drive's root.
@@ -194,6 +197,14 @@ The music library starts out as your Windows Music folder. To use another folder
 Settings, the library's analyses, and `errors.log` for anything that went wrong are kept in `%LOCALAPPDATA%\Cuepoint`.
 
 The app's images are drawn by [Assets/draw_assets.py](Cuepoint/Assets/draw_assets.py), which needs only Python 3. Run it again after changing them.
+
+The screenshot above is taken by the app itself, so it can be taken again as the app changes:
+
+```
+dotnet run --project Cuepoint -c Release -- --capture docs [--look Light|HighContrast]
+```
+
+It runs on a scratch app folder in `%TEMP%\cuepoint-capture`, with a dozen songs made up for it (a beat and a chord each, at a tempo and in a key, under made-up names), and the master volume down, so nothing of yours is read or changed and nothing's heard. Once they're analysed, two are loaded and played in step, and the window's own picture is saved as `screenshot.png` (or `screenshot-light.png`, `screenshot-high-contrast.png`), 1920 by 1050.
 
 ## Tests
 

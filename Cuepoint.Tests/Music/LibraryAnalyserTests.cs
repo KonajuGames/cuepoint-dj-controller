@@ -33,6 +33,21 @@ public class LibraryAnalyserTests : IDisposable
     }
 
     [Fact]
+    public void A_copy_looked_up_before_its_song_was_analysed_takes_the_analysis_rather_than_being_analysed_again()
+    {
+        // The library's copy, looked up while nothing was known, and then the list's copy, analysed.
+        var libraryCopy = Song(_folder["twice.mp3"]);
+        using var analyser = Analyser([libraryCopy]);
+        Assert.Null(libraryCopy.Analysis);
+        _database.Set(Song(_folder["twice.mp3"]), Analysed());
+
+        analyser.Request(libraryCopy);
+
+        Assert.Equal(0, analyser.QueuedCount);
+        Assert.Equal(Analysed(), libraryCopy.Analysis);
+    }
+
+    [Fact]
     public void Asking_queues_a_song_once()
     {
         using var analyser = Analyser();

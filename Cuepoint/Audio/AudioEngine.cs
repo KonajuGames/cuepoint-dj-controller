@@ -364,6 +364,18 @@ sealed unsafe class AudioEngine : IDisposable
         set => Volatile.Write(ref _recorder, value);
     }
 
+    Streaming.LiveStream? _stream;
+
+    /// <summary>
+    /// Where the final mix is streamed live to, as it's recorded; none if null. Set it to null before stopping the
+    /// stream, so the audio thread lets go of it.
+    /// </summary>
+    public Streaming.LiveStream? Stream
+    {
+        get => Volatile.Read(ref _stream);
+        set => Volatile.Write(ref _stream, value);
+    }
+
     /// <summary>
     /// This engine, for SDL_mixer's audio thread to find from its callback.
     /// </summary>
@@ -1037,6 +1049,8 @@ sealed unsafe class AudioEngine : IDisposable
                 engine.Limiter.Process(new Span<float>(samples, count));
             engine.Meter.Measure(samples, count, spec->channels);
             engine.Recorder?.Write(samples, count);
+            if (spec->channels == AudioOutput.CHANNELS)
+                engine.Stream?.Write(samples, count);
             engine.FeedHeadphones(samples, count);
         }
         catch

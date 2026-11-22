@@ -107,27 +107,20 @@ static class PlayHistory
     /// where each of <paramref name="tracks"/> starts in it, so players and mix sites show the tracklist and can skip
     /// through it.
     /// </summary>
-    public static string CueSheet(IReadOnlyList<(TimeSpan At, string Path)> tracks, string wavName, DateTime started, Func<string, Song?> songAt)
-    {
-        static string Quoted(string text) => $"\"{text.Replace('"', '\'')}\"";
+    public static string CueSheet(IReadOnlyList<(TimeSpan At, string Path)> tracks, string wavName, DateTime started, Func<string, Song?> songAt) =>
+        RecordingTracklist.CueSheet(Tracks(tracks, songAt), wavName, started);
 
-        var text = new StringBuilder();
-        text.Append(CultureInfo.InvariantCulture, $"REM DATE {started:yyyy-MM-dd}\n");
-        text.Append("REM COMMENT \"Recorded with Cuepoint\"\n");
-        text.Append(CultureInfo.InvariantCulture, $"TITLE {Quoted(Path.GetFileNameWithoutExtension(wavName))}\n");
-        text.Append(CultureInfo.InvariantCulture, $"FILE {Quoted(wavName)} WAVE\n");
-        for (var i = 0; i < tracks.Count; i++)
-        {
-            var (at, path) = tracks[i];
-            var song = songAt(path);
-            text.Append(CultureInfo.InvariantCulture, $"  TRACK {i + 1:00} AUDIO\n");
-            text.Append(CultureInfo.InvariantCulture, $"    TITLE {Quoted(song is { Title.Length: > 0 } ? song.Title : Path.GetFileNameWithoutExtension(path))}\n");
-            if (song is { Artist.Length: > 0 })
-                text.Append(CultureInfo.InvariantCulture, $"    PERFORMER {Quoted(song.Artist)}\n");
-            text.Append(CultureInfo.InvariantCulture, $"    INDEX 01 {CueTime(at)}\n");
-        }
-        return text.ToString();
-    }
+    /// <summary>
+    /// What's known of each song played, for a tracklist: its artist, and its title or else its file's name.
+    /// </summary>
+    static IReadOnlyList<RecordedTrack> Tracks(IReadOnlyList<(TimeSpan At, string Path)> tracks, Func<string, Song?> songAt) =>
+        tracks
+            .Select(track =>
+            {
+                var song = songAt(track.Path);
+                return new RecordedTrack(track.At, song?.Artist ?? "", song is { Title.Length: > 0 } ? song.Title : Path.GetFileNameWithoutExtension(track.Path));
+            })
+            .ToList();
 
     /// <summary>
     /// A cue sheet's time: minutes, seconds and frames, 75 to the second, as on a CD.
@@ -142,17 +135,8 @@ static class PlayHistory
     /// A recording's tracklist as text, each song with how far into the recording it starts, to paste under a mix
     /// put online.
     /// </summary>
-    public static string Tracklist(IReadOnlyList<(TimeSpan At, string Path)> tracks, string title, Func<string, Song?> songAt)
-    {
-        var text = new StringBuilder(title).Append("\n\n");
-        var hours = tracks.Count > 0 && tracks[^1].At.TotalHours >= 1;
-        foreach (var (at, path) in tracks)
-        {
-            var time = hours ? $"{(int)at.TotalHours}:{at.Minutes:00}:{at.Seconds:00}" : $"{(int)at.TotalMinutes}:{at.Seconds:00}";
-            text.Append(CultureInfo.InvariantCulture, $"{time}  {Name(path, songAt(path))}\n");
-        }
-        return text.ToString();
-    }
+    public static string Tracklist(IReadOnlyList<(TimeSpan At, string Path)> tracks, string title, Func<string, Song?> songAt) =>
+        RecordingTracklist.Text(Tracks(tracks, songAt), title);
 
     /// <summary>
     /// Writes a cue sheet to <paramref name="path"/>, in UTF-8 with a byte order mark, so players that read it in the

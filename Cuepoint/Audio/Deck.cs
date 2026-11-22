@@ -51,6 +51,17 @@ sealed partial class Deck : IDisposable
 
     public string Artist { get; private set; } = "";
 
+    /// <summary>
+    /// Names the loaded song as the library knows it, from its folders, when its file has no artist in its tags, as
+    /// a WAV often hasn't: its title is then only its file's name.
+    /// </summary>
+    public void NameUntagged(string title, string artist)
+    {
+        if (!IsLoaded || Artist.Length > 0 || artist.Length == 0)
+            return;
+        (Title, Artist) = (title.Length > 0 ? title : Title, artist);
+    }
+
     public TimeSpan Duration { get; private set; }
 
     /// <summary>

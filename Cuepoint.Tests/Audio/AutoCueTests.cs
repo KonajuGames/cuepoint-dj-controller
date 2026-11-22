@@ -86,6 +86,19 @@ public sealed class AutoCueTests : IDisposable
     }
 
     [Fact]
+    public void A_file_with_no_tags_is_named_as_the_library_knows_it_and_one_with_them_keeps_its_own()
+    {
+        Load();
+        Assert.Equal("", _deck.Artist);
+
+        _deck.NameUntagged("Northern Static", "Glass Horizon");
+        Assert.Equal(("Northern Static", "Glass Horizon"), (_deck.Title, _deck.Artist));
+
+        _deck.NameUntagged("Something else", "Someone else");
+        Assert.Equal("Glass Horizon", _deck.Artist);
+    }
+
+    [Fact]
     public void Silence_has_no_first_sound()
     {
         Assert.Null(Deck.FirstSound(new PcmAudio(new float[100], 2, 8000)));
