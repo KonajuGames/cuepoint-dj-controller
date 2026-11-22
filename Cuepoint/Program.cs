@@ -1219,12 +1219,15 @@ static int Run(ScreenshotTool.Request? capture)
         screen.Log($"Tempos shown from {TempoRange.Name(TempoRange.Min)}");
     };
     // A new screen size, taken on the next time the app starts, as the look is.
-    (screen.Options.ChosenScreenSize, screen.Options.WindowsScale) = (settings.ScreenScale, windowsScale);
+    (screen.Options.WindowsScale, screen.Options.RunningScale) = (windowsScale, screenScale);
+    screen.Options.ChosenScreenSize = settings.ScreenScale;
     screen.Options.ScreenSizeChosen += scale =>
     {
         settings.ScreenScale = scale;
         SaveSettings();
-        screen.Log($"The screen will be drawn at {ScreenScale.Name(scale, windowsScale)} the next time Cuepoint starts");
+        screen.Log(ScreenScale.Use(scale, windowsScale) == screenScale
+            ? $"The screen will stay at {ScreenScale.Name(scale, windowsScale)}"
+            : $"Restart Cuepoint to draw the screen at {ScreenScale.Name(scale, windowsScale)}");
     };
     screen.Options.AutoCue.Checked = settings.AutoCue;
     foreach (var deck in decks)

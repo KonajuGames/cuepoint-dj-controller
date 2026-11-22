@@ -131,13 +131,27 @@ sealed class OptionsDialog : Panel
     public float? ChosenScreenSize
     {
         get => _screenSize.Selected;
-        set => _screenSize.Selected = value;
+        set
+        {
+            _screenSize.Selected = value;
+            ShowRestartNote();
+        }
     }
 
     /// <summary>
     /// Windows' own scale for the screen, to say what "As Windows has it" is.
     /// </summary>
     public float WindowsScale { get; set; } = 1;
+
+    /// <summary>
+    /// The scale the screen's drawn at now, taken on as the app started: a size chosen that comes out different
+    /// says Cuepoint needs starting again to show it.
+    /// </summary>
+    public float RunningScale { get; set; } = 1;
+
+    readonly Label _restartNote;
+
+    void ShowRestartNote() => _restartNote.Visible = ScreenScale.Use(_screenSize.Selected, WindowsScale) != RunningScale;
 
     /// <summary>
     /// Change keys was clicked.
@@ -606,7 +620,12 @@ sealed class OptionsDialog : Panel
                 Text = scale => ScreenScale.Name(scale, WindowsScale),
             }
         );
-        _screenSize.Chosen += scale => ScreenSizeChosen?.Invoke(scale);
+        _restartNote = screenRow.Add(new Label(body, "Restart Cuepoint to see it") { Color = Theme.Warning, Visible = false });
+        _screenSize.Chosen += scale =>
+        {
+            ShowRestartNote();
+            ScreenSizeChosen?.Invoke(scale);
+        };
         _page.Add(
             new Label(body, "Everything drawn bigger, for a 4K screen or one seen from further away. It changes the next time Cuepoint starts.")
             {
