@@ -27,7 +27,8 @@ sealed class StemJob
 }
 
 /// <summary>
-/// Separates songs into their stems with Demucs, one at a time on a low-priority thread, keeping each on disk so it's
+/// Separates songs into their stems with Demucs (on the graphics card where it can be), one at a time on a
+/// low-priority thread, keeping each on disk so it's
 /// only done once. The model is an ONNX export of Demucs's htdemucs (tools/export_demucs.py makes it), which isn't
 /// shipped with the app; without it, only stems already on disk can be had.
 /// </summary>
@@ -41,6 +42,18 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
     public string ModelPath { get; } = modelPath;
 
     public bool HasModel => File.Exists(ModelPath);
+
+    /// <summary>
+    /// Whether something's playing (a deck, or a preview), when separating keeps off the graphics card, which the
+    /// screen needs, and to half the processor's cores. Set it once a frame.
+    /// </summary>
+    public bool Busy
+    {
+        get => Volatile.Read(ref _busy);
+        set => Volatile.Write(ref _busy, value);
+    }
+
+    bool _busy;
 
     /// <summary>
     /// Finds the stems of the song at <paramref name="path"/>, whose decoded samples are <paramref name="audio"/>:
@@ -75,7 +88,16 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
             var stems = await OnLowPriorityThread(() =>
             {
                 _model ??= new Demucs(ModelPath);
-                return _model.Separate(audio, progress => Volatile.Write(ref job._progress, progress));
+                try
+                {
+                    return _model.Separate(audio, progress => Volatile.Write(ref job._progress, progress), () => Busy);
+                }
+                catch (GpuWentWrongException e)
+                {
+                    // The model's dropped the graphics card, so it's all on the processor from here on.
+                    ErrorLog.Write($"separating the stems of {job.Path} on the graphics card, so it's on the processor", e);
+                    return _model.Separate(audio, progress => Volatile.Write(ref job._progress, progress), () => Busy);
+                }
             });
             try
             {

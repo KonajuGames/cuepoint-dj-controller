@@ -4,15 +4,17 @@ using Microsoft.ML.OnnxRuntime;
 namespace Cuepoint.Audio.Stems;
 
 /// <summary>
-/// Meta's Demucs (htdemucs, the hybrid transformer model), run with ONNX Runtime on the processor. It separates
+/// Meta's Demucs (htdemucs, the hybrid transformer model), run with ONNX Runtime: on the graphics card through
+/// DirectML while nothing's playing, about 10 times as fast, and on the processor otherwise. It separates
 /// stereo audio at 44.1 kHz into drums, bass, vocals and everything else, 7.8 seconds at a time with a quarter of
 /// each overlapping the next, as Demucs's own apply_model does.
 /// </summary>
 /// <remarks>
 /// The ONNX model (tools/export_demucs.py) is htdemucs without the STFT at its input and the inverse STFT at its
 /// output, which ONNX can't do: they're done here, exactly as Demucs does them, so it gives the same stems as Demucs
-/// itself (without its random shifts). It uses at most half the processor's cores, so the rest of the PC, and the
-/// decks, carry on; not the graphics card, where DirectML gets this model wrong and the UI needs it.
+/// itself (without its random shifts). On the processor it uses at most half its cores, so the rest of the PC, and
+/// the decks, carry on. The graphics card isn't used while a deck's playing: each segment there holds it for a fifth
+/// of a second, and the screen, waiting for it, stutters.
 /// </remarks>
 sealed class Demucs : IDisposable
 {
@@ -42,35 +44,88 @@ sealed class Demucs : IDisposable
     const int VOCALS = 3;
 
     /// <summary>
-    /// How many of the processor's cores separating uses.
+    /// How many of the processor's cores separating uses, when it's on the processor.
     /// </summary>
     public static readonly int Threads = Math.Max(1, Environment.ProcessorCount / 2);
 
-    readonly InferenceSession _session;
+    // Far louder than any stem can be, with the song normalised to a standard deviation of 1 (the graphics card going
+    // wrong gives thousands): it's gone wrong.
+    const float IMPOSSIBLE = 200;
+
+    readonly string _modelPath;
+    InferenceSession? _gpu;
+    InferenceSession? _cpu;
     readonly float[] _window = new float[NFFT];
-    readonly Fft _fft = new(NFFT);
-    readonly float[] _re = new float[NFFT];
-    readonly float[] _im = new float[NFFT];
+
+    // The STFT's done on as many threads as the processor would use for the model, each with its own transform.
+    static readonly ParallelOptions Parallelism = new() { MaxDegreeOfParallelism = Threads };
+
+    sealed class Transform
+    {
+        public readonly Fft Fft = new(NFFT);
+        public readonly float[] Re = new float[NFFT];
+        public readonly float[] Im = new float[NFFT];
+    }
+
+    readonly System.Collections.Concurrent.ConcurrentBag<Transform> _transforms = [];
+
+    Transform TakeTransform() => _transforms.TryTake(out var transform) ? transform : new Transform();
     readonly float[] _spec = new float[4 * BINS * FRAMES];
 
-    public Demucs(string modelPath)
+    /// <summary>
+    /// Whether the graphics card can be used: it started, and hasn't gone wrong.
+    /// </summary>
+    public bool HasGpu => _gpu is not null;
+
+    /// <param name="gpu">Whether to use the graphics card when it can be.</param>
+    public Demucs(string modelPath, bool gpu = true)
     {
+        _modelPath = modelPath;
         for (var i = 0; i < NFFT; i++)
             _window[i] = (float)(0.5 - 0.5 * Math.Cos(2 * Math.PI * i / NFFT));
-        var options = new SessionOptions
+
+        if (gpu && OperatingSystem.IsWindows())
         {
-            IntraOpNumThreads = Threads,
-            InterOpNumThreads = 1,
-            ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
-        };
-        _session = new InferenceSession(modelPath, options);
+            try
+            {
+                var options = new SessionOptions
+                {
+                    // DirectML needs these. Its graph fusion, compiling runs of the model into one, gets this model
+                    // wrong (it gives wild values), so it's left out; the rest of DirectML is right.
+                    EnableMemoryPattern = false,
+                    ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+                };
+                options.AddSessionConfigEntry("ep.dml.disable_graph_fusion", "1");
+                options.AppendExecutionProvider_DML(0);
+                _gpu = new InferenceSession(modelPath, options);
+            }
+            catch (OnnxRuntimeException e)
+            {
+                ErrorLog.Write("starting stem separation on the graphics card, so it's on the processor", e);
+            }
+        }
+
     }
+
+    // The processor's, loaded the first time it's needed.
+    InferenceSession Cpu =>
+        _cpu ??= new InferenceSession(
+            _modelPath,
+            new SessionOptions
+            {
+                IntraOpNumThreads = Threads,
+                InterOpNumThreads = 1,
+                ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+            }
+        );
 
     /// <summary>
     /// Separates <paramref name="audio"/> into its vocals, drums and bass, in its own format, reporting how far it's
-    /// got from 0 to 1 as it goes.
+    /// got from 0 to 1 as it goes. Each segment's on the graphics card unless <paramref name="busy"/> says something's
+    /// playing. If the graphics card gives values no song could have, it's never used again, and this throws
+    /// <see cref="GpuWentWrongException"/> for the song to be separated afresh.
     /// </summary>
-    public SongStems Separate(PcmAudio audio, Action<float>? progress = null)
+    public SongStems Separate(PcmAudio audio, Action<float>? progress = null, Func<bool>? busy = null)
     {
         // Stereo at 44.1 kHz, normalised by the mono mix's level as Demucs's separate does.
         var mix = ToModel(audio);
@@ -108,7 +163,7 @@ sealed class Demucs : IDisposable
                     input[c * SEGMENT + i] = at >= 0 && at < length ? mix[c][at] : 0;
                 }
 
-            var output = Run(input);
+            var output = Run(input, _gpu is { } gpu && busy?.Invoke() != true ? gpu : Cpu);
             for (var s = 0; s < SOURCES; s++)
                 for (var c = 0; c < 2; c++)
                 {
@@ -134,20 +189,25 @@ sealed class Demucs : IDisposable
     /// One segment through the model: its two channels one after the other, to each source's two channels one after
     /// the other.
     /// </summary>
-    float[] Run(float[] mix)
+    float[] Run(float[] mix, InferenceSession session)
     {
         Spectrogram(mix, _spec);
 
         using var mixValue = OrtValue.CreateTensorValueFromMemory(mix, [1, 2, SEGMENT]);
         using var specValue = OrtValue.CreateTensorValueFromMemory(_spec, [1, 4, BINS, FRAMES]);
         using var runOptions = new RunOptions();
-        using var outputs = _session.Run(runOptions, ["mix", "spec"], [mixValue, specValue], ["spec_out", "time_out"]);
-        var specOut = outputs[0].GetTensorDataAsSpan<float>();
+        using var outputs = session.Run(runOptions, ["mix", "spec"], [mixValue, specValue], ["spec_out", "time_out"]);
+        var specOut = outputs[0];
         var result = outputs[1].GetTensorDataAsSpan<float>().ToArray();
 
         // The time branch, plus the frequency branch back from its spectrogram.
-        for (var sc = 0; sc < SOURCES * 2; sc++)
-            InverseSpectrogram(specOut, sc / 2, sc % 2, result.AsSpan(sc * SEGMENT, SEGMENT));
+        Parallel.For(0, SOURCES * 2, Parallelism, sc => InverseSpectrogram(specOut.GetTensorDataAsSpan<float>(), sc / 2, sc % 2, result.AsSpan(sc * SEGMENT, SEGMENT)));
+        if (session == _gpu && Wild(result))
+        {
+            _gpu.Dispose();
+            _gpu = null;
+            throw new GpuWentWrongException();
+        }
         return result;
     }
 
@@ -157,31 +217,43 @@ sealed class Demucs : IDisposable
     /// </summary>
     void Spectrogram(float[] mix, float[] spec)
     {
-        for (var c = 0; c < 2; c++)
-        {
-            var real = c * 2 * BINS * FRAMES;
-            var imaginary = real + BINS * FRAMES;
-            for (var frame = 0; frame < FRAMES; frame++)
+        // A block of frames of one channel at a time.
+        const int BLOCK = 32;
+        var blocks = (FRAMES + BLOCK - 1) / BLOCK;
+        Parallel.For(
+            0,
+            2 * blocks,
+            Parallelism,
+            cb =>
             {
-                var first = frame * HOP - PAD;
-                for (var n = 0; n < NFFT; n++)
+                var transform = TakeTransform();
+                var (re, im) = (transform.Re, transform.Im);
+                var c = cb / blocks;
+                var real = c * 2 * BINS * FRAMES;
+                var imaginary = real + BINS * FRAMES;
+                for (var frame = cb % blocks * BLOCK; frame < Math.Min(FRAMES, (cb % blocks + 1) * BLOCK); frame++)
                 {
-                    var at = first + n;
-                    if (at < 0)
-                        at = -at;
-                    else if (at >= SEGMENT)
-                        at = 2 * (SEGMENT - 1) - at;
-                    _re[n] = mix[c * SEGMENT + at] * _window[n];
-                    _im[n] = 0;
+                    var first = frame * HOP - PAD;
+                    for (var n = 0; n < NFFT; n++)
+                    {
+                        var at = first + n;
+                        if (at < 0)
+                            at = -at;
+                        else if (at >= SEGMENT)
+                            at = 2 * (SEGMENT - 1) - at;
+                        re[n] = mix[c * SEGMENT + at] * _window[n];
+                        im[n] = 0;
+                    }
+                    transform.Fft.Transform(re, im);
+                    for (var k = 0; k < BINS; k++)
+                    {
+                        spec[real + k * FRAMES + frame] = re[k] * STFT_SCALE;
+                        spec[imaginary + k * FRAMES + frame] = im[k] * STFT_SCALE;
+                    }
                 }
-                _fft.Transform(_re, _im);
-                for (var k = 0; k < BINS; k++)
-                {
-                    spec[real + k * FRAMES + frame] = _re[k] * STFT_SCALE;
-                    spec[imaginary + k * FRAMES + frame] = _im[k] * STFT_SCALE;
-                }
+                _transforms.Add(transform);
             }
-        }
+        );
     }
 
     /// <summary>
@@ -189,6 +261,8 @@ sealed class Demucs : IDisposable
     /// </summary>
     void InverseSpectrogram(ReadOnlySpan<float> spec, int source, int channel, Span<float> into)
     {
+        var transform = TakeTransform();
+        var (re, im) = (transform.Re, transform.Im);
         var real = (source * 4 + channel * 2) * BINS * FRAMES;
         var imaginary = real + BINS * FRAMES;
         for (var frame = 0; frame < FRAMES; frame++)
@@ -197,21 +271,31 @@ sealed class Demucs : IDisposable
             // inverts it.
             for (var k = 0; k < BINS; k++)
             {
-                _re[k] = spec[real + k * FRAMES + frame];
-                _im[k] = -spec[imaginary + k * FRAMES + frame];
+                re[k] = spec[real + k * FRAMES + frame];
+                im[k] = -spec[imaginary + k * FRAMES + frame];
             }
-            _re[BINS] = _im[BINS] = 0;
+            re[BINS] = im[BINS] = 0;
             for (var k = 1; k < BINS; k++)
             {
-                _re[NFFT - k] = _re[k];
-                _im[NFFT - k] = -_im[k];
+                re[NFFT - k] = re[k];
+                im[NFFT - k] = -im[k];
             }
-            _fft.Transform(_re, _im);
+            transform.Fft.Transform(re, im);
 
             var first = frame * HOP - PAD;
             for (var n = Math.Max(0, -first); n < NFFT && first + n < SEGMENT; n++)
-                into[first + n] += _re[n] * _window[n] * ISTFT_SCALE;
+                into[first + n] += re[n] * _window[n] * ISTFT_SCALE;
         }
+        _transforms.Add(transform);
+    }
+
+    // Whether any value is impossible for a separated song: not a number, or far too loud.
+    static bool Wild(ReadOnlySpan<float> values)
+    {
+        foreach (var value in values)
+            if (!(MathF.Abs(value) < IMPOSSIBLE))
+                return true;
+        return false;
     }
 
     // The mean and standard deviation of the mono mix.
@@ -286,5 +370,14 @@ sealed class Demucs : IDisposable
         return to;
     }
 
-    public void Dispose() => _session.Dispose();
+    public void Dispose()
+    {
+        _gpu?.Dispose();
+        _cpu?.Dispose();
+    }
 }
+
+/// <summary>
+/// The graphics card gave values no song's stems could have, so the song's to be separated on the processor instead.
+/// </summary>
+sealed class GpuWentWrongException() : Exception("The graphics card's stem separation went wrong");

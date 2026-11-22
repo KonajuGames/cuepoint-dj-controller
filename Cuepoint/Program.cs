@@ -3370,6 +3370,9 @@ static int Run(ScreenshotTool.Request? capture)
             }
         );
 
+        // Separating stems keeps off the graphics card, which drawing the screen needs, while anything's playing.
+        separator.Busy = export is not null || preview.IsPlaying || decks.Any(deck => deck.IsPlaying);
+
         // With nothing playing, songs not analysed yet are done one at a time: those listed first, then the library.
         if (now >= nextIdleAnalysis)
         {
