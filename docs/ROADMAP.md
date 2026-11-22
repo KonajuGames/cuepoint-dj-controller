@@ -24,7 +24,8 @@ order to build in.
 | 10 | Recursive kept for the music library, a panic button, a self-test before a gig, recordings mended after a crash | `180fd90` |
 | 11 | Genre (read, shown, searched and edited), the stream's state said as it changes, the stream's listener count | `c7e5144` |
 | 12 | Echo outs and filter sweeps to the next phrase, a vocal cut, sampling from a deck and a second sampler bank, a set end time Auto-Mix paces to | `dc829ff` |
-| 13 | Key-shift suggestions with a Why column, suggested hot cues, keeping one duplicate and recycling the rest, moving songs between folders and drives | this commit |
+| 13 | Key-shift suggestions with a Why column, suggested hot cues, keeping one duplicate and recycling the rest, moving songs between folders and drives | `f2464b5` |
+| 14 | MIDI clock out (the controller mappings still wait on the hardware) | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -110,11 +111,11 @@ the other is the only leader; sync lock made the unlocked deck lead).
 | # | Item | Size | Notes |
 |---|---|---|---|
 | 31 | **Trying the DDJ-FLX4 and DDJ-400 mappings** on the controllers | S | See *Needs the hardware*; the self-test (17) first, so anything wrong is the mapping. |
-| 32 | **MIDI clock out**: the tempo sent to drum machines and lighting desks | M | 24 pulses a beat from the deck leading the mix, with start and stop, on a MIDI output chosen in the options; Cuedeck could follow it as well as OS2L. |
+| 32 | **MIDI clock out**: the tempo sent to drum machines and lighting desks (done) | M | `MidiClock`: 24 pulses a beat from the deck leading the mix, kept in step with its beat grid on a thread of its own, Start on its next downbeat and Stop when it stops, on a MIDI output chosen in the options. Only tried on Windows' own synth, which ignores clock; still to be tried with a drum machine or loopMIDI. Cuedeck could follow it as well as OS2L. |
 
 ## Order and dependencies
 
-- **Next:** Phase 14, or MP3 streaming (22) if a native LAME's wanted. Before a gig, `--self-test` (17). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
+- **Next:** the controller mappings (31) once there's a DDJ-FLX4 or DDJ-400 to try them on, or MP3 streaming (22) if a native LAME's wanted. Before a gig, `--self-test` (17). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
 - **Builds on:** (17) uses the capture mode's scratch folder and made-up songs; (20) lets (9) edit genre too; (22)'s MP3 needs an encoder library; (23) and (26) use Auto-Mix's phrase finding; (27) uses the intro and outro marks.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.

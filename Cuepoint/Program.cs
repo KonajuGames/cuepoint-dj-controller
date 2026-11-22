@@ -1624,6 +1624,26 @@ static int Run(ScreenshotTool.Request? capture)
     // Not for the screenshot tool, which leaves the user's controllers alone.
     using var midiDevices = OperatingSystem.IsWindows() && capture is null ? new MidiDevices(new WinMidi()) : null;
     ControllerDialog? controllerDialog = null;
+    // The tempo sent out as MIDI clock, on the output chosen in the options.
+    using var midiClock = OperatingSystem.IsWindows() && capture is null ? new MidiClockPort(new WinMidi(), midiDevices) : null;
+    if (midiClock is not null)
+    {
+        if (settings.MidiClockOutput is { } clockOut && !midiClock.Use(clockOut))
+            screen.Log($"Couldn't open {clockOut} for MIDI clock; is it plugged in, or open in something else?");
+        screen.Options.MidiClockOutputs = midiClock.Outputs;
+        screen.Options.MidiClockOutput = () => midiClock.Name;
+        screen.Options.MidiClockChanged += name =>
+        {
+            var opened = midiClock.Use(name);
+            settings.MidiClockOutput = opened ? name : null;
+            SaveSettings();
+            screen.Log(
+                name is null ? "MIDI clock off"
+                : opened ? $"MIDI clock out of {name}: the leading deck's tempo, started on its next downbeat"
+                : $"Couldn't open {name} for MIDI clock; is it open in something else?"
+            );
+        };
+    }
     using var controllers = midiDevices is null
         ? null
         : new MidiControls(midiDevices, decks, audio, Path.Combine(AppFolder.Path, "controllers"));
@@ -3214,6 +3234,7 @@ static int Run(ScreenshotTool.Request? capture)
                         screen.Log(finished);
                 }
                 MasterEffectsTiming.Follow(audio.MasterEffects, decks);
+                midiClock?.Follow(decks);
                 if (relocking.Count > 0)
                     Relock();
                 preview.Update();

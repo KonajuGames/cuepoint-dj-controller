@@ -160,6 +160,11 @@ sealed class AppSettings
     public DeckEffectSettings? MasterEffect { get; set; }
 
     /// <summary>
+    /// The MIDI output tempo's sent out of as MIDI clock, for drum machines and lighting desks; null for none.
+    /// </summary>
+    public string? MidiClockOutput { get; set; }
+
+    /// <summary>
     /// The recording device the microphone's on, or null for none.
     /// </summary>
     public string? MicrophoneDevice { get; set; }

@@ -226,6 +226,20 @@ sealed class OptionsDialog : Panel
     public Func<string?>? ControllerStatus { get; set; }
 
     /// <summary>
+    /// The MIDI outputs clock could go out of, and the one it does; none if null, as off Windows.
+    /// </summary>
+    public Func<IReadOnlyList<string>>? MidiClockOutputs { get; set; }
+
+    public Func<string?>? MidiClockOutput { get; set; }
+
+    /// <summary>
+    /// Another output, or none (null), was chosen for MIDI clock.
+    /// </summary>
+    public event Action<string?>? MidiClockChanged;
+
+    readonly Dropdown<string?> _midiClock;
+
+    /// <summary>
     /// Map controls was clicked, to open the controller's mapping.
     /// </summary>
     public event Action? MapControllerClicked;
@@ -558,6 +572,23 @@ sealed class OptionsDialog : Panel
         var map = controllerRow.Add(new Button(bold, "Map controls") { FocusColor = Theme.Focus });
         map.Clicked += _ => MapControllerClicked?.Invoke();
 
+        var clockRow = Row("MIDI clock out", body);
+        _midiClock = clockRow.Add(
+            new Dropdown<string?>(body)
+            {
+                Width = 300,
+                Items = () => [null, .. MidiClockOutputs?.Invoke() ?? []],
+                Text = name => name ?? "None",
+            }
+        );
+        _midiClock.Chosen += name => MidiClockChanged?.Invoke(name);
+        _content.Add(
+            new Label(body, "The tempo of the deck leading the mix, for drum machines, effects units and lighting desks: started on its next downbeat.")
+            {
+                Color = Theme.Muted,
+            }
+        );
+
         var lightingRow = Row("Lighting (OS2L)", body);
         _lighting = lightingRow.Add(new Checkbox(body));
         _lighting.Changed += _ => LightingToggled?.Invoke();
@@ -648,6 +679,7 @@ sealed class OptionsDialog : Panel
         _bufferSize.Selected = _engine.BufferFrames;
         _latency.Text = LatencyText(_engine.OutputBuffer, _engine.OutputMixAhead);
         _controller.Text = ControllerStatus?.Invoke() ?? "None connected";
+        _midiClock.Selected = MidiClockOutput?.Invoke();
         var lighting = LightingEnabled?.Invoke() ?? false;
         _lighting.Checked = lighting;
         _lightingStatus.Text = lighting ? LightingStatus?.Invoke() ?? "" : "";

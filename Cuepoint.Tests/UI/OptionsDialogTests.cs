@@ -24,7 +24,7 @@ public class OptionsDialogTests
         options.Menu = menu;
 
         var dropdowns = Within(options).OfType<IOpensMenu>().ToList();
-        Assert.Equal(10, dropdowns.Count);
+        Assert.Equal(11, dropdowns.Count);
         Assert.All(dropdowns, dropdown => Assert.Same(menu, dropdown.Menu));
     }
 
