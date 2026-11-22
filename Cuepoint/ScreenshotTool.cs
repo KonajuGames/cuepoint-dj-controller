@@ -2,8 +2,12 @@ using Brutal.GlfwApi;
 using Brutal.Numerics;
 using Cue.Framework.Rendering;
 using Cue.Framework.UI;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using Cuepoint.Audio;
 using Cuepoint.Music;
+using Cuepoint.Streaming;
 
 namespace Cuepoint;
 
@@ -13,6 +17,10 @@ namespace Cuepoint;
 /// run (<see cref="UseScratch"/>), its music a dozen songs made up for it (a beat and a chord at a tempo and key each,
 /// under made-up names), and the master volume's down, so nothing's heard. Once they're analysed, two are loaded and
 /// played in step, and the frame the GPU drew is saved as a PNG: only the window's own picture, never the screen's.
+/// Run as <c>Cuepoint --self-test [folder]</c>, on the same scratch folder and songs, it's a check before a gig: it
+/// loads, plays, syncs, records, edits the recording's tracklist, streams to a pretend server of its own and panics,
+/// says what passed and what didn't, writes that to <c>self-test.txt</c>, and quits, with an exit code of 1 if
+/// anything failed.
 /// </summary>
 sealed class ScreenshotTool
 {
@@ -24,7 +32,24 @@ sealed class ScreenshotTool
     /// <summary>
     /// What the tool drives: the app as <c>Program</c> built it.
     /// </summary>
-    public sealed record App(GlfwWindow Window, Renderer Renderer, Func<IReadOnlyList<Song>> Listed, IReadOnlyList<Deck> Decks, AudioEngine Audio, Func<Song, Deck, bool> Load, Action ListEverySong, Func<Song, bool> IsAnalysed);
+    public sealed record App(
+        GlfwWindow Window,
+        Renderer Renderer,
+        Func<IReadOnlyList<Song>> Listed,
+        IReadOnlyList<Deck> Decks,
+        AudioEngine Audio,
+        Func<Song, Deck, bool> Load,
+        Action ListEverySong,
+        Func<Song, bool> IsAnalysed,
+        Action StartRecording,
+        Func<string?> StopRecording
+    );
+
+    /// <summary>
+    /// What the command line asked for: where to put what's made, the look, and whether it's the self-test rather
+    /// than the screenshot.
+    /// </summary>
+    public sealed record Request(string Folder, string? Look, bool SelfTest);
 
     abstract record Step;
 
@@ -33,6 +58,11 @@ sealed class ScreenshotTool
     sealed record Until(Func<bool> Ready, int MaxFrames, string What) : Step;
 
     sealed record Shot(string Name) : Step;
+
+    /// <summary>
+    /// A check of the self-test, passed or not, and what was found.
+    /// </summary>
+    sealed record Check(string Name, bool Passed, string Found) : Step;
 
     /// <summary>
     /// The made-up songs: artist, album, title, tempo and key (its tonic as a semitone from C, and whether it's
@@ -62,20 +92,29 @@ sealed class ScreenshotTool
     Until? _until;
     Shot? _taking;
     readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    readonly bool _selfTest;
+    readonly List<Check> _checks = [];
 
     /// <summary>
-    /// The folder and look from the command line; null without <c>--capture</c>.
+    /// What the process should exit with: 1 if the self-test found anything wrong, else 0.
     /// </summary>
-    public static (string Folder, string? Look)? Parse(string[] args)
+    public int ExitCode => _checks.Any(check => !check.Passed) ? 1 : 0;
+
+    /// <summary>
+    /// What the command line asks for; null without <c>--capture</c> or <c>--self-test</c>.
+    /// </summary>
+    public static Request? Parse(string[] args)
     {
-        var at = Array.IndexOf(args, "--capture");
+        var testAt = Array.IndexOf(args, "--self-test");
+        var selfTest = testAt >= 0;
+        var at = selfTest ? testAt : Array.IndexOf(args, "--capture");
         if (at < 0)
             return null;
         var folder = at + 1 < args.Length && !args[at + 1].StartsWith("--", StringComparison.Ordinal)
             ? Path.GetFullPath(args[at + 1])
-            : Path.Combine(Environment.CurrentDirectory, "screenshots");
+            : Path.Combine(Environment.CurrentDirectory, selfTest ? "." : "screenshots");
         var look = Array.IndexOf(args, "--look") is var lookAt and >= 0 && lookAt + 1 < args.Length ? args[lookAt + 1] : null;
-        return (folder, look);
+        return new Request(Path.GetFullPath(folder), look, selfTest);
     }
 
     /// <summary>
@@ -111,13 +150,14 @@ sealed class ScreenshotTool
         }.Save(Path.Combine(app, "settings.json"));
     }
 
-    public ScreenshotTool(App app, string folder, string? look)
+    public ScreenshotTool(App app, Request request)
     {
         _app = app;
-        _out = folder;
-        _name = look is "Light" ? "screenshot-light" : look is "HighContrast" ? "screenshot-high-contrast" : "screenshot";
-        Directory.CreateDirectory(folder);
-        _script = Run().GetEnumerator();
+        _out = request.Folder;
+        _selfTest = request.SelfTest;
+        _name = request.Look is "Light" ? "screenshot-light" : request.Look is "HighContrast" ? "screenshot-high-contrast" : "screenshot";
+        Directory.CreateDirectory(_out);
+        _script = (_selfTest ? SelfTest() : Run()).GetEnumerator();
     }
 
     /// <summary>
@@ -162,6 +202,8 @@ sealed class ScreenshotTool
         }
         if (!_script.MoveNext())
         {
+            if (_selfTest)
+                Report();
             Done = true;
             return;
         }
@@ -176,6 +218,10 @@ sealed class ScreenshotTool
             case Shot take:
                 _taking = take;
                 _app.Renderer.CaptureWindow = true;
+                break;
+            case Check check:
+                _checks.Add(check);
+                Console.WriteLine($"{(check.Passed ? "PASS" : "FAIL")}  {check.Name}: {check.Found}");
                 break;
         }
     }
@@ -219,6 +265,127 @@ sealed class ScreenshotTool
         b.Play();
         yield return new Wait(5 * 60);
         yield return new Shot(_name);
+    }
+
+    // ------------------------------------------------------------------------------------------------ the self-test
+
+    IEnumerable<Step> SelfTest()
+    {
+        _app.Audio.MasterVolume = 0;
+        var listed = _app.Listed;
+        _app.ListEverySong();
+        yield return new Until(() => listed().Count == Songs.Length, 30 * 60, "the songs to be found");
+        yield return new Check("Finding songs", listed().Count == Songs.Length, $"{listed().Count} of {Songs.Length}");
+        yield return new Until(() => listed().All(_app.IsAnalysed), 120 * 60, "the songs to be analysed");
+        var analysed = listed().Where(song => song.Analysis is not null).ToList();
+        var temposRight = analysed.Count(song => Songs.FirstOrDefault(made => made.Title == song.Title) is var made && Math.Abs(song.Analysis!.Bpm - made.Bpm) < 0.6);
+        yield return new Check("Analysing", analysed.Count == Songs.Length && temposRight == Songs.Length, $"{analysed.Count} analysed, {temposRight} at the tempo they were made at");
+
+        var (a, b) = (_app.Decks[0], _app.Decks[1]);
+        if (listed().FirstOrDefault(song => song.Title == Songs[0].Title) is not { } first
+            || listed().FirstOrDefault(song => song.Title == Songs[1].Title) is not { } second)
+        {
+            yield return new Check("Loading", false, "the made-up songs weren't there to load");
+            yield break;
+        }
+        _app.Load(first, a);
+        _app.Load(second, b);
+        yield return new Until(() => a.IsLoaded && b.IsLoaded && a.Analysis is not null && b.Analysis is not null, 30 * 60, "the decks to load");
+        yield return new Check("Loading both decks", a.IsLoaded && b.IsLoaded, $"A: {a.Title}, B: {b.Title}");
+
+        // Playing: the decks move on, and B locked to A takes its tempo and beat.
+        b.Tempo = 0.03;
+        b.SyncLocked = true;
+        a.Play();
+        b.Play();
+        var started = a.Position;
+        yield return new Wait(3 * 60);
+        yield return new Check("Playing", a.IsPlaying && a.Position - started > TimeSpan.FromSeconds(2), $"deck A moved on {(a.Position - started).TotalSeconds:F1} seconds in 3");
+        yield return new Check("Sync lock", a.Bpm is { } tempoA && b.Bpm is { } tempoB && Math.Abs(tempoA - tempoB) < 0.05 && b.IsInSync, $"A at {a.Bpm:F2} BPM, B at {b.Bpm:F2}");
+
+        // Recording, long enough for the song playing to count as played, so it has a tracklist.
+        _app.StartRecording();
+        yield return new Wait(12 * 60);
+        var recording = _app.StopRecording();
+        var wav = recording is not null && File.Exists(recording) ? new FileInfo(recording).Length : 0;
+        var cue = recording is not null ? Path.ChangeExtension(recording, ".cue") : "";
+        yield return new Check("Recording", wav > 48000 * 6 * 10 && File.Exists(cue), $"{wav / 1024} KB recorded, {(File.Exists(cue) ? "with" : "without")} its cue sheet");
+
+        // The tracklist, edited and read back.
+        if (recording is not null && File.Exists(cue))
+        {
+            var (tracks, date) = RecordingTracklist.Read(recording, MixRecorder.FileLength);
+            RecordedTrack[] edited = [.. tracks.Select(track => track with { Title = track.Title + " (checked)" })];
+            var error = RecordingTracklist.Write(recording, edited, date, MixRecorder.FileLength);
+            var (again, _) = RecordingTracklist.Read(recording, MixRecorder.FileLength);
+            yield return new Check("Editing the tracklist", error is null && tracks.Count > 0 && again.SequenceEqual(edited), $"{tracks.Count} {(tracks.Count == 1 ? "song" : "songs")}, edited and read back");
+        }
+        else
+            yield return new Check("Editing the tracklist", false, "no cue sheet to edit");
+
+        // Streaming, to a pretend server of its own on this machine.
+        var server = new TcpListener(IPAddress.Loopback, 0);
+        server.Start();
+        var received = 0L;
+        var listening = Task.Run(() =>
+        {
+            try
+            {
+                using var client = server.AcceptTcpClient();
+                var network = client.GetStream();
+                var request = new StringBuilder();
+                while (!request.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal) && network.ReadByte() is var c and >= 0)
+                    request.Append((char)c);
+                network.Write("HTTP/1.1 100 Continue\r\n\r\n"u8);
+                var buffer = new byte[8192];
+                int read;
+                while ((read = network.Read(buffer)) > 0)
+                    Interlocked.Add(ref received, read);
+            }
+            catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException or InvalidOperationException) { }
+        });
+        var stream = new LiveStream(new StreamServer("127.0.0.1", ((IPEndPoint)server.LocalEndpoint).Port, "self-test", "self-test", "Cuepoint self-test", 128)) { Title = $"{a.Artist} - {a.Title}" };
+        _app.Audio.Stream = stream;
+        yield return new Wait(4 * 60);
+        var live = stream.State == StreamState.Live;
+        _app.Audio.Stream = null;
+        stream.Dispose();
+        server.Stop();
+        listening.Wait(TimeSpan.FromSeconds(2));
+        yield return new Check("Streaming", live && Interlocked.Read(ref received) > 1000, $"{(live ? "live" : stream.Problem ?? "not live")}, {Interlocked.Read(ref received) / 1024} KB received");
+
+        // The panic, and putting it back.
+        (a.Equalizer.Low, a.Effects.On) = (-1, true);
+        var panic = Panic.Reset(_app.Decks, _app.Audio.MasterEffects);
+        var neutral = a.Equalizer.Low == 0 && !a.Effects.On && a.IsPlaying;
+        panic.Undo();
+        yield return new Check("Panic", neutral && a.Equalizer.Low == -1 && a.Effects.On, neutral ? "back to neutral, playing on, and put back" : "not back to neutral");
+        (a.Equalizer.Low, a.Effects.On) = (0, false);
+        a.Pause();
+        b.Pause();
+    }
+
+    /// <summary>
+    /// Says how the self-test went, and writes it beside where it was asked to.
+    /// </summary>
+    void Report()
+    {
+        var failed = _checks.Count(check => !check.Passed);
+        var summary = failed == 0 ? $"All {_checks.Count} checks passed" : $"{failed} of {_checks.Count} checks failed";
+        var text = new StringBuilder($"Cuepoint self-test, {DateTime.Now:yyyy-MM-dd HH:mm}\n\n");
+        foreach (var check in _checks)
+            text.Append($"{(check.Passed ? "PASS" : "FAIL")}  {check.Name}: {check.Found}\n");
+        text.Append($"\n{summary}, in {_clock.Elapsed.TotalSeconds:F0} seconds.\n");
+        var path = Path.Combine(_out, "self-test.txt");
+        try
+        {
+            File.WriteAllText(path, text.ToString().Replace("\n", "\r\n"));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Couldn't write {path}: {e.Message}");
+        }
+        Console.WriteLine($"{summary}; written to {path}");
     }
 
     // ------------------------------------------------------------------------------------------- the made-up songs

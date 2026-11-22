@@ -210,6 +210,61 @@ sealed unsafe class MixRecorder : IDisposable
     }
 
     /// <summary>
+    /// Mends a recording left unfinished by a crash: its header still says nothing's there, though the sound is all
+    /// in the file. The sizes are written in from how long the file is, to its last whole frame. Returns whether it
+    /// was one to mend; a WAV that isn't one of ours, or is finished, is left alone.
+    /// </summary>
+    public static bool Mend(string path)
+    {
+        try
+        {
+            using var file = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            if (file.Length <= HEADER_BYTES)
+                return false;
+            Span<byte> header = stackalloc byte[HEADER_BYTES];
+            file.ReadExactly(header);
+            var ours = header[..4].SequenceEqual("RIFF"u8)
+                && header[8..16].SequenceEqual("WAVEfmt "u8)
+                && BitConverter.ToUInt16(header[22..]) == CHANNELS
+                && BitConverter.ToUInt32(header[24..]) == RATE
+                && BitConverter.ToUInt16(header[34..]) == 8 * BYTES_PER_SAMPLE
+                && header[36..40].SequenceEqual("data"u8);
+            var dataBytes = (file.Length - HEADER_BYTES) / FRAME_BYTES * FRAME_BYTES;
+            if (!ours || BitConverter.ToUInt32(header[40..]) == (uint)dataBytes)
+                return false;
+            file.Position = 0;
+            WriteHeader(file, dataBytes);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Mends every recording in <paramref name="folder"/> a crash left unfinished (see <see cref="Mend"/>), and
+    /// returns them.
+    /// </summary>
+    public static IReadOnlyList<string> MendAll(string folder) =>
+        Directory.Exists(folder) ? Directory.EnumerateFiles(folder, "*.wav").Order(StringComparer.OrdinalIgnoreCase).Where(Mend).ToList() : [];
+
+    /// <summary>
+    /// When the recording at <paramref name="path"/> started, from its name ("Mix 2026-11-21 22-30-00.wav", or a
+    /// later file of it, "... (2).wav"); null if it isn't named as recordings are.
+    /// </summary>
+    public static DateTime? StartedFrom(string path)
+    {
+        var name = System.IO.Path.GetFileNameWithoutExtension(Music.RecordingTracklist.FirstFile(path));
+        return name.StartsWith("Mix ", StringComparison.Ordinal)
+            && DateTime.TryParseExact(name[4..], "yyyy-MM-dd HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var started)
+                ? started
+                : null;
+    }
+
+    const int HEADER_BYTES = 44;
+
+    /// <summary>
     /// A canonical 44-byte WAV header for <paramref name="dataBytes"/> of 24-bit stereo PCM.
     /// </summary>
     static void WriteHeader(Stream stream, long dataBytes)

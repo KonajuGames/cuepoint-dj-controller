@@ -88,6 +88,11 @@ sealed class MidiControls : IDisposable
     public event Action? BrowsePressed;
 
     /// <summary>
+    /// The panic control was pressed, to put everything back to neutral.
+    /// </summary>
+    public event Action? PanicPressed;
+
+    /// <summary>
     /// A deck's pad was pressed (with Shift, as the controller sends it, if <c>shifted</c>): return true to take it,
     /// as when the pads are fixing the beat grid, or false to leave it to work the hotcue.
     /// </summary>
@@ -359,6 +364,8 @@ sealed class MidiControls : IDisposable
             }
             if (action == "browse.press" && pressed)
                 BrowsePressed?.Invoke();
+            if (action == "panic" && pressed)
+                PanicPressed?.Invoke();
             return;
         }
 

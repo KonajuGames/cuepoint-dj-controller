@@ -33,6 +33,7 @@ public class AppSettingsTests
             HeadphoneDevice = "DDJ-SB3",
             CueMix = 0.25f,
             MusicFolder = @"F:\Music",
+            LibraryRecursive = true,
             LargeListText = true,
             MasterLimiter = false,
             BufferFrames = 256,
@@ -43,6 +44,7 @@ public class AppSettingsTests
         Assert.Null(settings.Save(path));
         var loaded = AppSettings.Load(path);
 
+        Assert.True(loaded.LibraryRecursive);
         Assert.Equal("Speakers", loaded.OutputDevice);
         Assert.Equal("DDJ-SB3", loaded.HeadphoneDevice);
         Assert.Equal(0.25f, loaded.CueMix);

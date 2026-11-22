@@ -12,8 +12,8 @@ using Cuepoint.UI;
 
 WindowsShell.AttachParentConsole();
 
-// The screenshot tool (--capture <folder> [--look Light|HighContrast]) runs on a scratch app folder and made-up
-// songs, leaving the user's alone.
+// The screenshot tool (--capture <folder> [--look Light|HighContrast]) and the self-test (--self-test [folder]) run on
+// a scratch app folder and made-up songs, leaving the user's alone.
 var capture = ScreenshotTool.Parse(args);
 if (capture is { } scratch)
     ScreenshotTool.UseScratch(scratch.Look);
@@ -27,6 +27,7 @@ AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         ErrorLog.Write("working in the background", e);
 };
 
+var exitCode = 0;
 try
 {
     if (!Glfw.Init())
@@ -40,7 +41,7 @@ try
 
     try
     {
-        Run(capture);
+        exitCode = Run(capture);
     }
     finally
     {
@@ -55,9 +56,10 @@ catch (Exception e)
     return 1;
 }
 
-return 0;
+return exitCode;
 
-static void Run((string Folder, string? Look)? capture)
+// Runs the app; returns what it exits with: 0, unless the self-test found something wrong.
+static int Run(ScreenshotTool.Request? capture)
 {
     Glfw.WindowHint(GlfwWindowHint.ClientApi, Glfw.Constants.GLFW_NO_API);
 
@@ -202,14 +204,14 @@ static void Run((string Folder, string? Look)? capture)
     static string FolderKey(string path) => Path.TrimEndingDirectorySeparator(path);
 
     // A folder lists only the songs directly in it. The one chosen can be made recursive, to list every song under it,
-    // for as long as it stays chosen.
+    // for as long as it stays chosen. The music library made recursive stays so, between runs too (see SetRecursive).
     LibraryNode? recursiveNode = null;
     bool IsRecursive(string path) => recursiveNode?.Path == path;
 
     // The library scans now and reads tags in the background; songs load onto decks in the background too. It's the
     // folder last chosen as the library, or Windows' own Music folder to begin with.
     // It's looked through in the background once the screen's up, so a big one doesn't keep the window waiting.
-    using var library = new MusicLibrary(settings.MusicFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), scan: false);
+    using var library = new MusicLibrary(settings.MusicFolder ?? Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), settings.LibraryRecursive, scan: false);
 
     // The library's folder is watched, so songs added, changed or taken away show up without starting again; watched
     // afresh whenever the library moves or goes recursive. Paths notWatched says are passed over (recordings being
@@ -478,6 +480,9 @@ static void Run((string Folder, string? Look)? capture)
         read => TakeImports(read.Found, read.Files)
     );
 
+    // Recordings a crash left unfinished are mended once the first look through the library's done (set later).
+    Action mendRecordings = () => { };
+
     // The library's looked through in the background, its songs coming in once it's done.
     screen.Log($"Looking through {library.Root}");
     library.BeginScan(
@@ -486,6 +491,7 @@ static void Run((string Folder, string? Look)? capture)
         () =>
         {
             AfterLibraryScan();
+            mendRecordings();
             if (library.Error is null && database.LoadError is { } loadError)
                 screen.Log($"Couldn't read {loadError}; it starts afresh");
             else
@@ -502,6 +508,7 @@ static void Run((string Folder, string? Look)? capture)
     }
     screen.FolderTree.SelectionChanged += node =>
     {
+        // Another folder chosen, the one made recursive goes back to its own songs; the library stays as it's set.
         if (recursiveNode is { } recursive && recursive != node)
             SetRecursive(recursive, false);
         if (node.HasSongs)
@@ -603,6 +610,7 @@ static void Run((string Folder, string? Look)? capture)
     {
         library.BeginScan(
             path,
+            library.Recursive,
             scanned: () =>
             {
                 AfterLibraryScan();
@@ -616,13 +624,16 @@ static void Run((string Folder, string? Look)? capture)
         screen.Log($"Looking through {path}");
     }
 
-    // Making a folder recursive lists every song under it, until another is chosen. For the library, it rescans, and
-    // its lists and filters follow.
+    // Making a folder recursive lists every song under it, until another is chosen. For the library, it rescans, its
+    // lists and filters follow, and it's kept so until it's turned off, between runs too.
     void SetRecursive(LibraryNode node, bool recursive)
     {
-        recursiveNode = recursive ? node : null;
+        if (node.Kind != LibraryNodeKind.Library)
+            recursiveNode = recursive ? node : null;
         if (node.Kind == LibraryNodeKind.Library)
         {
+            settings.LibraryRecursive = recursive;
+            settings.Save(settingsPath);
             // Said again once it's looked through, as how many songs there are has changed.
             library.BeginScan(
                 library.Root,
@@ -643,9 +654,11 @@ static void Run((string Folder, string? Look)? capture)
 
     void ToggleRecursive(LibraryNode node)
     {
-        SetRecursive(node, recursiveNode != node);
-        var where = node.Kind == LibraryNodeKind.Library ? library.Root : node.Path;
-        screen.Log(recursiveNode == node ? $"Listing every song under {where}" : $"Listing only the songs directly in {where}");
+        var isLibrary = node.Kind == LibraryNodeKind.Library;
+        var recursive = isLibrary ? !library.Recursive : recursiveNode != node;
+        SetRecursive(node, recursive);
+        var where = isLibrary ? library.Root : node.Path;
+        screen.Log(recursive ? $"Listing every song under {where}" : $"Listing only the songs directly in {where}");
     }
 
     // Songs played out for ten seconds or more get a tick in the list, and make up the tracklist of a recording.
@@ -710,26 +723,29 @@ static void Run((string Folder, string? Look)? capture)
     // Beside each of a recording's files, a cue sheet marking where each song played starts in it; and beside the
     // first, the whole recording's tracklist as text. False if no song was played for long enough to count, or they
     // couldn't be written.
-    bool SaveTracklist(MixRecorder recording, IReadOnlyList<string> files)
+    bool SaveTracklist(MixRecorder recording, IReadOnlyList<string> files) =>
+        WriteTracklist(recording.Path, recording.Started, recording.FileDuration, files, plays.History);
+
+    bool WriteTracklist(string first, DateTime started, TimeSpan fileDuration, IReadOnlyList<string> files, IReadOnlyList<(DateTime Started, string Path)> history)
     {
-        var all = PlayHistory.Recorded(plays.History, recording.Started, TimeSpan.Zero, TimeSpan.MaxValue, library.SongAt);
+        var all = PlayHistory.Recorded(history, started, TimeSpan.Zero, TimeSpan.MaxValue, library.SongAt);
         if (all.Count == 0)
             return false;
         var failed = PlayHistory.Save(
-            Path.ChangeExtension(recording.Path, ".txt"),
-            PlayHistory.Tracklist(all, Path.GetFileNameWithoutExtension(recording.Path), library.SongAt),
+            Path.ChangeExtension(first, ".txt"),
+            PlayHistory.Tracklist(all, Path.GetFileNameWithoutExtension(first), library.SongAt),
             HistoryFormat.Text
         );
         for (var i = 0; i < files.Count; i++)
         {
-            var from = recording.FileDuration * i;
-            var to = i + 1 < files.Count ? recording.FileDuration * (i + 1) : TimeSpan.MaxValue;
-            var tracks = PlayHistory.Recorded(plays.History, recording.Started, from, to, library.SongAt);
+            var from = fileDuration * i;
+            var to = i + 1 < files.Count ? fileDuration * (i + 1) : TimeSpan.MaxValue;
+            var tracks = PlayHistory.Recorded(history, started, from, to, library.SongAt);
             if (tracks.Count > 0)
             {
                 failed ??= PlayHistory.SaveCueSheet(
                     Path.ChangeExtension(files[i], ".cue"),
-                    PlayHistory.CueSheet(tracks, Path.GetFileName(files[i]), recording.Started, library.SongAt)
+                    PlayHistory.CueSheet(tracks, Path.GetFileName(files[i]), started, library.SongAt)
                 );
             }
         }
@@ -737,6 +753,23 @@ static void Run((string Folder, string? Look)? capture)
             screen.Log($"Couldn't save the recording's tracklist: {failed}");
         return failed is null;
     }
+
+    // A recording a crash left unfinished is mended as the app starts, once the library's names are in: its sizes
+    // written into its header, and its tracklist, if it hadn't one, from the sets kept as they were played.
+    mendRecordings = () =>
+    {
+        mendRecordings = () => { };
+        var mended = MixRecorder.MendAll(recordingsFolder);
+        var history = playLog.Past.SelectMany(set => set.Songs).Select(song => (song.Started, song.Path)).ToList();
+        foreach (var first in mended.Select(RecordingTracklist.FirstFile).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var name = Path.GetFileNameWithoutExtension(first);
+            var withTracklist = !File.Exists(Path.ChangeExtension(first, ".cue"))
+                && MixRecorder.StartedFrom(first) is { } started
+                && WriteTracklist(first, started, MixRecorder.FileLength, RecordingTracklist.Files(first), history);
+            screen.Log(withTracklist ? $"Mended {name}, left unfinished by a crash, and wrote its tracklist" : $"Mended {name}, left unfinished by a crash");
+        }
+    };
     // A recording's tracklist, read back from its cue sheets to change and write again.
     void ChooseTracklist()
     {
@@ -1408,6 +1441,23 @@ static void Run((string Folder, string? Look)? capture)
 
     var controls = new KeyboardControls(decks, audio);
 
+    // Panic: every deck's EQ, filter, trim, key, effect and loop, and the master effect, back to neutral at once, the
+    // music playing on and the faders where they are; Ctrl+Z puts the settings back.
+    void PanicNow()
+    {
+        var panic = Panic.Reset(decks, audio.MasterEffects);
+        foreach (var deck in decks)
+            controls.ResetEq(deck);
+        if (panic.Changed == 0)
+        {
+            screen.Log("Panic: everything's at neutral already");
+            return;
+        }
+        edits.RecordLibrary("the panic", panic.Undo);
+        screen.Log($"Panic: {panic.Changed} {(panic.Changed == 1 ? "thing" : "things")} back to neutral; Ctrl+Z puts them back");
+    }
+
+
     // DJ controllers, found as they're plugged in. The load buttons take the selected song; the browse knob works
     // the list (and with Shift, the folders) as the arrow keys do.
     // Not for the screenshot tool, which leaves the user's controllers alone.
@@ -1434,6 +1484,7 @@ static void Run((string Folder, string? Look)? capture)
         controllers.Browse += steps => Step(browser.List, steps);
         controllers.BrowseFolders += steps => Step(screen.FolderTree, steps);
         controllers.BrowsePressed += () => screen.FolderTree.KeyDown(Key.Enter, Modifiers.None);
+        controllers.PanicPressed += PanicNow;
 
         // In GRID mode the controller's pads are the grid tools too, Shift + pad making a nudge a fine one.
         controllers.PadPressed = (deck, pad, shifted) =>
@@ -1591,6 +1642,14 @@ static void Run((string Folder, string? Look)? capture)
                 ui.Focus(browser.SearchBox);
                 browser.SearchBox.SelectAll();
             }
+            return;
+        }
+
+        // Panic: everything colouring the sound back to neutral.
+        if (key == GlfwKey.Backspace && (mods & GlfwModifier.Control) != 0)
+        {
+            if (pressed)
+                PanicNow();
             return;
         }
 
@@ -2314,7 +2373,7 @@ static void Run((string Folder, string? Look)? capture)
             menu.Show(
                 point,
                 [
-                    new MenuItem("Recursive", () => ToggleRecursive(node), Checked: recursiveNode == node),
+                    new MenuItem("Recursive", () => ToggleRecursive(node), Checked: library.Recursive),
                     // Other DJ software's libraries, one format to a line, more to come.
                     new MenuItem("Import", [new MenuItem("Rekordbox XML...", () => afterEvents.Enqueue(ImportRekordbox)), SeratoCuesFor(node, "Serato cues and grids")]),
                     new MenuItem("Export", [new MenuItem("Play history...", () => afterEvents.Enqueue(ExportHistory))]),
@@ -2793,13 +2852,27 @@ static void Run((string Folder, string? Look)? capture)
         }
     }
 
-    var screenshots = capture is { } shots ? new ScreenshotTool(
-            new(window, renderer, () => browser.ListedSongs, decks, audio, (song, deck) => Load(song, deck), () => SetRecursive(folders.First(node => node.Kind == LibraryNodeKind.Library), true),
-                song => song.Analysis is not null || song.AnalysisError is not null
+    var screenshots = capture is { } shots
+        ? new ScreenshotTool(
+            new(
+                window,
+                renderer,
+                () => browser.ListedSongs,
+                decks,
+                audio,
+                (song, deck) => Load(song, deck),
+                () => SetRecursive(folders.First(node => node.Kind == LibraryNodeKind.Library), true),
+                song => song.Analysis is not null || song.AnalysisError is not null,
+                StartRecording,
+                () =>
+                {
+                    StopRecording();
+                    return lastRecording;
+                }
             ),
-            shots.Folder,
-            shots.Look
-        ) : null;
+            shots
+        )
+        : null;
     var lastFrame = Glfw.Time;
     var windowShown = false;
     while (!window.ShouldClose && screenshots?.Done != true)
@@ -3024,6 +3097,7 @@ static void Run((string Folder, string? Look)? capture)
     WindowsShell.KeepAwake(false);
     if (OperatingSystem.IsWindows())
         WindowChrome.Remove();
+    return screenshots?.ExitCode ?? 0;
 }
 
 // The heaviest weight of the system font, for a letter or two that must stand out; null if there's none, to fall

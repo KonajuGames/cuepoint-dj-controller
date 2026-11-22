@@ -325,7 +325,10 @@ sealed class KeyboardControls
         }
     }
 
-    void ResetEq(Deck deck)
+    /// <summary>
+    /// A deck's EQ and filter back to the middle, and its kills forgotten, so a kill key afterwards kills afresh.
+    /// </summary>
+    public void ResetEq(Deck deck)
     {
         deck.Equalizer.Low = deck.Equalizer.Mid = deck.Equalizer.High = deck.Equalizer.Filter = 0;
         foreach (var band in Enum.GetValues<Band>())

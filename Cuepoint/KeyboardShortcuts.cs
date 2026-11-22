@@ -76,6 +76,7 @@ static class KeyboardShortcuts
         new("Search", "Ctrl + F; then Enter for the songs, Esc to clear"),
         new("Preview the selected song in the headphones", "Ctrl + P"),
         new("Undo a cue, grid or library list change", "Ctrl + Z"),
+        new("Panic: EQs, trims, keys, effects and loops back to neutral", "Ctrl + Backspace"),
         new("In GRID, ROLL or JUMP mode", "Hotcue keys work the pads"),
         new("Next control / press it / leave a box", "Tab / Enter / Esc"),
         new("These shortcuts", "?"),

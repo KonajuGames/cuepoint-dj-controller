@@ -148,6 +148,7 @@ static class ControlCatalog
                 new("master.fx.on", "Master effect on or off, on the whole mix", ControlKind.Button, HasLight: true),
                 new("mic.on", "Microphone in the mix or out of it", ControlKind.Button, HasLight: true),
                 new("master", "Master volume", ControlKind.Knob),
+                new("panic", "Panic: every deck's EQ, trim, key, effect and loop, and the master effect, back to neutral", ControlKind.Button),
                 new("browse", "Browse songs", ControlKind.Encoder),
                 new("browse.folders", "Browse folders", ControlKind.Encoder),
                 new("browse.press", "Open or close folder", ControlKind.Button),

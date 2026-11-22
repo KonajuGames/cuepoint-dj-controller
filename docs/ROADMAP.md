@@ -21,6 +21,7 @@ order to build in.
 | 7 | Editing hot cues, auto cue, moving a loop, gate and bit-crusher, master FX, a microphone with talkover | `fc52ec9` |
 | 8 | Editing several songs' artist and album at once, a tempo range in the options | `6b3b0e6` |
 | 9 | Live streaming to Icecast in Opus, editing a recording's tracklist, scaling the whole screen (with Cuedeck), a screenshot the app takes itself | `0b4f7c1` |
+| 10 | Recursive kept for the music library, a panic button, a self-test before a gig, recordings mended after a crash | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -65,14 +66,14 @@ the other is the only leader; sync lock made the unlocked deck lead).
 | 13 | **Scaling the whole screen**: a size setting in the options | M | Large text only enlarges the lists; this scales every element and font, for 4K screens and small laptops. Partly a cue-framework change, so Cuedeck can have it too. |
 | 14 | **A new README screenshot**, made by a capture mode | S–M | The screenshot's from before Up next, the phase meter and the looks. Cuedeck's `--capture` (a scratch app folder with made-up songs) shows how to make it repeatable. |
 
-## Phase 10: Safe sets
+## Phase 10: Safe sets (done)
 
 | # | Item | Size | Notes |
 |---|---|---|---|
 | 15 | **Recursive kept between runs** for the Music library | S | It's forgotten each run, so the library lists nothing until it's turned on again. Kept in the settings, as the folder chosen is; the scan starts recursive. |
-| 16 | **A panic button**: everything back to neutral at once | S | Both decks' EQs, filters, trims and effects, the master effect, loops and rolls, key shift and the crossfader to the middle; playback left playing. A key and a learnable controller control, with Ctrl+Z putting it back. |
+| 16 | **A panic button**: everything back to neutral at once | S | Both decks' EQs, filters, trims and effects, the master effect, loops and key shift; playback left playing, and the faders and crossfader left where they are, as centring them could bring in a deck meant to be out. Ctrl+Backspace and a learnable controller control, with Ctrl+Z putting it back. |
 | 17 | **A self-test before a gig**: `--self-test` | M | Runs the Release build on the capture's scratch folder and made-up songs: loads, plays, syncs, records, edits the tracklist, streams to a pretend server, and quits saying what passed. Catches what the unit tests can't (startup, the audio device, the GPU). |
-| 18 | **The main output coming back**: falling back when its device goes | M | If the main output's device is unplugged mid-set, carry on through the system default rather than going quiet, and go back to it when it's plugged in, as the booth output does already. |
+| 18 | **The main output coming back**: falling back when its device goes | M | Already there, found when it was started: `AudioEngine.CheckDevices` and `DeviceRecovery` move the main mix to the system default when its card goes or stalls, and back when it returns (see the README's "Copes with a sound card coming unplugged"). |
 | 19 | **A recording saved from a crash**: its WAV made whole next start | S | A crash leaves the header's lengths unwritten; on the next start, any recording found that way is mended from its file's size, with its cue sheet written from the history kept. |
 
 ## Phase 11: Rough edges
@@ -110,7 +111,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Order and dependencies
 
-- **Next:** Phase 10, each small and each one less way for a set to go wrong: (15), (16), (17) then (18). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
+- **Next:** Phase 11, (21) and (20) first. Before a gig, `--self-test` (17). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
 - **Builds on:** (17) uses the capture mode's scratch folder and made-up songs; (20) lets (9) edit genre too; (22)'s MP3 needs an encoder library; (23) and (26) use Auto-Mix's phrase finding; (27) uses the intro and outro marks.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.

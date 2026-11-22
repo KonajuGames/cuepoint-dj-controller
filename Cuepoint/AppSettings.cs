@@ -114,6 +114,12 @@ sealed class AppSettings
     public float? ScreenScale { get; set; }
 
     /// <summary>
+    /// Whether the music library takes in every song in its folder's subfolders too, rather than only those directly
+    /// in it.
+    /// </summary>
+    public bool LibraryRecursive { get; set; }
+
+    /// <summary>
     /// The Icecast server streamed to live, and how: its address, port and mount point, the stream's name, its
     /// bitrate in kbps, and the source password, encrypted for this Windows account (see
     /// <see cref="Streaming.SavedSecret"/>).
