@@ -93,11 +93,12 @@ static int Run(ScreenshotTool.Request? capture)
     // Never so big that the screen hasn't room for the decks and mixer side by side, which would draw them over each
     // other: on a 1920 by 1080 screen, 150% at most.
     var screenPixels = Glfw.PrimaryMonitor.VideoMode;
-    var largestScale = MathF.Max(1, MathF.Min(screenPixels.Width / 1280f, screenPixels.Height / 720f));
-    var screenScale = capture is null ? MathF.Min(ScreenScale.Use(tried ?? AppSettings.Load(Path.Combine(AppFolder.Path, "settings.json")).ScreenScale, windowsScale), largestScale) : 1;
+    var smallestWindow = new float2(1280, 720);
+    var largestScale = ScreenScale.Largest(screenPixels.Width, screenPixels.Height, smallestWindow);
+    var screenScale = capture is null ? ScreenScale.Use(tried ?? AppSettings.Load(Path.Combine(AppFolder.Path, "settings.json")).ScreenScale, windowsScale, largestScale) : 1;
     // Never so small that the decks and mixer can't fit side by side, nor bigger than the screen.
     window.SetSizeLimits(
-        new int2((int)Math.Min(1280 * screenScale, screenPixels.Width), (int)Math.Min(720 * screenScale, screenPixels.Height)),
+        new int2((int)Math.Min(smallestWindow.X * screenScale, screenPixels.Width), (int)Math.Min(smallestWindow.Y * screenScale, screenPixels.Height)),
         new int2(-1, -1)
     );
 
