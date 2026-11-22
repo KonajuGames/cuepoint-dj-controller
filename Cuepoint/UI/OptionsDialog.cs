@@ -149,9 +149,29 @@ sealed class OptionsDialog : Panel
     /// </summary>
     public float RunningScale { get; set; } = 1;
 
+    /// <summary>
+    /// The biggest scale the screen has room for, the whole app still fitting on it.
+    /// </summary>
+    public float LargestScale { get; set; } = float.MaxValue;
+
+    /// <summary>
+    /// The scale a screen size chosen is drawn at: as chosen, unless the screen hasn't room for it.
+    /// </summary>
+    public float Drawn(float? chosen) => MathF.Min(ScreenScale.Use(chosen, WindowsScale), LargestScale);
+
+    /// <summary>
+    /// What to call a screen size on the list, saying when it's drawn smaller to fit the screen.
+    /// </summary>
+    string ScreenSizeName(float? chosen)
+    {
+        var name = ScreenScale.Name(chosen, WindowsScale);
+        var drawn = Drawn(chosen);
+        return drawn < ScreenScale.Use(chosen, WindowsScale) ? $"{name}, drawn at {ScreenScale.Name(drawn, WindowsScale)} to fit" : name;
+    }
+
     readonly Label _restartNote;
 
-    void ShowRestartNote() => _restartNote.Visible = ScreenScale.Use(_screenSize.Selected, WindowsScale) != RunningScale;
+    void ShowRestartNote() => _restartNote.Visible = Drawn(_screenSize.Selected) != RunningScale;
 
     /// <summary>
     /// Change keys was clicked.
@@ -617,7 +637,7 @@ sealed class OptionsDialog : Panel
             {
                 Width = 300,
                 Items = () => [null, .. ScreenScale.Choices.Select(choice => (float?)choice)],
-                Text = scale => ScreenScale.Name(scale, WindowsScale),
+                Text = ScreenSizeName,
             }
         );
         _restartNote = screenRow.Add(new Label(body, "Restart Cuepoint to see it") { Color = Theme.Warning, Visible = false });
