@@ -128,6 +128,16 @@ sealed class MainScreen : Panel
     /// </summary>
     public event Action<Deck, int, float2>? HotcueMenuRequested;
 
+    /// <summary>
+    /// A deck's FX button was right-clicked: the deck, and where, for the effects that build to the next phrase.
+    /// </summary>
+    public event Action<Deck, float2>? FxMenuRequested;
+
+    /// <summary>
+    /// A sampler pad was right-clicked: the sampler's slot, and where.
+    /// </summary>
+    public event Action<int, float2>? SamplerPadMenuRequested;
+
     public MainScreen(
         AudioEngine engine,
         IReadOnlyList<Deck> decks,
@@ -179,6 +189,8 @@ sealed class MainScreen : Panel
             _decks.Add(Add(deckPanels[i]));
             deckPanels[i].SongDropped += (panel, song) => SongDropped?.Invoke(panel.Deck, song);
             deckPanels[i].HotcueMenuRequested += (panel, index, at) => HotcueMenuRequested?.Invoke(panel.Deck, index, at);
+            deckPanels[i].FxMenuRequested += (panel, at) => FxMenuRequested?.Invoke(panel.Deck, at);
+            deckPanels[i].SamplerPadMenuRequested += (slot, at) => SamplerPadMenuRequested?.Invoke(slot, at);
         }
         if (deckPanels.Count < 2)
             Add(_mixer);

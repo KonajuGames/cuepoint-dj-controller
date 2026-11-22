@@ -30,6 +30,12 @@ sealed class AutoMixPanel : Panel
     readonly Label _name;
     readonly Label _track;
     readonly Label _time;
+    readonly Button _end;
+
+    /// <summary>
+    /// The set's end time was asked to be set or changed.
+    /// </summary>
+    public event Action? EndRequested;
     readonly Button _play;
     readonly Button _close;
     readonly Dropdown<SongOrder?> _order;
@@ -111,13 +117,16 @@ sealed class AutoMixPanel : Panel
 
         _tab = Flat("Fold Auto-Mix away, or bring it back. It carries on either way", _foldIcon);
         _tab.Clicked += _ => Collapsed = !Collapsed;
-        _name = Add(new Label(bold) { Color = Theme.Text });
+        // Titled as what it is, whichever list it's playing.
+        _name = Add(new Label(bold, "Auto-Mix") { Color = Theme.Text });
         _track = Add(new Label(body) { Color = Theme.Text });
         _time = Add(new Label(body) { Color = Theme.Muted });
         _play = Flat("Play or pause the auto-mix", _playIcon);
         _play.TextColor = Theme.Accent;
         _play.Clicked += _ => PlayPressed?.Invoke();
         _close = Flat("Close Auto-Mix", images.Cross);
+        _end = Add(new Button(body, "SET END") { Padding = 3, MinSize = new float2(0, 20), Tooltip = "When the set should end: each song's mixed out sooner to finish by then, and songs at the end left out if that's not enough" });
+        _end.Clicked += _ => EndRequested?.Invoke();
         _close.Clicked += _ => CloseRequested?.Invoke();
         _order = Add(
             new Dropdown<SongOrder?>(body)
@@ -201,9 +210,17 @@ sealed class AutoMixPanel : Panel
                 _scroll.ScrollTo(float2.Zero);
             _listedName = mix.Name;
         }
-        _name.Text = mix.Name;
         _track.Text = $"{(mix.CurrentIndex < 0 ? 0 : mix.CurrentIndex + 1)} / {mix.Songs.Count}";
         _time.Text = $"{Clock(mix.Elapsed)} / {Clock(mix.Total)}";
+        // The end time, lit while the list would run over it.
+        var over = mix.Over;
+        _end.Text = mix.EndAt is { } end ? $"ENDS {end:HH:mm}" : "SET END";
+        _end.Background = over > 0 ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.5f) : mix.EndAt is not null ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.4f) : Theme.Control;
+        _end.Tooltip = mix.EndAt is not { } ends
+            ? "When the set should end: each song's mixed out sooner to finish by then, and songs at the end left out if that's not enough"
+            : over > 0
+                ? $"The list would finish at {mix.FinishesAt:HH:mm}, {Math.Ceiling(over / 60):0} min after {ends:HH:mm}: each song's mixed out sooner, and songs at the end left out if need be"
+                : $"The list finishes at {mix.FinishesAt:HH:mm}, {Math.Floor((ends - mix.FinishesAt).TotalMinutes):0} min before {ends:HH:mm}. Click to change the end";
         _play.Icon = mix.IsRunning && !mix.IsPaused ? _pauseIcon : _playIcon;
         _status.Text = mix.IsPaused ? "Paused" : mix.Status;
 
@@ -225,13 +242,15 @@ sealed class AutoMixPanel : Panel
             if (child != _scroll)
                 child.Measure();
         }
-        _name.MaxWidth = inner.X - 28;
+        _end.Measure();
+        _name.MaxWidth = inner.X - 28 - _end.Size.X - 8;
         _name.Measure();
         _status.MaxWidth = inner.X;
         _status.Measure();
 
         var toolbar = MathF.Max(_track.Size.Y, 24);
-        var listHeight = MathF.Max(40, inner.Y - _name.Size.Y - 4 - toolbar - 6 - _header.Size.Y - 6 - _status.Size.Y);
+        var nameRow = MathF.Max(MathF.Max(_name.Size.Y, 20), _end.Size.Y) + 6;
+        var listHeight = MathF.Max(40, inner.Y - nameRow - toolbar - 6 - _header.Size.Y - 6 - _status.Size.Y);
         _scroll.MinSize = new float2(inner.X, listHeight);
         _scroll.MaxWidth = inner.X;
         _scroll.MaxHeight = listHeight;
@@ -255,8 +274,10 @@ sealed class AutoMixPanel : Panel
         _close.MinSize = new float2(20, 20);
         _close.Measure();
         Place(_close, right - 20, y);
+        Place(_end, right - 20 - 8 - _end.Size.X, y);
         Place(_name, left, y + (20 - _name.Size.Y) / 2);
-        y += MathF.Max(_name.Size.Y, 20) + 4;
+        // As tall as SET END, with a gap under it.
+        y += MathF.Max(MathF.Max(_name.Size.Y, 20), _end.Size.Y) + 6;
 
         const float BUTTON = 24;
         _play.MinSize = new float2(BUTTON, BUTTON);

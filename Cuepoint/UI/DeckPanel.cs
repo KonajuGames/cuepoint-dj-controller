@@ -87,6 +87,7 @@ sealed class DeckPanel : Panel
         Jump,
         Grid,
         Sampler,
+        SamplerB,
     }
 
     readonly Dropdown<PadMode>? _padMode;
@@ -214,6 +215,16 @@ sealed class DeckPanel : Panel
     /// or clear it.
     /// </summary>
     public event Action<DeckPanel, int, float2>? HotcueMenuRequested;
+
+    /// <summary>
+    /// The FX button was right-clicked, at the point given (under it): for the effects that build to the next phrase.
+    /// </summary>
+    public event Action<DeckPanel, float2>? FxMenuRequested;
+
+    /// <summary>
+    /// A sampler pad was right-clicked: the sampler's slot, and where, for a menu to sample a deck into it or clear it.
+    /// </summary>
+    public event Action<int, float2>? SamplerPadMenuRequested;
 
     /// <param name="padKeys">The keys that press the hotcue pads, in order, to label them with.</param>
     /// <param name="keys">The keys that press its buttons, to label them with.</param>
@@ -471,10 +482,11 @@ sealed class DeckPanel : Panel
                 MinSize = new float2(34, 20),
                 Padding = 3,
                 FocusColor = Theme.Focus,
-                Tooltip = "The effect on or off. Echo and reverb ring on as they fade when it's switched off",
+                Tooltip = "The effect on or off. Echo and reverb ring on as they fade when it's switched off. Right-click for an echo out or filter sweep to the next phrase",
             }
         );
         _fxOn.Clicked += _ => _deck.Effects.On = !_deck.Effects.On;
+        _fxOn.SecondaryClicked += button => FxMenuRequested?.Invoke(this, button.ScreenPosition + new float2(0, button.Size.Y));
 
         // The tempo fader runs from +range at the bottom to -range at the top, so pulling it down speeds up.
         _tempoReadout = Add(new Label(small) { Color = Theme.Muted });
@@ -577,7 +589,7 @@ sealed class DeckPanel : Panel
             if (jump is not null)
                 modes.Add(PadMode.Jump);
             if (sampler is not null)
-                modes.Add(PadMode.Sampler);
+                modes.AddRange([PadMode.Sampler, PadMode.SamplerB]);
             if (grid is not null)
                 modes.Add(PadMode.Grid);
             _padMode = Add(
@@ -592,6 +604,8 @@ sealed class DeckPanel : Panel
                         (PadMode.Jump, _) => "JUMP",
                         (PadMode.Sampler, false) => "SAMPLER",
                         (PadMode.Sampler, true) => "SAMPLE",
+                        (PadMode.SamplerB, false) => "SAMPLER 2",
+                        (PadMode.SamplerB, true) => "SAMPLE 2",
                         _ => "GRID",
                     },
                     Width = 96,
@@ -607,8 +621,11 @@ sealed class DeckPanel : Panel
                     jump.Active = true;
                 else if (mode == PadMode.Grid && grid is not null)
                     grid.Active = true;
-                else if (mode == PadMode.Sampler && sampler is not null)
+                else if (mode is PadMode.Sampler or PadMode.SamplerB && sampler is not null)
+                {
                     sampler.Active = true;
+                    sampler.Bank = mode == PadMode.SamplerB ? 1 : 0;
+                }
                 else
                 {
                     if (sampler is not null)
@@ -671,7 +688,7 @@ sealed class DeckPanel : Panel
                 if (_grid is { Active: true })
                     _grid.Pad(index, fine: true);
                 else if (_sampler is { Active: true })
-                    _sampler.Clear(index);
+                    SamplerPadMenuRequested?.Invoke(_sampler.Slot(index), at);
                 else if (_roll is not { Active: true } && _jump is not { Active: true } && _deck.Hotcues[index] is not null)
                     HotcueMenuRequested?.Invoke(this, index, at);
             };
@@ -705,6 +722,7 @@ sealed class DeckPanel : Panel
             var mode = _grid is { Active: true } ? PadMode.Grid
                 : _roll is { Active: true } ? PadMode.Roll
                 : _jump is { Active: true } ? PadMode.Jump
+                : _sampler is { Active: true, Bank: 1 } ? PadMode.SamplerB
                 : _sampler is { Active: true } ? PadMode.Sampler
                 : PadMode.Hotcues;
             _padMode.Selected = mode;
@@ -713,7 +731,7 @@ sealed class DeckPanel : Panel
                 PadMode.Grid => (Theme.Accent, 0.6f),
                 PadMode.Roll => (AppTheme.Loop, 0.5f),
                 PadMode.Jump => (Theme.Focus, 0.5f),
-                PadMode.Sampler => (AppTheme.Sampler, 0.5f),
+                PadMode.Sampler or PadMode.SamplerB => (AppTheme.Sampler, 0.5f),
                 _ => (Theme.PanelRaised, 0f),
             };
             _padMode.Background = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount) : Theme.Control;
@@ -780,7 +798,13 @@ sealed class DeckPanel : Panel
             if (_sampler is { Active: true } samples)
             {
                 for (var i = 0; i < _pads.Count; i++)
-                    ShowSample(_pads[i], samples.Sampler, i);
+                    ShowSample(_pads[i], samples.Sampler, samples.Slot(i));
+            }
+            else
+            {
+                // Back to plain numbered pads, whatever mode they were showing.
+                for (var i = 0; i < _pads.Count; i++)
+                    (_pads[i].Text, _pads[i].Icon, _pads[i].Color, _pads[i].Tooltip) = (null, null, AppTheme.HotcueColor(i), $"Hotcue {i + 1}: load a song to set it");
             }
             RefreshLoop();
             return;
@@ -840,7 +864,7 @@ sealed class DeckPanel : Panel
         {
             if (samplerMode)
             {
-                ShowSample(_pads[i], _sampler!.Sampler, i);
+                ShowSample(_pads[i], _sampler!.Sampler, _sampler.Slot(i));
                 if (_deck.Hotcues[i] is { } cueAt)
                     flags.Add(((float)cueAt.TotalSeconds, AppTheme.HotcueColor(_deck, i), (i + 1).ToString()));
                 continue;
@@ -1269,9 +1293,10 @@ sealed class DeckPanel : Panel
         var sample = sampler.NameOf(slot);
         (pad.Enabled, pad.IsSet) = (true, sampler.IsPlaying(slot));
         (pad.Text, pad.Icon, pad.Color) = (sample ?? "–", null, sample is null ? Theme.Faint : AppTheme.Sampler);
+        var name = Sampler.SlotName(slot);
         pad.Tooltip = sample is null
-            ? $"Sample {slot + 1}: empty. Right-click songs in the list and choose Put on sampler pad"
-            : $"Sample {slot + 1}, {sample}: play it from the start. Shift-click or right-click to take it off";
+            ? $"Sample {name}: empty. Right-click it to sample a deck's loop, or right-click songs in the list and choose Put on sampler pad"
+            : $"Sample {name}, {sample}: play it from the start. Shift-click to take it off; right-click to sample a deck into it";
     }
 
     // The song's intro and outro, worked out again only when its analysis or waveform changes.

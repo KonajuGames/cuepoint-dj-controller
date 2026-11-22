@@ -221,6 +221,11 @@ sealed class AutoMix
     int _nextToTry;
     bool _nextAsked;
     MixPlan? _plan;
+
+    /// <summary>
+    /// The transition planned, for tests.
+    /// </summary>
+    internal MixPlan? Plan => _plan;
     bool _incomingPlaying;
     bool _resynced;
     bool _currentEnded;
@@ -270,6 +275,84 @@ sealed class AutoMix
     /// How long it's been playing.
     /// </summary>
     public TimeSpan Elapsed => TimeSpan.FromSeconds(_played);
+
+    /// <summary>
+    /// When the set should end, if it should: each song's mixed out sooner to finish by then, and songs at the end
+    /// of the list left out if that's not enough. Null for no end.
+    /// </summary>
+    public DateTime? EndAt { get; set; }
+
+    /// <summary>
+    /// The time now, for <see cref="EndAt"/>; the computer's clock unless a test says otherwise.
+    /// </summary>
+    public Func<DateTime> Now { get; set; } = () => DateTime.Now;
+
+    /// <summary>
+    /// An end time as it's typed: a time of day, as "23:30" (tomorrow if that's gone today), or minutes from
+    /// <paramref name="now"/>, as "+45"; blank for none. False if it's none of those.
+    /// </summary>
+    public static bool TryParseEnd(string text, DateTime now, out DateTime? end)
+    {
+        end = null;
+        text = text.Trim();
+        if (text.Length == 0)
+            return true;
+        if (text[0] == '+' && int.TryParse(text[1..], System.Globalization.CultureInfo.InvariantCulture, out var minutes) && minutes is > 0 and <= 24 * 60)
+        {
+            end = now.AddMinutes(minutes);
+            return true;
+        }
+        if (TimeOnly.TryParseExact(text, ["H:mm", "HH:mm", "H.mm", "HHmm"], System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var time))
+        {
+            var today = now.Date + time.ToTimeSpan();
+            end = today > now ? today : today.AddDays(1);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The most of a song that's cut to keep to the end time: half of it.
+    /// </summary>
+    const double MOST_CUT = 0.5;
+
+    /// <summary>
+    /// When the list will finish, at the pace it's going.
+    /// </summary>
+    public DateTime FinishesAt => Now() + (Total - Elapsed);
+
+    /// <summary>
+    /// How far past <see cref="EndAt"/> the list would finish, in seconds; none if it's on time, or there's no end.
+    /// </summary>
+    public double Over => EndAt is { } end ? Math.Max(0, (FinishesAt - end).TotalSeconds) : 0;
+
+    /// <summary>
+    /// How many seconds sooner the song playing should be mixed out, to keep to the end time: what's over, shared
+    /// across it and the songs still to come, at most <see cref="MOST_CUT"/> of what's left of it.
+    /// </summary>
+    double PaceCut(double position)
+    {
+        var over = Over;
+        if (over <= 0 || CurrentIndex < 0)
+            return 0;
+        var songs = Math.Max(1, Songs.Count - CurrentIndex);
+        return Math.Min(over / songs, MOST_CUT * Math.Max(0, _current.Duration.TotalSeconds - position));
+    }
+
+    /// <summary>
+    /// Leaves out songs from the end of the list, while even cutting every song left by as much as it can be wouldn't
+    /// end it on time. Returns how many it left out.
+    /// </summary>
+    int LeaveOutToEndOnTime()
+    {
+        var left = 0;
+        while (Over is > 0 and var over && Songs.Count - 1 > Math.Max(CurrentIndex, Locked) + 1 && over > Songs.Skip(Math.Max(0, CurrentIndex)).Sum(LengthOf) * MOST_CUT)
+        {
+            Changed([.. Songs.Take(Songs.Count - 1)]);
+            left++;
+        }
+        return left;
+    }
 
     /// <summary>
     /// How long the whole thing will have taken: what's played and what's left, knowing each transition's overlap once
@@ -639,7 +722,9 @@ sealed class AutoMix
 
     void MakePlan(double position)
     {
-        var plan = TransitionPlanner.Plan(Describe(_current), Describe(_other), position + NOTICE_SECONDS);
+        if (LeaveOutToEndOnTime() is > 0 and var leftOut)
+            Log?.Invoke($"Left out the last {(leftOut == 1 ? "song" : $"{leftOut} songs")} of {Name} to end at {EndAt:HH:mm}");
+        var plan = TransitionPlanner.Plan(Describe(_current), Describe(_other), position + NOTICE_SECONDS, PaceCut(position));
         _plan = plan;
         _other.Seek(TimeSpan.FromSeconds(plan.IncomingFrom));
         if (plan.BeatMatched)

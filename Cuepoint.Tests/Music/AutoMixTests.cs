@@ -436,6 +436,60 @@ public sealed class AutoMixTests
         Assert.Null(rig.Mix.Order(SongOrder.Title));
     }
 
+    [Theory]
+    [InlineData("23:30", "2026-11-22 23:30")]
+    [InlineData("9:05", "2026-11-23 09:05")]
+    [InlineData("+45", "2026-11-22 22:45")]
+    [InlineData(" ", null)]
+    public void An_end_time_is_a_time_of_day_tomorrow_if_it_s_gone_or_minutes_from_now(string typed, string? end)
+    {
+        var now = new DateTime(2026, 11, 22, 22, 0, 0);
+        Assert.True(AutoMix.TryParseEnd(typed, now, out var parsed));
+        Assert.Equal(end is null ? null : DateTime.Parse(end, System.Globalization.CultureInfo.InvariantCulture), parsed);
+        Assert.False(AutoMix.TryParseEnd("soon", now, out _));
+    }
+
+    static MixPlan PlanOf(Rig rig)
+    {
+        for (var i = 0; i < 600 && rig.Mix.Plan is null; i++)
+            rig.Run(0.5);
+        return rig.Mix.Plan!;
+    }
+
+    [Fact]
+    public void Running_over_its_end_time_it_mixes_each_song_out_sooner()
+    {
+        var now = new DateTime(2026, 11, 22, 22, 0, 0);
+        var free = new Rig().Started();
+        var timed = new Rig();
+        timed.Mix.Now = () => now;
+        timed.Started();
+        // Three five-minute songs in ten minutes: about a minute and a half over, shared between them.
+        timed.Mix.EndAt = now.AddMinutes(10);
+        Assert.True(timed.Mix.Over > 60);
+
+        var (freePlan, timedPlan) = (PlanOf(free), PlanOf(timed));
+
+        Assert.True(timedPlan.StartAt < freePlan.StartAt - 20, $"{timedPlan.StartAt} against {freePlan.StartAt}");
+    }
+
+    [Fact]
+    public void Far_over_its_end_time_it_leaves_out_songs_from_the_end()
+    {
+        var now = new DateTime(2026, 11, 22, 22, 0, 0);
+        var rig = new Rig(songs: 5);
+        rig.Mix.Now = () => now;
+        rig.Started();
+        // Twenty-five minutes of songs in six: even halving them all isn't enough.
+        rig.Mix.EndAt = now.AddMinutes(6);
+        var logged = rig.Logged.Count;
+
+        PlanOf(rig);
+
+        Assert.True(rig.Mix.Songs.Count < 5);
+        Assert.Contains(rig.Logged.Skip(logged), line => line.StartsWith("Left out the last"));
+    }
+
     [Fact]
     public void Playing_puts_the_first_song_on_deck_A_with_the_mixer_set_straight()
     {

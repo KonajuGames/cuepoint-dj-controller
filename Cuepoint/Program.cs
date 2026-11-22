@@ -1369,6 +1369,56 @@ static int Run(ScreenshotTool.Request? capture)
             edits.RecordHotcueDetails(file, deck.HotcueDetails, index);
         deck.SetHotcueDetail(index, name, color, loopEnd);
     }
+    // A sampler pad's menu: a deck's loop (or its last bar) sampled into it, kept as a WAV in the app's folder, or it
+    // cleared.
+    void SampleInto(Deck deck, int slot)
+    {
+        if (deck.SampleRange() is not { } range || deck.AudioBetween(range.From, range.To) is not { } audio)
+        {
+            screen.Log($"Deck {deck.Name} has nothing to sample");
+            return;
+        }
+        var what = deck.IsLooping ? "loop" : "bar";
+        var name = $"{deck.Title} {what}";
+        var file = string.Concat($"{name} {DateTime.Now:yyyy-MM-dd HH-mm-ss}".Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)) + ".wav";
+        var path = Path.Combine(AppFolder.Path, "Samples", file);
+        if (Sampler.WriteWav(path, audio) is { } error)
+        {
+            screen.Log($"Couldn't keep the sample: {error}");
+            return;
+        }
+        sampler.Load(slot, path, name);
+        screen.Log($"Deck {deck.Name}'s {what} ({(range.To - range.From).TotalSeconds:F1} seconds) is on sampler pad {Sampler.SlotName(slot)}");
+    }
+    screen.SamplerPadMenuRequested += (slot, at) =>
+        menu.Show(
+            at,
+            [
+                .. decks.Select(deck => new MenuItem(
+                    $"Sample deck {deck.Name}'s {(deck.IsLooping ? "loop" : "last bar")} here",
+                    () => SampleInto(deck, slot),
+                    Enabled: deck.IsLoaded
+                )),
+                MenuItem.Separator,
+                new MenuItem($"Take sample {Sampler.SlotName(slot)} off", () => sampler.Clear(slot), Enabled: sampler.NameOf(slot) is not null),
+            ]
+        );
+
+    // Effects that build to the next phrase: one press, from a deck's FX button's right-click or a controller.
+    var phraseEffects = decks.ToDictionary(deck => deck, deck => new PhraseEffects(deck));
+    void StartPhraseEffect(Deck deck, PhraseEffect kind) => screen.Log(phraseEffects[deck].Start(kind));
+    screen.FxMenuRequested += (deck, at) =>
+    {
+        var going = phraseEffects[deck].Kind;
+        menu.Show(
+            at,
+            [
+                new MenuItem("Echo out to the next phrase", () => StartPhraseEffect(deck, PhraseEffect.EchoOut), Checked: going == PhraseEffect.EchoOut),
+                new MenuItem("Filter sweep to the next phrase", () => StartPhraseEffect(deck, PhraseEffect.FilterSweep), Checked: going == PhraseEffect.FilterSweep),
+            ]
+        );
+    };
+
     screen.HotcueMenuRequested += (deck, index, at) =>
     {
         var detail = deck.DetailOf(index);
@@ -1473,6 +1523,9 @@ static int Run(ScreenshotTool.Request? capture)
     // music playing on and the faders where they are; Ctrl+Z puts the settings back.
     void PanicNow()
     {
+        // An echo out or sweep going stops first, putting back what it changed, so it doesn't undo the panic.
+        foreach (var phrase in phraseEffects.Values)
+            phrase.Stop();
         var panic = Panic.Reset(decks, audio.MasterEffects);
         foreach (var deck in decks)
             controls.ResetEq(deck);
@@ -1513,6 +1566,7 @@ static int Run(ScreenshotTool.Request? capture)
         controllers.BrowseFolders += steps => Step(screen.FolderTree, steps);
         controllers.BrowsePressed += () => screen.FolderTree.KeyDown(Key.Enter, Modifiers.None);
         controllers.PanicPressed += PanicNow;
+        controllers.PhraseEffectPressed += (deck, kind) => StartPhraseEffect(deck, kind);
 
         // In GRID mode the controller's pads are the grid tools too, Shift + pad making a nudge a fine one.
         controllers.PadPressed = (deck, pad, shifted) =>
@@ -1571,10 +1625,17 @@ static int Run(ScreenshotTool.Request? capture)
         controllers.IsJumpMode = deck => JumpPadsFor(deck)?.Active == true;
 
         // The controller's SAMPLER button puts the deck's pads in SAMPLER mode to match its own.
+        // SAMPLER puts the pads in sampler mode; pressed again, it flips to the other bank of eight.
         controllers.SamplerModePressed += deck =>
         {
-            if (SamplerPadsFor(deck) is { } samples)
-                samples.Active = true;
+            if (SamplerPadsFor(deck) is not { } samples)
+                return;
+            if (samples.Active)
+            {
+                samples.Bank = 1 - samples.Bank;
+                screen.Log($"Deck {deck.Name}'s pads play sampler bank {samples.Bank + 1}");
+            }
+            samples.Active = true;
         };
         controllers.IsSamplerMode = deck => SamplerPadsFor(deck)?.Active == true;
         controllers.GridModePressed += deck =>
@@ -2092,6 +2153,23 @@ static int Run(ScreenshotTool.Request? capture)
         screen.Log(songs.Count == 1 ? $"Added {songs[0].Title} to {autoMix.Name}" : $"Added {songs.Count} songs to {autoMix.Name}");
     }
     screen.AutoMix.SongsDropped += AddToUpNext;
+    // When the set should end, for Auto-Mix to pace itself to.
+    screen.AutoMix.EndRequested += () =>
+        prompt.Show(
+            "When should the set end? (23:30, or +45 for 45 minutes from now; blank for no end)",
+            autoMix.EndAt?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "",
+            text => AutoMix.TryParseEnd(text, DateTime.Now, out _) ? null : "Give a time, as 23:30, or minutes from now, as +45",
+            text =>
+            {
+                AutoMix.TryParseEnd(text, DateTime.Now, out var end);
+                autoMix.EndAt = end;
+                screen.Log(
+                    end is not { } ending ? $"{autoMix.Name} has no end time"
+                    : autoMix.Over > 0 ? $"{autoMix.Name} ends at {ending:HH:mm}: it would run {Math.Ceiling(autoMix.Over / 60):0} min over, so it'll mix out of each song sooner"
+                    : $"{autoMix.Name} ends at {ending:HH:mm}; the list finishes at {autoMix.FinishesAt:HH:mm}"
+                );
+            }
+        );
     screen.AutoMix.OrderRequested += how =>
     {
         if (autoMix.Order(how) is not { } before)
@@ -2538,11 +2616,11 @@ static int Run(ScreenshotTool.Request? capture)
             Enumerable
                 .Range(0, Sampler.SLOTS)
                 .Select(slot => new MenuItem(
-                    sampler.NameOf(slot) is { } there ? $"{slot + 1}: {there}" : $"{slot + 1}",
+                    sampler.NameOf(slot) is { } there ? $"{Sampler.SlotName(slot)}: {there}" : Sampler.SlotName(slot),
                     () =>
                     {
                         sampler.Load(slot, songs[0].Path, songs[0].Title);
-                        screen.Log($"{songs[0].Title} is on sampler pad {slot + 1}: play it with the pads in SAMPLER mode");
+                        screen.Log($"{songs[0].Title} is on sampler pad {Sampler.SlotName(slot)}: play it with the pads in {(slot < Sampler.PADS ? "SAMPLER" : "SAMPLER 2")} mode");
                     }
                 ))
                 .ToList(),
@@ -2937,6 +3015,11 @@ static int Run(ScreenshotTool.Request? capture)
             {
                 foreach (var deck in decks)
                     deck.Update();
+                foreach (var phrase in phraseEffects.Values)
+                {
+                    if (phrase.Update() is { } finished)
+                        screen.Log(finished);
+                }
                 MasterEffectsTiming.Follow(audio.MasterEffects, decks);
                 if (relocking.Count > 0)
                     Relock();

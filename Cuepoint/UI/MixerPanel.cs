@@ -25,7 +25,7 @@ sealed class MixerPanel : Panel
     /// <summary>
     /// A channel's controls: its trim, EQ and filter, top to bottom as they're labelled, then its meter and fader.
     /// </summary>
-    sealed record Channel(Deck Deck, Label Name, Knob[] Eq, LevelMeter Meter, Slider Fader, Button Pfl);
+    sealed record Channel(Deck Deck, Label Name, Knob[] Eq, LevelMeter Meter, Slider Fader, Button Pfl, Button Vocals);
 
     static readonly string[] EqNames = ["TRIM", "HIGH", "MID", "LOW", "FILTER"];
 
@@ -106,7 +106,7 @@ sealed class MixerPanel : Panel
                 new Button(small, "PFL")
                 {
                     FocusColor = Theme.Focus,
-                    MinSize = new float2(44, 20),
+                    MinSize = new float2(38, 20),
                     Padding = 3,
                     KeyHint = pflKeys?.ElementAtOrDefault(_channels.Count),
                     HintFont = small,
@@ -114,7 +114,17 @@ sealed class MixerPanel : Panel
                 }
             );
             pfl.Clicked += _ => deck.Headphones = !deck.Headphones;
-            _channels.Add(new Channel(deck, name, eq, meter, fader, pfl));
+            var vocals = Add(
+                new Button(small, "VOX")
+                {
+                    FocusColor = Theme.Focus,
+                    MinSize = new float2(32, 20),
+                    Padding = 3,
+                    Tooltip = $"Vocal cut: take deck {deck.Name}'s lead vocal down, keeping its bass and hi-hats, for a blend under another's voice",
+                }
+            );
+            vocals.Clicked += _ => deck.VocalCut.On = !deck.VocalCut.On;
+            _channels.Add(new Channel(deck, name, eq, meter, fader, pfl, vocals));
         }
 
         _crossLeft = Add(new Label(bold, decks.Count > 0 ? decks[0].Name : "") { Color = decks.Count > 0 ? AppTheme.DeckColor(decks[0].Name) : Theme.Muted });
@@ -203,6 +213,10 @@ sealed class MixerPanel : Panel
             channel.Pfl.Background = cued ? Theme.Mix(Theme.PanelRaised, color, 0.6f) : Theme.Control;
             channel.Pfl.HoverBackground = cued ? Theme.Mix(Theme.PanelRaised, color, 0.75f) : Theme.ControlHover;
             channel.Pfl.TextColor = cued ? Theme.Text : Theme.Muted;
+            var cut = channel.Deck.VocalCut.On;
+            channel.Vocals.Background = cut ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.6f) : Theme.Control;
+            channel.Vocals.HoverBackground = cut ? Theme.Mix(Theme.PanelRaised, Theme.Warning, 0.75f) : Theme.ControlHover;
+            channel.Vocals.TextColor = cut ? Theme.Text : Theme.Muted;
         }
         if (!_crossfader.IsDragging)
             _crossfader.Value = _engine.Crossfader;
@@ -229,11 +243,12 @@ sealed class MixerPanel : Panel
 
         // The EQ's names down the middle, each deck's knobs either side of them, its meter and fader out at the edge
         // with its letter over them, and its PFL at the top beside the middle; the left deck's on the left.
-        var eqTop = top + 16;
+        // A little below the VOX and PFL buttons at the top.
+        var eqTop = top + 20;
         for (var row = 0; row < _eqLabels.Length; row++)
             Place(_eqLabels[row], centre - _eqLabels[row].Size.X / 2, eqTop + row * ROW + (KNOB - _eqLabels[row].Size.Y) / 2);
 
-        var stripsY = top + 14;
+        var stripsY = top + 18;
         for (var i = 0; i < _channels.Count; i++)
         {
             var channel = _channels[i];
@@ -248,8 +263,11 @@ sealed class MixerPanel : Panel
             Place(channel.Meter, meterX, stripsY);
             var columnLeft = MathF.Min(meterX, faderX);
             var columnRight = MathF.Max(meterX + channel.Meter.Size.X, faderX + channel.Fader.Size.X);
-            Place(channel.Name, (columnLeft + columnRight - channel.Name.Size.X) / 2, top - 6);
+            // The deck's letter out at the edge, leaving room for VOX and PFL towards the middle.
+            Place(channel.Name, onLeft ? columnLeft : columnRight - channel.Name.Size.X, top - 6);
             Place(channel.Pfl, onLeft ? centre - 3 - channel.Pfl.Size.X : centre + 3, top - 6);
+            // The vocal cut beside it, further out.
+            Place(channel.Vocals, onLeft ? centre - 6 - channel.Pfl.Size.X - channel.Vocals.Size.X : centre + 6 + channel.Pfl.Size.X, top - 6);
         }
 
         var crossY = position.Y + Height - PAD - _crossfader.Size.Y;

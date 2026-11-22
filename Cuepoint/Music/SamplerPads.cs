@@ -3,8 +3,8 @@ using Cuepoint.Audio;
 namespace Cuepoint.Music;
 
 /// <summary>
-/// A deck's pads in SAMPLER mode: each plays one of the <see cref="Sampler"/>'s samples, the same eight on every deck,
-/// so either hand can fire them.
+/// A deck's pads in SAMPLER mode: each plays one of the <see cref="Sampler"/>'s samples, the same on every deck, so
+/// either hand can fire them; <see cref="Bank"/> says which eight.
 /// </summary>
 sealed class SamplerPads(Deck deck, Sampler sampler, GridEditor? grid = null, RollPads? roll = null, JumpPads? jump = null)
 {
@@ -40,10 +40,20 @@ sealed class SamplerPads(Deck deck, Sampler sampler, GridEditor? grid = null, Ro
         }
     }
 
-    public void Down(int index) => Sampler.Trigger(index);
+    /// <summary>
+    /// Which bank of eight samples the pads play: 0 the first, 1 the second.
+    /// </summary>
+    public int Bank { get; set; }
 
     /// <summary>
-    /// A pad Shift-clicked or right-clicked: its sample taken off it.
+    /// The sampler's slot pad <paramref name="index"/> plays, in the bank chosen.
     /// </summary>
-    public void Clear(int index) => Sampler.Clear(index);
+    public int Slot(int index) => Bank * Sampler.PADS + index;
+
+    public void Down(int index) => Sampler.Trigger(Slot(index));
+
+    /// <summary>
+    /// A pad Shift-clicked: its sample taken off it.
+    /// </summary>
+    public void Clear(int index) => Sampler.Clear(Slot(index));
 }

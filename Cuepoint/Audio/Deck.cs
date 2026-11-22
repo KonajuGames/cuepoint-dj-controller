@@ -293,6 +293,11 @@ sealed partial class Deck : IDisposable
     public Equalizer Equalizer { get; } = new();
 
     /// <summary>
+    /// The channel's vocal cut, after its EQ.
+    /// </summary>
+    public VocalCut VocalCut { get; } = new();
+
+    /// <summary>
     /// The deck's echo, reverb or flanger, after its EQ, timed by its tempo.
     /// </summary>
     public DeckEffects Effects { get; } = new();
@@ -358,6 +363,7 @@ sealed partial class Deck : IDisposable
             if (!deck.RenderPlatter(samples, count, channels, spec->freq))
                 deck._keyLock.Process(samples, count, channels, spec->freq, Volatile.Read(ref deck._speed));
             deck.Equalizer.Process(samples, count, channels, spec->freq);
+            deck.VocalCut.Process(samples, count, channels, spec->freq);
             deck.Effects.Process(samples, count, channels, spec->freq);
             deck.Meter.Measure(samples, count, channels);
             if (deck.Headphones)
@@ -864,6 +870,42 @@ sealed partial class Deck : IDisposable
     TimeSpan ToTime(long frames) => TimeSpan.FromSeconds((double)frames / SampleRate);
 
     long ToFrames(TimeSpan time) => (long)Math.Round(time.TotalSeconds * SampleRate);
+
+    /// <summary>
+    /// What to sample from the deck: the loop playing, or else the bar up to the beat just gone (two seconds without
+    /// a beat grid). Null with nothing loaded.
+    /// </summary>
+    public (TimeSpan From, TimeSpan To)? SampleRange()
+    {
+        if (!IsLoaded)
+            return null;
+        if (Loop is { } loop)
+            return loop;
+        var now = Position.TotalSeconds;
+        if (_analysis?.Grid is { } grid)
+        {
+            var beat = Math.Floor(grid.BeatNumberAt(now));
+            var from = grid.TimeOfBeat(beat - BeatGrid.BEATS_PER_BAR);
+            if (from >= 0)
+                return (TimeSpan.FromSeconds(from), TimeSpan.FromSeconds(grid.TimeOfBeat(beat)));
+        }
+        return now >= 2 ? (TimeSpan.FromSeconds(now - 2), TimeSpan.FromSeconds(now)) : null;
+    }
+
+    /// <summary>
+    /// The loaded song's audio from <paramref name="from"/> to <paramref name="to"/>, as it was decoded; null if
+    /// there's none there.
+    /// </summary>
+    public PcmAudio? AudioBetween(TimeSpan from, TimeSpan to)
+    {
+        if (_pcm is not { } pcm)
+            return null;
+        var start = Math.Clamp(ToFrames(from), 0, pcm.Frames);
+        var end = Math.Clamp(ToFrames(to), 0, pcm.Frames);
+        if (end <= start)
+            return null;
+        return new PcmAudio(pcm.Samples.AsSpan((int)(start * pcm.Channels), (int)((end - start) * pcm.Channels)).ToArray(), pcm.Channels, pcm.SampleRate);
+    }
 
     /// <summary>
     /// Whether the deck's playing: while the platter has the sound (scratched, or spinning), whether it'll play on

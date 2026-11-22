@@ -1,14 +1,24 @@
 namespace Cuepoint.Audio;
 
 /// <summary>
-/// Eight one-shot samples, an air horn or a drop, say, played straight into the main mix from the start each time
+/// Sixteen one-shot samples, in two banks of eight, an air horn or a drop, say, played straight into the main mix from the start each time
 /// one's pad is hit, whatever the decks are doing: past the crossfader, under the master volume and limiter, and in a
 /// recording. Each is a deck of its own, out of sight, so a song of any kind a deck plays can be one. Call
 /// <see cref="Update"/> once a frame, to take in a load that's finished.
 /// </summary>
 sealed class Sampler : IDisposable
 {
-    public const int SLOTS = 8;
+    public const int SLOTS = 16;
+
+    /// <summary>
+    /// How many pads a bank has: the first eight samples are the first bank, the next eight the second.
+    /// </summary>
+    public const int PADS = 8;
+
+    /// <summary>
+    /// What a slot's called: its pad's number, with "B" for the second bank, as "3" or "B3".
+    /// </summary>
+    public static string SlotName(int slot) => slot < PADS ? $"{slot + 1}" : $"B{slot - PADS + 1}";
 
     readonly Deck[] _slots;
     readonly string?[] _paths = new string?[SLOTS];
@@ -110,6 +120,39 @@ sealed class Sampler : IDisposable
     }
 
     static bool InRange(int slot) => slot >= 0 && slot < SLOTS;
+
+    /// <summary>
+    /// Writes <paramref name="audio"/> to <paramref name="path"/> as a 16-bit WAV, for a sample taken from a deck to
+    /// keep. Returns why it couldn't, if it couldn't.
+    /// </summary>
+    public static string? WriteWav(string path, PcmAudio audio)
+    {
+        try
+        {
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            using var writer = new BinaryWriter(File.Create(path));
+            var bytes = audio.Samples.Length * 2;
+            writer.Write("RIFF"u8);
+            writer.Write(36 + bytes);
+            writer.Write("WAVEfmt "u8);
+            writer.Write(16);
+            writer.Write((short)1);
+            writer.Write((short)audio.Channels);
+            writer.Write(audio.SampleRate);
+            writer.Write(audio.SampleRate * audio.Channels * 2);
+            writer.Write((short)(audio.Channels * 2));
+            writer.Write((short)16);
+            writer.Write("data"u8);
+            writer.Write(bytes);
+            foreach (var sample in audio.Samples)
+                writer.Write((short)Math.Clamp(MathF.Round(sample * 32767), short.MinValue, short.MaxValue));
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return e.Message;
+        }
+    }
 
     public void Dispose()
     {

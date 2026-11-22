@@ -100,9 +100,13 @@ static class TransitionPlanner
     const float SILENCE = 0.03f;
 
     /// <param name="earliest">How soon, in seconds through the song going out, anything can start happening.</param>
-    public static MixPlan Plan(MixSong outgoing, MixSong incoming, double earliest)
+    /// <param name="cut">How many seconds sooner than its end the song going out should be mixed out by, to keep to a
+    /// set's end time; never so many that the mix would have to start before <paramref name="earliest"/>.</param>
+    public static MixPlan Plan(MixSong outgoing, MixSong incoming, double earliest, double cut = 0)
     {
         var end = AudibleEnd(outgoing);
+        if (cut > 0)
+            end = Math.Max(Math.Min(end, earliest + CROSSFADE_SECONDS * 2), end - cut);
         if (outgoing.Analysis is not { } outAnalysis || incoming.Analysis is not { } inAnalysis)
             return Crossfade(incoming, end, earliest);
 

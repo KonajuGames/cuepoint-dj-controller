@@ -15,7 +15,7 @@ static class SettingsBackup
     /// </summary>
     static readonly string[] Files = ["settings.json", "keys.json"];
 
-    static readonly string[] Folders = ["controllers", "VirtualFolders", "history"];
+    static readonly string[] Folders = ["controllers", "VirtualFolders", "history", "Samples"];
 
     /// <summary>
     /// Writes what's set up in <paramref name="appFolder"/> to a zip at <paramref name="zipPath"/>. Returns how many

@@ -22,7 +22,8 @@ order to build in.
 | 8 | Editing several songs' artist and album at once, a tempo range in the options | `6b3b0e6` |
 | 9 | Live streaming to Icecast in Opus, editing a recording's tracklist, scaling the whole screen (with Cuedeck), a screenshot the app takes itself | `0b4f7c1` |
 | 10 | Recursive kept for the music library, a panic button, a self-test before a gig, recordings mended after a crash | `180fd90` |
-| 11 | Genre (read, shown, searched and edited), the stream's state said as it changes, the stream's listener count | this commit |
+| 11 | Genre (read, shown, searched and edited), the stream's state said as it changes, the stream's listener count | `c7e5144` |
+| 12 | Echo outs and filter sweeps to the next phrase, a vocal cut, sampling from a deck and a second sampler bank, a set end time Auto-Mix paces to | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -85,14 +86,14 @@ the other is the only leader; sync lock made the unlocked deck lead).
 | 21 | **Status lines that stay true**: a pass over what's said | S | Looked through every message that says something's going on: each is followed by what came of it, but for live streaming, which now says when it goes live, retries and stops, and a stream the server turns down for good is let go. |
 | 22 | **Streaming extras**: listeners, and MP3 | M | The listener count from Icecast's status page (`/status-json.xsl`) is shown with LIVE. MP3 as a choice beside Opus, for Shoutcast and older players, is still to do: it needs an encoder, LAME as a native library (LGPL), so it waits on whether to ship one. |
 
-## Phase 12: During a set
+## Phase 12: During a set (done)
 
 | # | Item | Size | Notes |
 |---|---|---|---|
 | 23 | **Phrase-timed effects at a press**: an echo-out or filter sweep to the next phrase | M | One press starts an effect that builds to the next phrase boundary and stops there, as a transition would; Auto-Mix's phrase finding (`TransitionPlanner`) already knows where they fall. |
-| 24 | **A vocal cut**: a mid-band preset on a deck | S | Not stem separation, which is too heavy to build in, but an EQ preset that takes the vocals' band down, on a button, for a quick acapella-ish blend. |
+| 24 | **A vocal cut**: a mid-band preset on a deck | S | Not stem separation, which is too heavy to build in: what's the same in both sides is taken out but its bass and top (`VocalCut`), on VOX beside PFL, for a quick acapella-ish blend. |
 | 25 | **Sampling from a deck**, and a second bank of pads | M | The loop playing (or the last beats) captured onto a sampler pad, kept as a file in the app's folder; a second bank of eight, flipped between. |
-| 26 | **A set timer**: an end time, with Auto-Mix pacing to it | M | How long's left of the set in the title bar; Auto-Mix shortens or lengthens its transitions, or leaves out songs, so the list ends on time. |
+| 26 | **A set timer**: an end time, with Auto-Mix pacing to it | M | SET END on the Auto-Mix panel; each song's mixed out sooner, or songs at the end left out, so the list ends on time. A list too short can't be lengthened, so it ends early. |
 
 ## Phase 13: Library
 
@@ -112,7 +113,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Order and dependencies
 
-- **Next:** Phase 12, or MP3 streaming (22) if a native LAME's wanted. Before a gig, `--self-test` (17). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
+- **Next:** Phase 13, or MP3 streaming (22) if a native LAME's wanted. Before a gig, `--self-test` (17). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
 - **Builds on:** (17) uses the capture mode's scratch folder and made-up songs; (20) lets (9) edit genre too; (22)'s MP3 needs an encoder library; (23) and (26) use Auto-Mix's phrase finding; (27) uses the intro and outro marks.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.
