@@ -292,6 +292,56 @@ static class TransitionPlanner
     }
 
     /// <summary>
+    /// How many bars of sparse bass in the song's body make a breakdown.
+    /// </summary>
+    const int BREAKDOWN_BARS = 4;
+
+    /// <summary>
+    /// Places in the song worth a hot cue, in order through it, from the same look at its bass as the intro and
+    /// outro: its first downbeat (Start), where the intro ends (Drop), the first breakdown in its body, where the bass
+    /// falls away for <see cref="BREAKDOWN_BARS"/> bars or more (Breakdown), where it comes back (Drop 2), and where
+    /// the outro starts (Outro). Any of them a song hasn't is left out; none at all for a song not analysed.
+    /// </summary>
+    public static IReadOnlyList<(string Name, double At)> CuePoints(MixSong song)
+    {
+        if (song.Analysis is not { } analysis)
+            return [];
+        var grid = analysis.Grid;
+        var first = FirstDownbeat(grid);
+        var cues = new List<(string, double)>();
+        if (grid.TimeOfBeat(first) is >= 0 and var start)
+            cues.Add(("Start", start));
+        var (introEnd, outroStart) = Sections(song);
+        if (introEnd is { } drop)
+            cues.Add(("Drop", drop));
+
+        // The body, bar by bar from the drop (or the start) to the outro (or the end), for the first stretch of
+        // sparse bass long enough to be a breakdown.
+        var limit = BodyBass(song, grid) * SPARSE_BASS;
+        var bodyEnd = outroStart ?? AudibleEnd(song);
+        var sparse = 0;
+        for (var beat = grid.BeatNumberAt(introEnd ?? grid.TimeOfBeat(first)); grid.TimeOfBeat(beat + BeatGrid.BEATS_PER_BAR) <= bodyEnd; beat += BeatGrid.BEATS_PER_BAR)
+        {
+            var bar = song.Levels(grid.TimeOfBeat(beat), grid.TimeOfBeat(beat + BeatGrid.BEATS_PER_BAR));
+            if (bar.Bass < limit)
+            {
+                sparse++;
+                continue;
+            }
+            if (sparse >= BREAKDOWN_BARS)
+            {
+                cues.Add(("Breakdown", grid.TimeOfBeat(beat - sparse * BeatGrid.BEATS_PER_BAR)));
+                cues.Add(("Drop 2", grid.TimeOfBeat(beat)));
+                break;
+            }
+            sparse = 0;
+        }
+        if (outroStart is { } outro)
+            cues.Add(("Outro", outro));
+        return cues;
+    }
+
+    /// <summary>
     /// The number of the first downbeat in the song.
     /// </summary>
     static double FirstDownbeat(BeatGrid grid)

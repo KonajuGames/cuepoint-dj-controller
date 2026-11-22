@@ -333,6 +333,8 @@ static int Run(ScreenshotTool.Request? capture)
     // Songs found to be exact copies of each other, for the list of them, and whether a look for those or for moved
     // songs is going on.
     IReadOnlyList<Song> duplicates = [];
+    // The songs in Duplicates by their paths, in their groups of copies.
+    List<IReadOnlyList<string>> duplicateGroups = [];
     var repairing = false;
     var smartPlaylists = new SmartPlaylists(settings.SmartPlaylists, library, database, analyser);
     // Every set played, kept between runs, this one as it goes.
@@ -343,7 +345,10 @@ static int Run(ScreenshotTool.Request? capture)
 
     // What would mix well next, set once the session's plays are kept: best first, and what it's suggesting for.
     Func<(IReadOnlyList<Song>, string)> suggested = () => ([], "Suggested next");
-    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports, smartPlaylists, () => duplicates, () => suggested(), playLog.Past);
+    // Why each song's suggested, and the key shift it'd load with, by path, as last suggested.
+    var suggestedWhy = new Dictionary<string, Suggestion>(StringComparer.OrdinalIgnoreCase);
+    var shiftOnLoad = new Dictionary<Deck, int>();
+    var folders = LibraryTree.Build(library, decks, history, virtualFolders, IsRecursive, imports, smartPlaylists, () => duplicates, () => suggested(), song => suggestedWhy.GetValueOrDefault(song.Path)?.Why, playLog.Past);
     var smartNode = folders.Single(node => node.Kind == LibraryNodeKind.SmartPlaylists);
     _ = smartNode.Children;
     var virtualFoldersNode = folders.Single(node => node.Kind == LibraryNodeKind.VirtualFolders);
@@ -670,7 +675,11 @@ static int Run(ScreenshotTool.Request? capture)
         if (Suggestions.From(decks) is not { } playing)
             return ([], "Suggested next: load an analysed song to suggest what follows it");
         var onDecks = decks.Select(deck => deck.FilePath).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var songs = Suggestions.For(playing, smartPlaylists.Everything(), song => plays.Contains(song.Path) || onDecks.Contains(song.Path)).Select(suggestion => suggestion.Song).ToList();
+        var suggestions = Suggestions.For(playing, smartPlaylists.Everything(), song => plays.Contains(song.Path) || onDecks.Contains(song.Path));
+        suggestedWhy.Clear();
+        foreach (var suggestion in suggestions)
+            suggestedWhy[suggestion.Song.Path] = suggestion;
+        var songs = suggestions.Select(suggestion => suggestion.Song).ToList();
         var after = library.SongAt(playing.Path) is { } song ? $"{song.Artist} - {song.Title}" : Path.GetFileNameWithoutExtension(playing.Path);
         return (songs, $"Suggested after {after} ({playing.Key.Camelot}, {playing.Bpm:F1} BPM)");
     };
@@ -936,10 +945,16 @@ static int Run(ScreenshotTool.Request? capture)
                     loaded.Play();
             }
             plays.Restart(loaded);
+            var shifted = shiftOnLoad.Remove(loaded, out var shift);
+            if (shifted)
+                loaded.KeyShift = shift;
             // A file without tags is named as the library knows it, from its folders.
             if (loaded.FilePath is { } named && library.Find(named) is { } known)
                 loaded.NameUntagged(known.Title, known.Artist);
-            screen.Log(loaded.Artist.Length > 0 ? $"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}" : $"Deck {loaded.Name}: loaded {loaded.Title}");
+            screen.Log(
+                (loaded.Artist.Length > 0 ? $"Deck {loaded.Name}: loaded {loaded.Artist} - {loaded.Title}" : $"Deck {loaded.Name}: loaded {loaded.Title}")
+                + (shifted ? $", its key shifted {shift:+0;-0} to mix, as suggested" : "")
+            );
 
             // Hot cues and a beat grid Serato kept in the file (an MP3, M4A, FLAC or AIFF) come in the first time it's loaded
             // (and again if it changes), if it has none of its own here.
@@ -1077,6 +1092,11 @@ static int Run(ScreenshotTool.Request? capture)
         }
         // Analysis goes to the front of the queue, so the deck has its gain and tempo as soon as possible.
         analyser.Request(song);
+        // Loaded from Suggested next, a song that only mixes a semitone up or down gets that key shift once it's in.
+        if (browser.Source is { Name: "Suggested next" } && suggestedWhy.GetValueOrDefault(song.Path) is { Shift: not 0 } shifted)
+            shiftOnLoad[deck] = shifted.Shift;
+        else
+            shiftOnLoad.Remove(deck);
         deck.BeginLoad(song.Path, $"{song.Artist} - {song.Title}");
         history.Add(song);
         screen.Log($"Deck {deck.Name}: loading {song.Artist} - {song.Title}");
@@ -1419,8 +1439,68 @@ static int Run(ScreenshotTool.Request? capture)
         );
     };
 
+    // Hot cues suggested for the song on a deck, at its start, drop, breakdown, second drop and outro, from its bass:
+    // on the pads that are empty, named and coloured, leaving any set alone; Ctrl+Z takes them back.
+    void SuggestHotcues(Deck deck)
+    {
+        if (deck.FilePath is not { } file || deck.Analysis is not { } analysis || deck.Detail is not { } detail)
+        {
+            screen.Log($"Deck {deck.Name}: hot cues can be suggested once the song's analysed");
+            return;
+        }
+        var song = new MixSong(analysis, deck.Duration.TotalSeconds, 0, (start, end) =>
+        {
+            var (peak, bass, mids, treble) = detail.Between(start, end);
+            return new BandLevels(peak, bass, mids, treble);
+        });
+        var bar = 4 * 60 / analysis.Grid.MainBpm;
+        var before = deck.Hotcues.ToArray();
+        var after = before.ToArray();
+        var details = deck.HotcueDetails.ToArray();
+        var added = new List<string>();
+        foreach (var (name, at) in TransitionPlanner.CuePoints(song))
+        {
+            // Not one within a bar of a hot cue there already.
+            if (after.Any(cue => cue is { } there && Math.Abs(there.TotalSeconds - at) < bar))
+                continue;
+            if (Array.IndexOf(after, null) is not (>= 0 and var pad))
+                break;
+            after[pad] = TimeSpan.FromSeconds(at);
+            details[pad] = new HotcueDetail(Math.Round(at, 3), name, AppTheme.HotcuePalette[added.Count % AppTheme.HotcuePalette.Count].Hex, null);
+            added.Add(name);
+        }
+        if (added.Count == 0)
+        {
+            screen.Log($"Deck {deck.Name}: no hot cues to suggest that aren't there already, or the pads are full");
+            return;
+        }
+        edits.RecordHotcues(file, before, after, deck.HotcueDetails.ToArray(), "suggesting hot cues");
+        // Kept to the millisecond, as they're saved, so each one's name and colour stays with it.
+        var kept = after.Select(cue => cue is { } at ? TimeSpan.FromSeconds(Math.Round(at.TotalSeconds, 3)) : (TimeSpan?)null).ToArray();
+        database.SetHotcues(file, kept);
+        database.SetHotcueDetails(file, details);
+        deck.SetHotcues(kept);
+        deck.SetHotcueDetails(details);
+        try
+        {
+            database.Save();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            screen.Log($"Couldn't save the hot cues to {database.FilePath}: {e.Message}");
+            return;
+        }
+        screen.Log($"Deck {deck.Name}: suggested {string.Join(", ", added)}; Ctrl+Z takes them back");
+    }
+
     screen.HotcueMenuRequested += (deck, index, at) =>
     {
+        // An empty pad: suggestions for the song's hot cues.
+        if (deck.Hotcues[index] is null)
+        {
+            menu.Show(at, [new MenuItem("Suggest hot cues for this song", () => SuggestHotcues(deck), Enabled: deck.Analysis is not null)]);
+            return;
+        }
         var detail = deck.DetailOf(index);
         var (name, color, loopEnd) = (detail?.Name, detail?.Color, detail?.LoopEnd);
         var number = index + 1;
@@ -2294,6 +2374,7 @@ static int Run(ScreenshotTool.Request? capture)
                             {
                                 repairing = false;
                                 duplicates = songs;
+                                duplicateGroups = copies.ToList();
                                 screen.Log(copies.Count == 0 ? $"No exact copies under {folder}" : $"{songs.Count} songs are exact copies of each other, in {copies.Count} {(copies.Count == 1 ? "group" : "groups")}; see Lists > Duplicates");
                                 if (copies.Count == 0)
                                     return;
@@ -2336,6 +2417,7 @@ static int Run(ScreenshotTool.Request? capture)
                                 repairing = false;
                                 var groups = LibraryRepair.FindSimilar(songs);
                                 duplicates = groups.SelectMany(group => group).ToList();
+                                duplicateGroups = groups.Select(group => (IReadOnlyList<string>)group.Select(song => song.Path).ToList()).ToList();
                                 screen.Log(
                                     groups.Count == 0
                                         ? $"No songs alike under {folder}"
@@ -2567,9 +2649,16 @@ static int Run(ScreenshotTool.Request? capture)
             menu.Show(point, node.Kind == LibraryNodeKind.Imported ? [AutoMixFor(node), CheckFor(node), SeratoCuesFor(node), ExportFor(node)] : [SeratoCuesFor(node)]);
     };
 
-    screen.FolderTree.AcceptsDrop = (node, payload) => node.Folder is not null && payload is IReadOnlyList<Song> { Count: > 0 };
+    screen.FolderTree.AcceptsDrop = (node, payload) =>
+        payload is IReadOnlyList<Song> { Count: > 0 } && (node.Folder is not null || node is { Kind: LibraryNodeKind.Folder or LibraryNodeKind.Drive or LibraryNodeKind.Library, Path: not null } && !repairing);
     screen.FolderTree.ItemDropped += (node, payload) =>
     {
+        // Onto a folder or drive: the songs moved there.
+        if (node is { Folder: null, Path: { } there } && payload is IReadOnlyList<Song> moved)
+        {
+            MoveSongs(moved, there);
+            return;
+        }
         if (node.Folder is not { } folder || payload is not IReadOnlyList<Song> songs)
             return;
         var (added, error) = virtualFolders.Add(folder, songs);
@@ -2738,6 +2827,107 @@ static int Run(ScreenshotTool.Request? capture)
             enabled: songs.Count > 0
         );
 
+    // The other copies of a song in Duplicates.
+    List<string> OtherCopies(Song song) =>
+        duplicateGroups.FirstOrDefault(group => group.Contains(song.Path, StringComparer.OrdinalIgnoreCase))?.Where(path => !string.Equals(path, song.Path, StringComparison.OrdinalIgnoreCase)).ToList() ?? [];
+
+    // One copy in Duplicates kept, and the others recycled, what's known about them coming onto it, where it hasn't
+    // its own: cues, notes, places in virtual folders. A copy on a deck is left.
+    void KeepCopy(Song kept)
+    {
+        var onDecks = OtherCopies(kept).Where(path => decks.Any(deck => string.Equals(deck.FilePath, path, StringComparison.OrdinalIgnoreCase))).ToList();
+        var others = OtherCopies(kept).Except(onDecks, StringComparer.OrdinalIgnoreCase).ToList();
+        if (others.Count == 0)
+        {
+            screen.Log(onDecks.Count > 0 ? "The other copies are on a deck, so they're left" : $"{kept.Title} has no other copies");
+            return;
+        }
+        var where = string.Join(", ", others.Take(3).Select(path => Path.GetDirectoryName(path))) + (others.Count > 3 ? $" and {others.Count - 3} more" : "");
+        confirmation.Show(
+            $"Keep the copy in {Path.GetFileName(Path.GetDirectoryName(kept.Path))}?",
+            $"This one, {kept.Path}, is kept. {(others.Count == 1 ? "The other copy, in" : $"The {others.Count} other copies, in")} {where}, {(others.Count == 1 ? "goes" : "go")} to the Recycle Bin. "
+                + $"Their hot cues, notes and places in virtual folders come onto this one, where it hasn't its own.{(onDecks.Count > 0 ? " A copy on a deck is left." : "")}",
+            "Recycle",
+            () =>
+            {
+                var recycled = new List<string>();
+                string? problem = null;
+                foreach (var other in others)
+                {
+                    if (WindowsShell.MoveToRecycleBin(other) is { } error)
+                        problem ??= $"{Path.GetFileName(other)}: {error}";
+                    else
+                        recycled.Add(other);
+                }
+                var saving = LibraryRepair.Apply(LibraryRepair.OntoKept(kept, recycled), database, library, analyser, virtualFolders);
+                analyser.SaveSoon();
+                duplicateGroups = duplicateGroups
+                    .Select(group => (IReadOnlyList<string>)group.Except(recycled, StringComparer.OrdinalIgnoreCase).ToList())
+                    .Where(group => group.Count > 1)
+                    .ToList();
+                var left = duplicateGroups.SelectMany(group => group).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                duplicates = duplicates.Where(song => left.Contains(song.Path)).ToList();
+                browser.Reload();
+                screen.Log(
+                    (recycled.Count == 1 ? $"Kept {kept.Title}; recycled its other copy" : $"Kept {kept.Title}; recycled {recycled.Count} other copies")
+                        + (problem is not null ? $"; couldn't recycle {problem}" : "")
+                        + (saving is not null ? $"; couldn't save a virtual folder: {saving}" : "")
+                );
+            }
+        );
+    }
+
+    // Songs dragged onto a folder or drive moved there, what's known about them following: cues, notes, analysis,
+    // places in virtual folders. A song on a deck is left.
+    void MoveSongs(IReadOnlyList<Song> songs, string folder)
+    {
+        var playing = songs.Where(song => decks.Any(deck => string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase))).ToList();
+        var moving = songs.Except(playing).Where(song => !string.Equals(Path.GetDirectoryName(song.Path), Path.TrimEndingDirectorySeparator(folder), StringComparison.OrdinalIgnoreCase)).ToList();
+        if (moving.Count == 0)
+        {
+            screen.Log(playing.Count > 0 ? "A song on a deck can't be moved" : $"Those are in {folder} already");
+            return;
+        }
+        confirmation.Show(
+            moving.Count == 1 ? $"Move {moving[0].Title}?" : $"Move {moving.Count} songs?",
+            $"{(moving.Count == 1 ? "Its file is" : "Their files are")} moved to {folder}, and {(moving.Count == 1 ? "its" : "their")} hot cues, notes, analysis and places in virtual folders follow. "
+                + $"A file there by the same name isn't replaced.{(playing.Count > 0 ? " A song on a deck is left." : "")}",
+            "Move",
+            () =>
+            {
+                // Not one loaded onto a deck since.
+                var paths = moving.Select(song => song.Path).Where(path => !decks.Any(deck => string.Equals(deck.FilePath, path, StringComparison.OrdinalIgnoreCase))).ToList();
+                if (paths.Count == 0)
+                {
+                    screen.Log("A song on a deck can't be moved");
+                    return;
+                }
+                repairing = true;
+                screen.Log(moving.Count == 1 ? $"Moving {moving[0].Title} to {folder}..." : $"Moving {moving.Count} songs to {folder}...");
+                library.Background.Start(
+                    () => LibraryRepair.MoveFiles(paths, folder),
+                    moved =>
+                    {
+                        repairing = false;
+                        var saving = LibraryRepair.Apply(moved.Moves, database, library, analyser, virtualFolders);
+                        analyser.SaveSoon();
+                        browser.Reload();
+                        screen.Log(
+                            $"Moved {moved.Moves.Count} {(moved.Moves.Count == 1 ? "song" : "songs")} to {folder}"
+                                + (moved.Problems.Count > 0 ? $"; couldn't move {moved.Problems.Count}, as {moved.Problems[0]}" : "")
+                                + (saving is not null ? $"; couldn't save a virtual folder: {saving}" : "")
+                        );
+                    },
+                    () =>
+                    {
+                        repairing = false;
+                        screen.Log($"Couldn't move the songs to {folder}");
+                    }
+                );
+            }
+        );
+    }
+
     // A menu for songs in the list, acting on the selection.
     browser.SongsSecondaryClicked += (songs, at) =>
     {
@@ -2746,6 +2936,9 @@ static int Run(ScreenshotTool.Request? capture)
         menu.Show(
             at,
             [
+                .. browser.Source is { Name: "Duplicates" } && songs.Count == 1 && OtherCopies(songs[0]).Count > 0
+                    ? [new MenuItem("Keep this copy, recycle the others...", () => KeepCopy(songs[0]), Enabled: OperatingSystem.IsWindows())]
+                    : Array.Empty<MenuItem>(),
                 new MenuItem(songs.Count > 1 ? $"Add {songs.Count} songs to Up next" : "Add to Up next", () => AddToUpNext(songs), Enabled: songs.Count > 0),
                 new MenuItem(
                     preview.Song is { } hearing && songs.Contains(hearing) ? "Stop preview" : "Preview in headphones",

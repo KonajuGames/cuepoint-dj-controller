@@ -10,9 +10,10 @@ namespace Cuepoint.Music;
 sealed record Playing(string Path, MusicalKey Key, double Bpm, int? Energy);
 
 /// <summary>
-/// A song that would mix well next, how well from 0 to 1, and why, in a few words.
+/// A song that would mix well next, how well from 0 to 1, and why, in a few words; and the key shift, in semitones,
+/// that makes its key mix, if it needs one.
 /// </summary>
-sealed record Suggestion(Song Song, double Score, string Why);
+sealed record Suggestion(Song Song, double Score, string Why, int Shift = 0);
 
 /// <summary>
 /// The songs that would mix well after what's playing, best first: in a key that mixes, at a tempo the tempo fader
@@ -31,6 +32,12 @@ static class Suggestions
     const double KEY_WEIGHT = 0.45;
     const double TEMPO_WEIGHT = 0.35;
     const double ENERGY_WEIGHT = 0.2;
+
+    /// <summary>
+    /// What a key that only mixes shifted a semitone counts for, against one that mixes as it is: it's a little
+    /// further from the song as written.
+    /// </summary>
+    const double SHIFTED = 0.8;
 
     /// <summary>
     /// The best <paramref name="count"/> of <paramref name="songs"/> to play after <paramref name="playing"/>, leaving
@@ -54,13 +61,17 @@ static class Suggestions
     {
         if (song.Analysis is not { } analysis)
             return null;
-        if (KeyScore(playing.Key, analysis.Key) is not (> 0 and var key))
+        // As it is, or else shifted a semitone up or down, whichever mixes better, which key shift does as it loads.
+        var (key, shift) = KeyScore(playing.Key, analysis.Key) is > 0 and var asIs
+            ? (asIs, 0)
+            : new[] { 1, -1 }.Select(semitones => (Score: KeyScore(playing.Key, analysis.Key.Transposed(semitones)) * SHIFTED, Shift: semitones)).MaxBy(option => option.Score);
+        if (key <= 0)
             return null;
         if (TempoScore(playing.Bpm, analysis.Bpm) is not (>= 0 and var tempo))
             return null;
         var energy = EnergyScore(playing.Energy, analysis.Energy);
         var score = KEY_WEIGHT * key + TEMPO_WEIGHT * tempo + ENERGY_WEIGHT * energy;
-        return new Suggestion(song, score, Why(playing, analysis));
+        return new Suggestion(song, score, Why(playing, analysis, shift), shift);
     }
 
     /// <summary>
@@ -115,9 +126,12 @@ static class Suggestions
         };
     }
 
-    static string Why(Playing playing, TrackAnalysis next)
+    static string Why(Playing playing, TrackAnalysis next, int shift = 0)
     {
-        var parts = new List<string> { $"{playing.Key.Camelot} → {next.Key.Camelot}" };
+        var parts = new List<string>
+        {
+            shift == 0 ? $"{playing.Key.Camelot} → {next.Key.Camelot}" : $"{playing.Key.Camelot} → {next.Key.Transposed(shift).Camelot} (key {shift:+0;-0})",
+        };
         var ratio = next.Bpm / playing.Bpm;
         var closest = new[] { ratio, ratio * 2, ratio / 2 }.MinBy(r => Math.Abs(Math.Log(r)));
         parts.Add(Math.Abs(closest - 1) < 0.0005 ? "same tempo" : $"{(closest - 1) * 100:+0.0;-0.0}% tempo");

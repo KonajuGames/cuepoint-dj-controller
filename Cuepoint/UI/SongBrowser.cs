@@ -271,6 +271,7 @@ sealed class SongBrowser : Panel
         );
         Optional(new ListColumn<Song>("Comment", 220, song => song.Notes.Comment ?? "") { Color = _ => Theme.Muted, SortKey = song => song.Notes.Comment });
         Optional(new ListColumn<Song>("Folder", 300, song => Path.GetDirectoryName(song.Path) ?? "") { Color = _ => Theme.Muted, SortKey = song => Path.GetDirectoryName(song.Path) });
+        _whyColumn = new ListColumn<Song>("Why", 260, song => _source?.Why?.Invoke(song) ?? "") { Color = _ => Theme.Muted };
         foreach (var column in _columns)
             _defaultWidths[column] = column.Width;
         ShowColumns();
@@ -352,6 +353,7 @@ sealed class SongBrowser : Panel
             if (value is { IsLoadedList: true })
                 value.RefreshSongs();
             TakeSongs(value?.Songs ?? []);
+            ShowColumns();
             _heading.Text = value?.Heading?.Invoke() ?? value?.Name ?? "";
             Filter();
             _scroll.ScrollTo(float2.Zero);
@@ -534,7 +536,12 @@ sealed class SongBrowser : Panel
     {
         List.Columns.Clear();
         List.Columns.AddRange(_columns.Where(column => !_hidden.Contains(column)));
+        // A list that says why each song's in it says so beside the titles.
+        if (_source?.Why is not null)
+            List.Columns.Insert(Math.Max(0, List.Columns.IndexOf(_titleColumn) + 1), _whyColumn);
     }
+
+    ListColumn<Song> _whyColumn = null!;
 
     /// <summary>
     /// The choices for the column headings' menu: each column but the title, ticked if it shows, to show or hide it;

@@ -689,7 +689,7 @@ sealed class DeckPanel : Panel
                     _grid.Pad(index, fine: true);
                 else if (_sampler is { Active: true })
                     SamplerPadMenuRequested?.Invoke(_sampler.Slot(index), at);
-                else if (_roll is not { Active: true } && _jump is not { Active: true } && _deck.Hotcues[index] is not null)
+                else if (_roll is not { Active: true } && _jump is not { Active: true } && _deck.IsLoaded)
                     HotcueMenuRequested?.Invoke(this, index, at);
             };
             _pads.Add(pad);

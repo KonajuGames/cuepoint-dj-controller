@@ -234,6 +234,50 @@ public sealed class PreparationTests : IDisposable
     }
 
     [Fact]
+    public void Copies_thrown_away_leave_their_cues_notes_and_places_on_the_one_kept()
+    {
+        var keep = _folder.File("Music", "a.mp3");
+        var (copy1, copy2) = (_folder["Music", "a (1).mp3"], _folder["Music", "a (2).mp3"]);
+        _database.SetHotcues(keep, [TimeSpan.FromSeconds(40)]);
+        _database.SetHotcues(copy1, [TimeSpan.FromSeconds(12)]);
+        _database.SetNotes(copy1, Noted);
+        _database.SetNotes(copy2, new SongNotes(1));
+        _database.SetCuePoint(copy2, TimeSpan.FromSeconds(8));
+        using var library = new MusicLibrary(_folder["Music"]);
+        var kept = library.Songs.Single(song => song.Path == keep);
+        using var analyser = Analyser(library.Songs);
+        var root = _folder.Path + "\\";
+        var folders = new VirtualFolders(library, _folder["Folders"], () => [new StorageDrive(root, "C:", true)], root);
+        var set = folders.Create("Set");
+        set.EditablePaths.AddRange([copy1, keep, copy2]);
+
+        Assert.Null(LibraryRepair.Apply(LibraryRepair.OntoKept(kept, [keep, copy1, copy2]), _database, library, analyser, folders));
+
+        Assert.Equal(TimeSpan.FromSeconds(40), _database.GetHotcues(keep)[0]);
+        Assert.Equal(Noted, _database.GetNotes(keep));
+        Assert.Equal(TimeSpan.FromSeconds(8), _database.GetCuePoint(keep));
+        Assert.DoesNotContain(copy1, _database.KnownPaths(), StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(copy2, _database.KnownPaths(), StringComparer.OrdinalIgnoreCase);
+        Assert.Equal([keep], set.Paths);
+    }
+
+    [Fact]
+    public void Songs_moved_to_another_folder_go_there_but_never_over_a_file()
+    {
+        var (a, b) = (_folder.File("C", "a.mp3"), _folder.File("C", "b.mp3"));
+        File.WriteAllText(a, "a");
+        _folder.File("D", "b.mp3");
+
+        var (moves, problems) = LibraryRepair.MoveFiles([a, b], _folder["D"]);
+
+        Assert.Equal([new LibraryRepair.Move(a, _folder["D", "a.mp3"], File.GetLastWriteTimeUtc(_folder["D", "a.mp3"]))], moves);
+        Assert.False(File.Exists(a));
+        Assert.Equal("a", File.ReadAllText(_folder["D", "a.mp3"]));
+        Assert.True(File.Exists(b));
+        Assert.Single(problems);
+    }
+
+    [Fact]
     public void Relocating_a_song_nothing_is_known_about_does_nothing()
     {
         Assert.False(_database.Relocate(_folder["Old", "a.mp3"], _folder["New", "a.mp3"], DateTime.UtcNow));

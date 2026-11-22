@@ -54,12 +54,30 @@ public class SuggestionsTests
     }
 
     [Fact]
+    public void A_key_that_only_mixes_a_semitone_away_is_suggested_with_the_shift_below_one_that_mixes_as_it_is()
+    {
+        // Bb minor (3A) clashes with A minor (8A) as it is, but a semitone down it's A minor. F# major mixes neither
+        // way.
+        var same = At("same", A8, 124, 8);
+        var semitoneUp = At("Bb minor", A3, 124, 8);
+        var clash = At("F# major", new MusicalKey(6, false), 124, 8);
+
+        var suggested = Suggestions.For(Now, [semitoneUp, clash, same], _ => false);
+
+        Assert.Equal(["same", "Bb minor"], suggested.Select(suggestion => suggestion.Song.Title));
+        Assert.Equal((0, -1), (suggested[0].Shift, suggested[1].Shift));
+        Assert.StartsWith("8A → 8A (key -1)", suggested[1].Why);
+        Assert.True(suggested[1].Score < suggested[0].Score);
+    }
+
+    [Fact]
     public void The_best_come_first_and_clashes_out_of_reach_and_skipped_songs_aren_t_suggested()
     {
         var perfect = At("perfect", A8, 124, 8);
         var neighbour = At("neighbour", A9, 125, 7);
         var boost = At("boost", A10, 124, 8);
-        var clash = At("clash", A3, 124, 8);
+        // F# major: no key shift of a semitone makes it mix with A minor.
+        var clash = At("clash", new MusicalKey(6, false), 124, 8);
         var tooFast = At("too fast", A8, 140, 8);
         var played = At("played", A8, 124, 8);
         var unanalysed = Song(@"C:\Music\unanalysed.mp3");

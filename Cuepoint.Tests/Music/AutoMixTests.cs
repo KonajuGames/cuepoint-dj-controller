@@ -436,6 +436,31 @@ public sealed class AutoMixTests
         Assert.Null(rig.Mix.Order(SongOrder.Title));
     }
 
+    [Fact]
+    public void Hot_cues_are_suggested_at_the_start_drop_breakdown_second_drop_and_outro()
+    {
+        // At 120 BPM a bar's two seconds: sparse bass for the first 16 bars, a breakdown in bars 48 to 56, and from 120.
+        var song = Song_(120, AMinor, duration: 260, levels: (start, end) =>
+        {
+            var middle = (start + end) / 2;
+            var sparse = middle < 32 || (middle >= 96 && middle < 112) || middle >= 240;
+            return new BandLevels(1, sparse ? 0.2f : 1f, 0.5f, 0.3f);
+        });
+
+        var cues = TransitionPlanner.CuePoints(song);
+
+        Assert.Equal(["Start", "Drop", "Breakdown", "Drop 2", "Outro"], cues.Select(cue => cue.Name));
+        Assert.Equal([0.1, 32.1, 96.1, 112.1, 240.1], cues.Select(cue => Math.Round(cue.At, 1)));
+    }
+
+    [Fact]
+    public void A_song_full_all_through_gets_only_its_start()
+    {
+        var song = Song_(120, AMinor, duration: 260, levels: (_, _) => new BandLevels(1, 1, 0.5f, 0.3f));
+
+        Assert.Equal(["Start"], TransitionPlanner.CuePoints(song).Select(cue => cue.Name));
+    }
+
     [Theory]
     [InlineData("23:30", "2026-11-22 23:30")]
     [InlineData("9:05", "2026-11-23 09:05")]

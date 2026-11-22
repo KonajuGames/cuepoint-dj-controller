@@ -146,6 +146,46 @@ static partial class LibraryRepair
     }
 
     /// <summary>
+    /// Moves each song's file in <paramref name="paths"/> into <paramref name="folder"/>, on another drive or not, never
+    /// over a file there already, and says where each went, for <see cref="Apply"/> to take what's known about it
+    /// there; and why any couldn't be moved. A song in the folder already is left. Safe on any thread.
+    /// </summary>
+    public static (IReadOnlyList<Move> Moves, IReadOnlyList<string> Problems) MoveFiles(IReadOnlyList<string> paths, string folder)
+    {
+        var moves = new List<Move>();
+        var problems = new List<string>();
+        foreach (var path in paths)
+        {
+            var to = Path.Combine(folder, Path.GetFileName(path));
+            if (string.Equals(Path.GetFullPath(to), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (File.Exists(to))
+            {
+                problems.Add($"{Path.GetFileName(path)} is in {folder} already");
+                continue;
+            }
+            try
+            {
+                File.Move(path, to);
+                moves.Add(new Move(path, to, File.GetLastWriteTimeUtc(to)));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                problems.Add($"{Path.GetFileName(path)}: {e.Message}");
+            }
+        }
+        return (moves, problems);
+    }
+
+    /// <summary>
+    /// What's known about each of <paramref name="others"/>, copies of <paramref name="kept"/> about to be thrown
+    /// away, as moves onto it, for <see cref="Apply"/>: their cues, notes and places in virtual folders come to it,
+    /// where it hasn't its own, the first copy's first.
+    /// </summary>
+    public static IReadOnlyList<Move> OntoKept(Song kept, IEnumerable<string> others) =>
+        others.Where(other => !string.Equals(other, kept.Path, StringComparison.OrdinalIgnoreCase)).Select(other => new Move(other, kept.Path, kept.Modified)).ToList();
+
+    /// <summary>
     /// Takes what's known about each song to its new place, and points the virtual folders there too. Doesn't save the
     /// database. Returns why a virtual folder couldn't be saved, if one couldn't. UI thread only.
     /// </summary>

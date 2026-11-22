@@ -29,20 +29,29 @@ sealed class EditHistory(LibraryDatabase database, MusicLibrary library, IReadOn
     }
 
     /// <summary>
-    /// The song at <paramref name="path"/>'s hot cues went from <paramref name="before"/> to <paramref name="after"/>.
+    /// The song at <paramref name="path"/>'s hot cues went from <paramref name="before"/> to <paramref name="after"/>,
+    /// and their names and colours from <paramref name="detailsBefore"/>, if they changed too; said as
+    /// <paramref name="what"/>, if given.
     /// </summary>
-    public void RecordHotcues(string path, IReadOnlyList<TimeSpan?> before, IReadOnlyList<TimeSpan?> after)
+    public void RecordHotcues(string path, IReadOnlyList<TimeSpan?> before, IReadOnlyList<TimeSpan?> after, IReadOnlyList<HotcueDetail?>? detailsBefore = null, string? what = null)
     {
         var kept = before.ToArray();
+        var keptDetails = detailsBefore?.ToArray();
         Add(
             new Edit(
                 path,
-                Describe(before, after),
+                what ?? Describe(before, after),
                 () =>
                 {
                     database.SetHotcues(path, kept);
+                    if (keptDetails is not null)
+                        database.SetHotcueDetails(path, keptDetails);
                     foreach (var deck in DecksWith(path))
+                    {
                         deck.SetHotcues(kept);
+                        if (keptDetails is not null)
+                            deck.SetHotcueDetails(keptDetails);
+                    }
                 }
             )
         );

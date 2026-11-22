@@ -267,6 +267,12 @@ sealed class LibraryNode
     public Func<string>? Heading { get; init; }
 
     /// <summary>
+    /// Why each song's in it, for a column of its own beside the titles while it's listed: what mixes, for the songs
+    /// suggested next. None if null.
+    /// </summary>
+    public Func<Song, string?>? Why { get; init; }
+
+    /// <summary>
     /// The songs to list when it's chosen. A folder's or drive's are read once, in the background where it can be
     /// (none meanwhile, and <see cref="SongsLoaded"/> once they're in); the rest are asked for each time, since they
     /// change (a virtual folder edited, say).
@@ -333,6 +339,7 @@ static class LibraryTree
         SmartPlaylists? smart = null,
         Func<IReadOnlyList<Song>>? duplicates = null,
         Func<(IReadOnlyList<Song> Songs, string Heading)>? suggested = null,
+        Func<Song, string?>? suggestedWhy = null,
         IReadOnlyList<PlayedSet>? pastSets = null
     )
     {
@@ -395,6 +402,7 @@ static class LibraryTree
                     {
                         KeepsOrder = true,
                         Heading = () => suggested?.Invoke().Heading ?? "Suggested next",
+                        Why = suggestedWhy,
                     },
                     new("History", LibraryNodeKind.List, () => history.Reverse().Distinct().ToList()),
                     .. (pastSets is { Count: > 0 } ? (IEnumerable<LibraryNode>)[PastSets(library, pastSets)] : []),

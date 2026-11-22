@@ -23,7 +23,8 @@ order to build in.
 | 9 | Live streaming to Icecast in Opus, editing a recording's tracklist, scaling the whole screen (with Cuedeck), a screenshot the app takes itself | `0b4f7c1` |
 | 10 | Recursive kept for the music library, a panic button, a self-test before a gig, recordings mended after a crash | `180fd90` |
 | 11 | Genre (read, shown, searched and edited), the stream's state said as it changes, the stream's listener count | `c7e5144` |
-| 12 | Echo outs and filter sweeps to the next phrase, a vocal cut, sampling from a deck and a second sampler bank, a set end time Auto-Mix paces to | this commit |
+| 12 | Echo outs and filter sweeps to the next phrase, a vocal cut, sampling from a deck and a second sampler bank, a set end time Auto-Mix paces to | `dc829ff` |
+| 13 | Key-shift suggestions with a Why column, suggested hot cues, keeping one duplicate and recycling the rest, moving songs between folders and drives | this commit |
 
 Set aside: an elapsed/remaining toggle (each deck shows both already) and choosing the sync leader (with two decks
 the other is the only leader; sync lock made the unlocked deck lead).
@@ -95,13 +96,13 @@ the other is the only leader; sync lock made the unlocked deck lead).
 | 25 | **Sampling from a deck**, and a second bank of pads | M | The loop playing (or the last beats) captured onto a sampler pad, kept as a file in the app's folder; a second bank of eight, flipped between. |
 | 26 | **A set timer**: an end time, with Auto-Mix pacing to it | M | SET END on the Auto-Mix panel; each song's mixed out sooner, or songs at the end left out, so the list ends on time. A list too short can't be lengthened, so it ends early. |
 
-## Phase 13: Library
+## Phase 13: Library (done)
 
 | # | Item | Size | Notes |
 |---|---|---|---|
-| 27 | **Suggested hot cues** at the drop, the breakdown and the outro | M | From the analysis's energy shape and intro and outro marks (found by `TransitionPlanner`), offered on a song's pads to keep or clear. |
+| 27 | **Suggested hot cues** at the drop, the breakdown and the outro | M | `TransitionPlanner.CuePoints`: the start, drop, a breakdown and second drop from the bass, and the outro, on an empty pad's right-click, onto the empty pads; Ctrl + Z takes them back. |
 | 28 | **Key-shift suggestions** in Suggested next | S | Songs that mix a semitone up or down, marked with the shift they need, which loading them applies (key shift's there already). |
-| 29 | **Moving songs between drives**, their cues and notes with them | M | As Export to drive, but either way and without a playlist: songs copied or moved, their analysis, cues, notes and places in virtual folders following. |
+| 29 | **Moving songs between drives**, their cues and notes with them | M | Songs dragged onto a folder or drive are moved there (not copied), their analysis, cues, notes and places in virtual folders following, as Find moved songs does. |
 | 30 | **Cleaning up duplicates**: keep one, recycle the rest | S–M | After Find duplicates, choose the copy to keep; the others go to the Recycle Bin, their cues, notes and places in virtual folders moved onto the one kept. |
 
 ## Phase 14: Hardware
@@ -113,7 +114,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Order and dependencies
 
-- **Next:** Phase 13, or MP3 streaming (22) if a native LAME's wanted. Before a gig, `--self-test` (17). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
+- **Next:** Phase 14, or MP3 streaming (22) if a native LAME's wanted. Before a gig, `--self-test` (17). Live streaming to a real Icecast server's still to be tried (it's tested against a pretend one).
 - **Builds on:** (17) uses the capture mode's scratch folder and made-up songs; (20) lets (9) edit genre too; (22)'s MP3 needs an encoder library; (23) and (26) use Auto-Mix's phrase finding; (27) uses the intro and outro marks.
 - **Shared:** (1) and (3) score songs the same way; (2) gives (1) history beyond this session.
 - **Framework:** (13) goes into cue-framework, so build and test Cuedeck with it too.
