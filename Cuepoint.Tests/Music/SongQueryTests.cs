@@ -6,6 +6,23 @@ namespace Cuepoint.Tests.Music;
 public class SongQueryTests
 {
     [Fact]
+    public void A_genre_finds_songs_with_it_in_theirs_and_plain_words_look_in_genres_too()
+    {
+        var (deep, garage, none) = (Song("One"), Song("Two"), Song("Three"));
+        deep.Genre = "Deep House";
+        garage.Genre = "UK Garage; House";
+
+        Assert.Equal([deep, garage], new[] { deep, garage, none }.Where(SongQuery.Parse("genre:house").Matches));
+        Assert.Equal([deep], new[] { deep, garage, none }.Where(SongQuery.Parse("genre:\"deep house\"").Matches));
+        Assert.Equal([garage], new[] { deep, garage, none }.Where(SongQuery.Parse("garage").Matches));
+        Assert.False(SongQuery.Parse("genre:house").IsEmpty);
+        // "genre:" with a word after it, rather than quotes, isn't asking for the quotes as a genre.
+        var notQuoted = SongQuery.Parse("genre: deep \"house\"");
+        Assert.Equal(["deep", "house"], notQuoted.Words);
+        Assert.Empty(notQuoted.Genres!);
+    }
+
+    [Fact]
     public void A_rating_finds_songs_rated_that_or_more()
     {
         var query = SongQuery.Parse("rating:4");

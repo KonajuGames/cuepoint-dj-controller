@@ -378,7 +378,10 @@ sealed class TitleBarItems
         var live = LiveStream();
         var (lit, text) = live switch
         {
-            { State: Streaming.StreamState.Live, LiveSince: { } since } => (Theme.Warning, $"LIVE {(int)(DateTime.Now - since).TotalMinutes}:{(DateTime.Now - since).Seconds:00}"),
+            { State: Streaming.StreamState.Live, LiveSince: { } since } => (
+                Theme.Warning,
+                $"LIVE {(int)(DateTime.Now - since).TotalMinutes}:{(DateTime.Now - since).Seconds:00}{(live.Listeners is { } listening ? $" · {listening}" : "")}"
+            ),
             { State: Streaming.StreamState.Live or Streaming.StreamState.Connecting } => (Theme.Warning, "LIVE"),
             { State: Streaming.StreamState.Retrying } => (Theme.Accent, "LIVE ..."),
             _ => (Theme.Control, "LIVE"),

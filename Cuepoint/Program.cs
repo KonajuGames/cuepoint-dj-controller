@@ -1305,6 +1305,34 @@ static int Run(ScreenshotTool.Request? capture)
     }
     liveStream.StopRequested += StopStreaming;
 
+    // How the stream's getting on is said as it changes, so the status line never still says it's going live once it
+    // is, or isn't. Turned down for good, it's let go, so LIVE offers to go live again.
+    Cuepoint.Streaming.StreamState? saidStream = null;
+    void FollowStream()
+    {
+        var stream = liveStream.Stream;
+        if (stream?.State == saidStream)
+            return;
+        saidStream = stream?.State;
+        switch (stream)
+        {
+            case { State: Cuepoint.Streaming.StreamState.Live }:
+                screen.Log($"Live at {stream.Server.ListenAt}");
+                break;
+            case { State: Cuepoint.Streaming.StreamState.Retrying, Problem: { } retrying }:
+                screen.Log($"Stream: {retrying}");
+                break;
+            case { State: Cuepoint.Streaming.StreamState.Stopped }:
+                audio.Stream = null;
+                liveStream.Stream = null;
+                stream.Dispose();
+                saidStream = null;
+                liveStream.Stopped(stream.Problem ?? "The server let it go");
+                screen.Log($"Stopped streaming: {stream.Problem ?? "the server let it go"}");
+                break;
+        }
+    }
+
     // The microphone's on, level and talkover drop down from MIC beside it.
     var microphone = new MicrophonePanel(audio, fonts.Small, fonts.Body, fonts.Bold);
     screen.TitleItems.MicClicked += () =>
@@ -2531,14 +2559,17 @@ static int Run(ScreenshotTool.Request? capture)
             song.Title,
             song.Artist,
             song.Album,
-            (title, artist, album) =>
+            song.Genre,
+            (title, artist, album, genre) =>
             {
                 if (!OperatingSystem.IsWindows())
                     throw new InvalidOperationException("Details can only be written on Windows");
-                if (WindowsTags.Write(song.Path, title, artist, album) is { } error)
+                if (WindowsTags.Write(song.Path, title, artist, album, genre) is { } error)
                     throw new InvalidOperationException(error);
                 var file = new FileInfo(song.Path);
                 (song.Title, song.Artist, song.Album) = (title, artist.Length > 0 ? artist : song.Artist, album.Length > 0 ? album : song.Album);
+                if (genre.Length > 0)
+                    song.Genre = genre;
                 database.Retag(song, file.Length, file.LastWriteTimeUtc);
                 (song.Size, song.Modified) = (file.Length, file.LastWriteTimeUtc);
                 browser.Refilter();
@@ -2558,12 +2589,13 @@ static int Run(ScreenshotTool.Request? capture)
             songs.Count,
             Shared(song => song.Artist),
             Shared(song => song.Album),
-            (artist, album) =>
+            Shared(song => song.Genre),
+            (artist, album, genre) =>
             {
                 var paths = songs.Select(song => song.Path).ToList();
                 screen.Log($"Saving the details of {songs.Count} songs...");
                 library.Background.Start(
-                    () => paths.Select(path => OperatingSystem.IsWindows() ? WindowsTags.Write(path, null, artist, album) : "Not on Windows").ToList(),
+                    () => paths.Select(path => OperatingSystem.IsWindows() ? WindowsTags.Write(path, null, artist, album, genre) : "Not on Windows").ToList(),
                     errors =>
                     {
                         var saved = 0;
@@ -2581,6 +2613,8 @@ static int Run(ScreenshotTool.Request? capture)
                                 song.Artist = artist;
                             if (album.Length > 0)
                                 song.Album = album;
+                            if (genre.Length > 0)
+                                song.Genre = genre;
                             database.Retag(song, file.Length, file.LastWriteTimeUtc);
                             (song.Size, song.Modified) = (file.Length, file.LastWriteTimeUtc);
                             saved++;
@@ -2966,9 +3000,10 @@ static int Run(ScreenshotTool.Request? capture)
                 controls.Update(elapsed);
                 plays.Update(decks, elapsed);
                 // The set kept as it grows (or shrinks, a song marked as not played).
-                // The stream's title follows the song playing.
+                // The stream's title follows the song playing, and how it's getting on is said.
                 if (liveStream.Stream is { } live)
                     live.Title = OnAir();
+                FollowStream();
                 if (plays.History.Count != keptPlays)
                 {
                     keptPlays = plays.History.Count;

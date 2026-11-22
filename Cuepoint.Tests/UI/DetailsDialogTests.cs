@@ -27,9 +27,9 @@ public class DetailsDialogTests
     public void Several_songs_start_from_what_they_share_and_leave_a_blank_box_as_each_song_s_own()
     {
         var (dialog, _) = Make();
-        (string Artist, string Album)? saved = null;
+        (string Artist, string Album, string Genre)? saved = null;
 
-        dialog.ShowMany(3, "Avicii", null, (artist, album) => saved = (artist, album));
+        dialog.ShowMany(3, "Avicii", null, "House", (artist, album, genre) => saved = (artist, album, genre));
 
         Assert.True(dialog.IsForMany);
         var (title, artistBox, albumBox) = (Boxes(dialog)[0], Boxes(dialog)[1], Boxes(dialog)[2]);
@@ -40,7 +40,8 @@ public class DetailsDialogTests
         albumBox.Text = " True ";
         Save(dialog).RaiseClicked();
 
-        Assert.Equal(("Avicii", "True"), saved);
+        Assert.Equal(("Avicii", "True", "House"), saved);
+        Assert.Equal("House", Boxes(dialog)[3].Text);
         Assert.False(dialog.Visible);
         Assert.Equal("", title.Text);
     }
@@ -50,7 +51,7 @@ public class DetailsDialogTests
     {
         var (dialog, _) = Make();
         var saved = false;
-        dialog.ShowMany(2, null, null, (_, _) => saved = true);
+        dialog.ShowMany(2, null, null, null, (_, _, _) => saved = true);
 
         Save(dialog).RaiseClicked();
 
@@ -62,10 +63,10 @@ public class DetailsDialogTests
     public void One_song_still_needs_a_title()
     {
         var (dialog, _) = Make();
-        dialog.ShowMany(2, null, null, (_, _) => { });
+        dialog.ShowMany(2, null, null, null, (_, _, _) => { });
         dialog.Close();
         var saved = false;
-        dialog.Show("", "Artist", "Album", (_, _, _) => saved = true);
+        dialog.Show("", "Artist", "Album", "", (_, _, _, _) => saved = true);
 
         Assert.False(dialog.IsForMany);
         Save(dialog).RaiseClicked();

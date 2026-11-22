@@ -315,8 +315,9 @@ sealed class LibraryAnalyser : IDisposable
             return;
         if (Database.TryGet(song, out var analysis, out var error))
             (song.Analysis, song.AnalysisError) = (analysis, error);
-        if (!song.HasTags && Database.TryGetNames(song, out var title, out var artist, out var album))
+        if (!song.HasTags && Database.TryGetNames(song, out var title, out var artist, out var album, out var genre))
         {
+            song.Genre = genre ?? song.Genre;
             song.Title = title ?? song.Title;
             song.Artist = artist ?? song.Artist;
             song.Album = album ?? song.Album;

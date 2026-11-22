@@ -279,13 +279,18 @@ sealed class LibraryFile
     /// The title, artist and album saved for <paramref name="song"/> from its tags, if the file hasn't changed since;
     /// any of them can be null where the tags didn't say.
     /// </summary>
-    public bool TryGetNames(Song song, out string? title, out string? artist, out string? album)
+    public bool TryGetNames(Song song, out string? title, out string? artist, out string? album) => TryGetNames(song, out title, out artist, out album, out _);
+
+    /// <summary>
+    /// <see cref="TryGetNames(Song, out string?, out string?, out string?)"/>, with its genre too.
+    /// </summary>
+    public bool TryGetNames(Song song, out string? title, out string? artist, out string? album, out string? genre)
     {
-        (title, artist, album) = (null, null, null);
+        (title, artist, album, genre) = (null, null, null, null);
         if (!_tracks.TryGetValue(song.Path, out var record) || record.Size != song.Size || record.Modified != song.Modified)
             return false;
-        (title, artist, album) = (record.Title, record.Artist, record.Album);
-        return title is not null || artist is not null || album is not null;
+        (title, artist, album, genre) = (record.Title, record.Artist, record.Album, record.Genre);
+        return title is not null || artist is not null || album is not null || genre is not null;
     }
 
     /// <summary>
@@ -302,7 +307,7 @@ sealed class LibraryFile
         if (_tracks.TryGetValue(song.Path, out var record) && record.Size == song.Size && record.Modified == song.Modified)
         {
             (record.Size, record.Modified) = (size, modified);
-            (record.Title, record.Artist, record.Album) = (song.Title, song.Artist, song.Album);
+            (record.Title, record.Artist, record.Album, record.Genre) = (song.Title, song.Artist, song.Album, song.Genre.Length > 0 ? song.Genre : null);
             Dirty = true;
         }
     }
@@ -312,9 +317,9 @@ sealed class LibraryFile
         if (!_tracks.TryGetValue(song.Path, out var record) || record.Size != song.Size || record.Modified != song.Modified)
             return;
         var names = Names(song, record);
-        if (names == (record.Title, record.Artist, record.Album))
+        if (names == (record.Title, record.Artist, record.Album, record.Genre))
             return;
-        (record.Title, record.Artist, record.Album) = names;
+        (record.Title, record.Artist, record.Album, record.Genre) = names;
         Dirty = true;
     }
 
@@ -322,21 +327,22 @@ sealed class LibraryFile
     /// What to keep of <paramref name="song"/>'s title, artist and album: its own once its tags are read, otherwise
     /// whatever <paramref name="kept"/> had, rather than names guessed from the file's path.
     /// </summary>
-    static (string? Title, string? Artist, string? Album) Names(Song song, TrackRecord? kept)
+    static (string? Title, string? Artist, string? Album, string? Genre) Names(Song song, TrackRecord? kept)
     {
         static string? OrNull(string text) => text.Length > 0 ? text : null;
-        return song.HasTags ? (OrNull(song.Title), OrNull(song.Artist), OrNull(song.Album)) : (kept?.Title, kept?.Artist, kept?.Album);
+        return song.HasTags ? (OrNull(song.Title), OrNull(song.Artist), OrNull(song.Album), OrNull(song.Genre)) : (kept?.Title, kept?.Artist, kept?.Album, kept?.Genre);
     }
 
     public void Set(Song song, TrackAnalysis analysis)
     {
         Dirty = true;
-        var (title, artist, album) = Names(song, _tracks.GetValueOrDefault(song.Path));
+        var (title, artist, album, genre) = Names(song, _tracks.GetValueOrDefault(song.Path));
         _tracks[song.Path] = new TrackRecord
         {
             Title = title,
             Artist = artist,
             Album = album,
+            Genre = genre,
             Size = song.Size,
             Modified = song.Modified,
             AnalysisVersion = ANALYSIS_VERSION,
@@ -506,12 +512,13 @@ sealed class LibraryFile
     public void SetFailed(Song song, string error)
     {
         Dirty = true;
-        var (title, artist, album) = Names(song, _tracks.GetValueOrDefault(song.Path));
+        var (title, artist, album, genre) = Names(song, _tracks.GetValueOrDefault(song.Path));
         _tracks[song.Path] = new TrackRecord
         {
             Title = title,
             Artist = artist,
             Album = album,
+            Genre = genre,
             Size = song.Size,
             Modified = song.Modified,
             AnalysisVersion = ANALYSIS_VERSION,
@@ -621,6 +628,11 @@ sealed class LibraryFile
         public string? Title { get; set; }
         public string? Artist { get; set; }
         public string? Album { get; set; }
+
+        /// <summary>
+        /// The genre from its tags, if it has one.
+        /// </summary>
+        public string? Genre { get; set; }
 
         public long Size { get; set; }
         public DateTime Modified { get; set; }

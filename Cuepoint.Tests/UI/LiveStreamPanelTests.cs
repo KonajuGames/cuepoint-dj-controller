@@ -55,6 +55,20 @@ public class LiveStreamPanelTests
     }
 
     [Fact]
+    public void Why_a_stream_stopped_is_said_until_the_settings_change()
+    {
+        var panel = Make(Kept);
+        panel.Stopped("The server turned down the password");
+        panel.Refresh();
+        Assert.Equal("The server turned down the password", panel.StatusText);
+
+        // Typed, as it would be.
+        panel.Fields.Password.TextInput(new System.Text.Rune('x'));
+        panel.Refresh();
+        Assert.DoesNotContain("password", panel.StatusText);
+    }
+
+    [Fact]
     public void While_live_the_button_stops_it()
     {
         var panel = Make(Kept);

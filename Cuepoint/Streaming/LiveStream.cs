@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Concentus;
 using Concentus.Enums;
 
@@ -114,6 +115,19 @@ sealed unsafe class LiveStream : IDisposable
     public long BytesSent => Interlocked.Read(ref _sent);
 
     long _sent;
+    int _listeners = -1;
+
+    /// <summary>
+    /// How many are listening, as the server's status page last said while live; null if it hasn't said, or doesn't.
+    /// </summary>
+    public int? Listeners => Volatile.Read(ref _listeners) is >= 0 and var count ? count : null;
+
+    /// <summary>
+    /// How often the server's asked how many are listening.
+    /// </summary>
+    static readonly TimeSpan ListenerCheck = TimeSpan.FromSeconds(15);
+
+    static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
 
     /// <summary>
     /// The stream's title, the song playing, as "Artist - Title"; listeners' players show it as it changes. Set from
@@ -314,8 +328,14 @@ sealed unsafe class LiveStream : IDisposable
 
         var frame = new float[FRAME * CHANNELS];
         var packet = new byte[4000];
+        var nextListenerCheck = DateTime.UtcNow;
         while (!stop.IsCancellationRequested)
         {
+            if (DateTime.UtcNow >= nextListenerCheck)
+            {
+                nextListenerCheck = DateTime.UtcNow + ListenerCheck;
+                _ = CheckListeners(stop);
+            }
             if (!TakeFrame(frame))
             {
                 stop.WaitHandle.WaitOne(5);
@@ -331,6 +351,50 @@ sealed unsafe class LiveStream : IDisposable
             else
                 Sent(network, ogg.Audio(packet.AsSpan(0, length), FRAME));
         }
+    }
+
+    /// <summary>
+    /// Asks the server's status page how many are listening to this mount point, in the background; a server that
+    /// won't say leaves it unknown.
+    /// </summary>
+    Task CheckListeners(CancellationToken stop) =>
+        Task.Run(
+            () =>
+            {
+                try
+                {
+                    var json = Http.GetStringAsync($"http://{_server.Host}:{_server.Port}/status-json.xsl", stop).GetAwaiter().GetResult();
+                    Volatile.Write(ref _listeners, ListenersIn(json, _server.MountPath) ?? -1);
+                }
+                catch (Exception e) when (e is HttpRequestException or TaskCanceledException or OperationCanceledException or JsonException)
+                {
+                    Volatile.Write(ref _listeners, -1);
+                }
+            },
+            stop
+        );
+
+    /// <summary>
+    /// The listeners Icecast's status JSON gives for the mount point <paramref name="mount"/>: its sources are one
+    /// object, or a list of them, each with the address it's listened at.
+    /// </summary>
+    internal static int? ListenersIn(string json, string mount)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("icestats", out var stats) || !stats.TryGetProperty("source", out var sources))
+            return null;
+        IEnumerable<JsonElement> all = sources.ValueKind == JsonValueKind.Array ? sources.EnumerateArray().ToList() : [sources];
+        foreach (var source in all)
+        {
+            if (source.ValueKind == JsonValueKind.Object
+                && source.TryGetProperty("listenurl", out var url)
+                && url.GetString() is { } address
+                && address.EndsWith(mount, StringComparison.OrdinalIgnoreCase)
+                && source.TryGetProperty("listeners", out var listeners)
+                && listeners.TryGetInt32(out var count))
+                return count;
+        }
+        return null;
     }
 
     void Sent(NetworkStream network, byte[] bytes)

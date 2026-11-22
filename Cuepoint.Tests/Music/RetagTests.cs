@@ -27,6 +27,21 @@ public class RetagTests
         Assert.Equal(("New title", "New artist"), (title, artist));
     }
 
+    [Fact]
+    public void A_genre_from_the_tags_is_kept_with_the_names_and_comes_back()
+    {
+        using var folder = new TempFolder();
+        var song = Song(folder["Music", "a.mp3"]);
+        (song.Genre, song.HasTags) = ("Deep House", true);
+        var file = LibraryFile.Load(folder["library.json"]);
+        file.Set(song, Analysed());
+        file.Save();
+
+        var again = LibraryFile.Load(folder["library.json"]);
+        Assert.True(again.TryGetNames(song, out _, out _, out _, out var genre));
+        Assert.Equal("Deep House", genre);
+    }
+
     /// <summary>
     /// Writes tags into copies of real songs, in the folder CUEPOINT_TAG_SAMPLES names, as there's no making an MP3
     /// or M4A here; without it, there's nothing to try.
@@ -42,10 +57,10 @@ public class RetagTests
             var copy = folder[Path.GetFileName(sample)];
             File.Copy(sample, copy);
 
-            Assert.Null(WindowsTags.Write(copy, "Written title", "Written artist", "Written album"));
+            Assert.Null(WindowsTags.Write(copy, "Written title", "Written artist", "Written album", "Written genre"));
 
             var tags = WindowsTags.Read(copy);
-            Assert.Equal(("Written title", "Written artist", "Written album"), (tags.Title, tags.Artist, tags.Album));
+            Assert.Equal(("Written title", "Written artist", "Written album", "Written genre"), (tags.Title, tags.Artist, tags.Album, tags.Genre));
         }
     }
 }

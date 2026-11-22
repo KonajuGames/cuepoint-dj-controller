@@ -260,6 +260,7 @@ sealed class SongBrowser : Panel
             _hidden.Add(column);
             return column;
         }
+        Optional(new ListColumn<Song>("Genre", 150, song => song.Genre) { Color = _ => Theme.Muted, SortKey = song => Text(song.Genre) });
         Optional(new ListColumn<Song>("Rating", 86, song => new string('*', song.Notes.Rating)) { SortKey = song => song.Notes.Rating > 0 ? song.Notes.Rating : null });
         Optional(
             new ListColumn<Song>("Colour", 86, song => song.Notes.Color is { } color ? char.ToUpperInvariant(color[0]) + color[1..] : "")

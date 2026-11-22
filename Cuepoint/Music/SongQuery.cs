@@ -10,7 +10,8 @@ namespace Cuepoint.Music;
 /// one, "124bpm", give or take half a beat a minute. A key is on the Camelot wheel: "8A" for that key alone, or "~8A"
 /// for every key that mixes with it (itself, a step round the wheel either way, and its relative major or minor).
 /// Only songs analysed can be found by tempo or key. "rating:4" finds songs rated 4 or more, "color:red" those tagged
-/// that colour, and "comment:word" those with the word in their comment; words on their own look in comments too.
+/// that colour, and "comment:word" those with the word in their comment; words on their own look in comments and
+/// genres too. "genre:house" finds songs whose genre has that in it ("genre:\"deep house\"" for more than a word).
 /// "energy:7" finds songs of that energy, and "energy:6-8" those from 6 to 8, from their analysis. "played:30d"
 /// finds songs played in the last 30 days, in any set, and "notplayed:30d" those that haven't been ("played:2w" counts
 /// in weeks).
@@ -26,6 +27,7 @@ sealed partial record SongQuery(
     int MinRating = 0,
     string? Color = null,
     IReadOnlyList<string>? Comments = null,
+    IReadOnlyList<string>? Genres = null,
     int? MinEnergy = null,
     int? MaxEnergy = null,
     TimeSpan? PlayedWithin = null,
@@ -42,7 +44,7 @@ sealed partial record SongQuery(
     /// <summary>
     /// Whether it asks for anything; a search of nothing lists every song.
     /// </summary>
-    public bool IsEmpty => Words.Count == 0 && !NeedsAnalysis && !NeedsNotes;
+    public bool IsEmpty => Words.Count == 0 && !NeedsAnalysis && !NeedsNotes && Genres is not { Count: > 0 };
 
     /// <summary>
     /// Whether it asks for a tempo or key, which only an analysed song has.
@@ -79,6 +81,9 @@ sealed partial record SongQuery(
     [GeneratedRegex(@"^comment:(.+)$", RegexOptions.IgnoreCase)]
     private static partial Regex CommentWord();
 
+    [GeneratedRegex(@"^genre:(.+)$", RegexOptions.IgnoreCase)]
+    private static partial Regex GenreWord();
+
     [GeneratedRegex(@"^(\d{2,3}(?:\.\d+)?)-(\d{2,3}(?:\.\d+)?)(?:bpm)?$", RegexOptions.IgnoreCase)]
     private static partial Regex BpmRange();
 
@@ -105,6 +110,9 @@ sealed partial record SongQuery(
         var rating = 0;
         string? color = null;
         var comments = new List<string>();
+        var genres = new List<string>();
+        // "genre:" right before something in quotes takes it as the genre.
+        var genreNext = false;
         int? minEnergy = null, maxEnergy = null;
         TimeSpan? playedWithin = null;
         var notPlayed = false;
@@ -113,11 +121,14 @@ sealed partial record SongQuery(
             if (part.Value[0] == '"')
             {
                 if (part.Groups[1].Value.Trim() is { Length: > 0 } quoted)
-                    words.Add(quoted);
+                    (genreNext ? genres : words).Add(quoted);
+                genreNext = false;
                 continue;
             }
             foreach (var word in SpacedRange().Replace(part.Value, "$1-$2").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
+                // Only the last word before the quotes can ask for them as the genre.
+                genreNext = false;
                 if (BpmRange().Match(word) is { Success: true } range)
                 {
                     var (a, b) = (Number(range.Groups[1].Value), Number(range.Groups[2].Value));
@@ -148,11 +159,15 @@ sealed partial record SongQuery(
                     color = tagged.Groups[1].Value;
                 else if (CommentWord().Match(word) is { Success: true } said)
                     comments.Add(said.Groups[1].Value);
+                else if (GenreWord().Match(word) is { Success: true } genre)
+                    genres.Add(genre.Groups[1].Value);
+                else if (string.Equals(word, "genre:", StringComparison.OrdinalIgnoreCase))
+                    genreNext = true;
                 else
                     words.Add(word);
             }
         }
-        return new SongQuery(words, min, max, key, compatible, rating, color, comments, minEnergy, maxEnergy, playedWithin, notPlayed);
+        return new SongQuery(words, min, max, key, compatible, rating, color, comments, genres, minEnergy, maxEnergy, playedWithin, notPlayed);
     }
 
     static double Number(string text) => double.Parse(text, CultureInfo.InvariantCulture);
@@ -180,7 +195,13 @@ sealed partial record SongQuery(
                 && !song.Artist.Contains(word, StringComparison.OrdinalIgnoreCase)
                 && !song.Album.Contains(word, StringComparison.OrdinalIgnoreCase)
                 && song.Notes.Comment?.Contains(word, StringComparison.OrdinalIgnoreCase) != true
+                && !song.Genre.Contains(word, StringComparison.OrdinalIgnoreCase)
             )
+                return false;
+        }
+        foreach (var genre in Genres ?? [])
+        {
+            if (!song.Genre.Contains(genre, StringComparison.OrdinalIgnoreCase))
                 return false;
         }
         if (song.Notes.Rating < MinRating)

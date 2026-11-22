@@ -24,6 +24,12 @@ sealed class Song
     public string Title { get; internal set; }
     public string Artist { get; internal set; }
     public string Album { get; internal set; }
+
+    /// <summary>
+    /// Its genre from its tags, as "House" or "Deep House; Garage" for more than one; empty if it hasn't one.
+    /// </summary>
+    public string Genre { get; internal set; } = "";
+
     public TimeSpan? Duration { get; internal set; }
 
     /// <summary>
@@ -364,6 +370,7 @@ sealed partial class MusicLibrary : IDisposable
                 song.Artist = artist;
             if (tags.Album is { } album)
                 song.Album = album;
+            song.Genre = tags.Genre ?? "";
             song.Duration = tags.Duration;
             song.HasTags = true;
             applied++;

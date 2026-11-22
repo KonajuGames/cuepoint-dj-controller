@@ -170,6 +170,11 @@ sealed class LiveStreamPanel : Panel
 
     string? _problem;
 
+    /// <summary>
+    /// Says why the stream stopped, once it's been let go, until the settings are changed or it goes live again.
+    /// </summary>
+    public void Stopped(string problem) => _problem = problem;
+
     void Go()
     {
         if (Stream is not null)
@@ -204,7 +209,10 @@ sealed class LiveStreamPanel : Panel
             null when _problem is { } problem => (problem, Theme.Warning),
             null => ("Streams the main mix, as the recording has it, with the song playing as its title.", Theme.Muted),
             { State: StreamState.Connecting } => ("Connecting...", Theme.Muted),
-            { State: StreamState.Live, LiveSince: { } since } => ($"Live for {Clock(DateTime.Now - since)}, {stream.BytesSent / 1024 / 1024.0:F1} MB sent", Theme.Text),
+            { State: StreamState.Live, LiveSince: { } since } => (
+                $"Live for {Clock(DateTime.Now - since)}, {stream.BytesSent / 1024 / 1024.0:F1} MB sent{(stream.Listeners is { } listening ? $", {listening} {(listening == 1 ? "listener" : "listeners")}" : "")}",
+                Theme.Text
+            ),
             { Problem: { } why } => (why, Theme.Warning),
             _ => ("Stopped", Theme.Muted),
         };

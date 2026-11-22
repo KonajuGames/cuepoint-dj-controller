@@ -16,9 +16,10 @@ sealed class DetailsDialog : Panel
     readonly TextBox _title;
     readonly TextBox _artist;
     readonly TextBox _album;
+    readonly TextBox _genre;
     readonly Panel _titleRow;
     readonly Label _note;
-    Action<string, string, string> _save = (_, _, _) => { };
+    Action<string, string, string, string> _save = (_, _, _, _) => { };
     bool _many;
 
     public float2 ScreenSize { get; set; }
@@ -56,6 +57,7 @@ sealed class DetailsDialog : Panel
         _titleRow = _lastRow!;
         _artist = Field("Artist");
         _album = Field("Album");
+        _genre = Field("Genre");
         _problem = _box.Add(new Label(body) { Color = Theme.Warning, MaxWidth = 420, Wrap = true });
         _note = _box.Add(new Label(body) { Color = Theme.Muted, MaxWidth = 420, Wrap = true });
         var buttons = _box.Add(new Panel { Direction = Direction.Horizontal, Spacing = 8 });
@@ -72,14 +74,14 @@ sealed class DetailsDialog : Panel
     public override Cursor Cursor => Cursor.Arrow;
 
     /// <summary>
-    /// Shows a song's details to change, starting in its title. <paramref name="save"/> takes the title, artist and
-    /// album, and may throw <see cref="InvalidOperationException"/> to say why it couldn't, leaving the dialog up.
+    /// Shows a song's details to change, starting in its title. <paramref name="save"/> takes the title, artist, album
+    /// and genre, and may throw <see cref="InvalidOperationException"/> to say why it couldn't, leaving the dialog up.
     /// </summary>
-    public void Show(string title, string artist, string album, Action<string, string, string> save)
+    public void Show(string title, string artist, string album, string genre, Action<string, string, string, string> save)
     {
         _heading.Text = "Edit details";
-        (_title.Text, _artist.Text, _album.Text) = (title, artist, album);
-        (_artist.Placeholder, _album.Placeholder) = ("", "");
+        (_title.Text, _artist.Text, _album.Text, _genre.Text) = (title, artist, album, genre);
+        (_artist.Placeholder, _album.Placeholder, _genre.Placeholder) = ("", "", "");
         _note.Text = "Saved in the file's tags; its analysis and cues stay.";
         (_many, _titleRow.Visible) = (false, true);
         _save = save;
@@ -90,18 +92,19 @@ sealed class DetailsDialog : Panel
     }
 
     /// <summary>
-    /// Shows <paramref name="count"/> songs' artist and album to change together, each starting with what they all
-    /// share, or blank if they differ. <paramref name="save"/> takes the artist and album, either blank to leave each
-    /// song's own, and may throw <see cref="InvalidOperationException"/> to say why it couldn't.
+    /// Shows <paramref name="count"/> songs' artist, album and genre to change together, each starting with what they
+    /// all share, or blank if they differ. <paramref name="save"/> takes the artist, album and genre, any blank to
+    /// leave each song's own, and may throw <see cref="InvalidOperationException"/> to say why it couldn't.
     /// </summary>
-    public void ShowMany(int count, string? artist, string? album, Action<string, string> save)
+    public void ShowMany(int count, string? artist, string? album, string? genre, Action<string, string, string> save)
     {
+        const string VARIOUS = "Various: left as they are";
         _heading.Text = $"Edit details of {count} songs";
-        (_title.Text, _artist.Text, _album.Text) = ("", artist ?? "", album ?? "");
-        (_artist.Placeholder, _album.Placeholder) = (artist is null ? "Various: left as they are" : "", album is null ? "Various: left as they are" : "");
+        (_title.Text, _artist.Text, _album.Text, _genre.Text) = ("", artist ?? "", album ?? "", genre ?? "");
+        (_artist.Placeholder, _album.Placeholder, _genre.Placeholder) = (artist is null ? VARIOUS : "", album is null ? VARIOUS : "", genre is null ? VARIOUS : "");
         _note.Text = "Saved in each file's tags; their titles, analysis and cues stay. A box left blank leaves each song's own.";
         (_many, _titleRow.Visible) = (true, false);
-        _save = (_, newArtist, newAlbum) => save(newArtist, newAlbum);
+        _save = (_, newArtist, newAlbum, newGenre) => save(newArtist, newAlbum, newGenre);
         _problem.Text = "";
         Visible = true;
         _root.Focus(_artist);
@@ -128,14 +131,14 @@ sealed class DetailsDialog : Panel
             _problem.Text = "A song needs a title";
             return;
         }
-        if (_many && string.IsNullOrWhiteSpace(_artist.Text) && string.IsNullOrWhiteSpace(_album.Text))
+        if (_many && string.IsNullOrWhiteSpace(_artist.Text) && string.IsNullOrWhiteSpace(_album.Text) && string.IsNullOrWhiteSpace(_genre.Text))
         {
-            _problem.Text = "Nothing to change: give them an artist or an album";
+            _problem.Text = "Nothing to change: give them an artist, an album or a genre";
             return;
         }
         try
         {
-            _save(_title.Text.Trim(), _artist.Text.Trim(), _album.Text.Trim());
+            _save(_title.Text.Trim(), _artist.Text.Trim(), _album.Text.Trim(), _genre.Text.Trim());
             Close();
         }
         catch (InvalidOperationException e)

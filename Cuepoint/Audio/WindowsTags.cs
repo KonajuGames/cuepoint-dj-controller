@@ -6,7 +6,7 @@ namespace Cuepoint.Audio;
 /// <summary>
 /// A song's details as tagged; each is null if the file doesn't have it.
 /// </summary>
-readonly record struct SongTags(string? Title, string? Artist, string? Album, TimeSpan? Duration);
+readonly record struct SongTags(string? Title, string? Artist, string? Album, TimeSpan? Duration, string? Genre = null);
 
 /// <summary>
 /// Reads a file's tags from the Windows property system, the same place File Explorer gets them. It covers tag
@@ -28,6 +28,7 @@ static unsafe class WindowsTags
     static readonly PropertyKey Artist = new(new Guid("56A3372E-CE9C-11D2-9F0E-006097C686F6"), 2);
     static readonly PropertyKey AlbumArtist = new(new Guid("56A3372E-CE9C-11D2-9F0E-006097C686F6"), 13);
     static readonly PropertyKey Album = new(new Guid("56A3372E-CE9C-11D2-9F0E-006097C686F6"), 4);
+    static readonly PropertyKey Genre = new(new Guid("56A3372E-CE9C-11D2-9F0E-006097C686F6"), 11);
 
     /// <summary>
     /// A UInt64 in 100-nanosecond units, the same as a TimeSpan's ticks.
@@ -106,7 +107,8 @@ static unsafe class WindowsTags
                 GetValue(store, Title, ToText),
                 GetValue(store, Artist, ToText) ?? GetValue(store, AlbumArtist, ToText),
                 GetValue(store, Album, ToText),
-                ticks is > 0 ? TimeSpan.FromTicks(ticks.Value) : null
+                ticks is > 0 ? TimeSpan.FromTicks(ticks.Value) : null,
+                GetValue(store, Genre, ToText)
             );
         }
         finally
@@ -168,7 +170,7 @@ static unsafe class WindowsTags
     /// as File Explorer's details pane does; any that's blank is left as it was. Returns why it couldn't, if it
     /// couldn't: a kind of file Windows can't write tags to, or one that's read-only or in use.
     /// </summary>
-    public static string? Write(string path, string? title, string? artist, string? album)
+    public static string? Write(string path, string? title, string? artist, string? album, string? genre = null)
     {
         var hr = SHGetPropertyStoreFromParsingName(
             Path.GetFullPath(path),
@@ -189,6 +191,9 @@ static unsafe class WindowsTags
                 return artistError;
             if (!string.IsNullOrWhiteSpace(album) && SetText(store, Album, album.Trim()) is { } albumError)
                 return albumError;
+            // A genre's a list to Windows too.
+            if (!string.IsNullOrWhiteSpace(genre) && SetText(store, Genre, genre.Trim(), list: true) is { } genreError)
+                return genreError;
             hr = store.Commit();
             return hr < 0 ? $"Couldn't save the file's details (error 0x{hr:X8}); it may be read-only or in use" : null;
         }

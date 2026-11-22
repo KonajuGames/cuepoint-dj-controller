@@ -239,6 +239,19 @@ public class StreamingTests
     }
 
     [Fact]
+    public void The_listeners_are_read_from_Icecast_s_status_for_this_mount_point_one_source_or_several()
+    {
+        const string one = """{"icestats":{"source":{"listenurl":"http://radio.example.org:8000/live","listeners":12}}}""";
+        const string several = """{"icestats":{"source":[{"listenurl":"http://x:8000/other","listeners":3},{"listenurl":"http://x:8000/live","listeners":7}]}}""";
+        const string none = """{"icestats":{"admin":"someone"}}""";
+
+        Assert.Equal(12, LiveStream.ListenersIn(one, "/live"));
+        Assert.Equal(7, LiveStream.ListenersIn(several, "/live"));
+        Assert.Null(LiveStream.ListenersIn(several, "/house"));
+        Assert.Null(LiveStream.ListenersIn(none, "/live"));
+    }
+
+    [Fact]
     public void A_password_kept_in_the_settings_is_encrypted_and_reads_back()
     {
         if (!OperatingSystem.IsWindows())

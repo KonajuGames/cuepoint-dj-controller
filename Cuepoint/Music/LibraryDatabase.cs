@@ -153,6 +153,9 @@ sealed class LibraryDatabase
     public bool TryGetNames(Song song, out string? title, out string? artist, out string? album) =>
         FileFor(song.Path).TryGetNames(song, out title, out artist, out album);
 
+    public bool TryGetNames(Song song, out string? title, out string? artist, out string? album, out string? genre) =>
+        FileFor(song.Path).TryGetNames(song, out title, out artist, out album, out genre);
+
     public void SetNames(Song song) => FileFor(song.Path).SetNames(song);
 
     /// <summary>
