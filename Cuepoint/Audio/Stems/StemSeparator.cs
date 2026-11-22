@@ -44,6 +44,11 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
     public bool HasModel => File.Exists(ModelPath);
 
     /// <summary>
+    /// Whether the song at <paramref name="path"/> has been separated already, its stems kept on disk.
+    /// </summary>
+    public bool HasStems(string path) => cache.Has(path);
+
+    /// <summary>
     /// Whether something's playing (a deck, or a preview), when separating keeps off the graphics card, which the
     /// screen needs, and to half the processor's cores. Set it once a frame.
     /// </summary>

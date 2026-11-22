@@ -395,6 +395,8 @@ static int Run(ScreenshotTool.Request? capture)
     var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint");
     using var separator = new StemSeparator(new StemCache(Path.Combine(appData, "stems")), Path.Combine(appData, "models", "htdemucs.onnx"));
     var stemPads = gridEditors.Select((editor, i) => new StemPads(editor.Deck, separator, editor, rollPads[i], jumpPads[i], samplerPads[i])).ToArray();
+    // DJ edits of songs, made from their stems: see DjEdit.
+    var djEdits = new DjEdits(separator);
     StemPads? StemPadsFor(Deck deck) => stemPads.FirstOrDefault(pads => pads.Deck == deck);
 
     // Quantise is on for each deck unless it was turned off.
@@ -3020,6 +3022,13 @@ static int Run(ScreenshotTool.Request? capture)
                         ),
                     Enabled: songs.Count > 0
                 ),
+                // A DJ edit of the song: eight bars of its own drums before and after it, saved beside it as a song of
+                // its own. Not for one that's an edit or extended mix already.
+                new MenuItem(
+                    songs.Count == 1 && djEdits.WhyNot(songs[0]) is { } noEdit ? $"Make a DJ edit ({noEdit})" : "Make a DJ edit",
+                    () => MakeDjEdit(songs[0]),
+                    Enabled: songs.Count == 1 && djEdits.WhyNot(songs[0]) is null
+                ),
                 // The songs chosen, analysed again from scratch: after a file's been edited, say, or to try a bad grid
                 // again. A grid fixed by hand stays as it was.
                 new MenuItem(
@@ -3074,6 +3083,71 @@ static int Run(ScreenshotTool.Request? capture)
         );
     };
 
+    void MakeDjEdit(Song song)
+    {
+        if (djEdits.Start(song) is { } why)
+            screen.Log($"Can't make a DJ edit of {song.Title}: {why}");
+        else
+            screen.Log(separator.HasStems(song.Path) ? $"Making a DJ edit of {song.Title}..." : $"Making a DJ edit of {song.Title}, once it's separated into its stems...");
+    }
+
+    // A DJ edit made becomes a song in its own right, with the original's analysis and cues moved along with it,
+    // memory cues where the song starts and where the outro's beats take over, and cued to its very start.
+    void TakeInDjEdit(DjEditDone done)
+    {
+        if (done.Edit is not { } edit || done.EditPath is not { } path)
+        {
+            screen.Log($"No DJ edit of {done.Song.Title}: {done.Why}");
+            return;
+        }
+        var original = done.Song;
+        var offset = edit.Offset;
+        var duration = edit.Grid.Duration;
+        TimeSpan? Moved(TimeSpan? at) => at is { } time && time.TotalSeconds + offset is var moved and >= 0 && moved < duration ? TimeSpan.FromSeconds(moved) : null;
+
+        var hotcues = database.GetHotcues(original.Path).Select(Moved).ToList();
+        database.SetHotcues(path, hotcues);
+        database.SetHotcueDetails(
+            path,
+            database.GetHotcueDetails(original.Path)
+                .Select((detail, i) => detail is not null && i < hotcues.Count && hotcues[i] is not null ? detail with { At = detail.At + offset, LoopEnd = detail.LoopEnd + offset } : null)
+                .ToList()
+        );
+        database.SetMemoryCues(
+            path,
+            [
+                .. database.GetMemoryCues(original.Path).Select(cue => Moved(cue)).OfType<TimeSpan>(),
+                .. new[] { edit.IntroEnd, edit.OutroStart }.OfType<double>().Select(TimeSpan.FromSeconds),
+            ]
+        );
+        database.SetMemoryLoops(
+            path,
+            database.GetMemoryLoops(original.Path)
+                .Select(loop => (Start: Moved(loop.Start), End: Moved(loop.End)))
+                .Where(loop => loop.Start is not null && loop.End is not null)
+                .Select(loop => (loop.Start!.Value, loop.End!.Value))
+                .ToList()
+        );
+        // Cued to the intro's first beat, at the very start, rather than the first memory cue, where the song starts;
+        // or where the song was cued, if it got no intro.
+        if (edit.IntroEnd is not null)
+            database.SetCuePoint(path, TimeSpan.Zero);
+        else if (Moved(database.GetCuePoint(original.Path)) is { } cuePoint)
+            database.SetCuePoint(path, cuePoint);
+        if (library.SongAt(path) is { } song && original.Analysis is { } analysis)
+        {
+            // The beats are where the edit put them, so it needn't be analysed.
+            var moved = analysis with { Grid = edit.Grid };
+            database.Set(song, moved);
+            (song.Analysis, song.AnalysisError) = (moved, null);
+        }
+        analyser.SaveSoon();
+        if (Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(library.Root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            TakeInLibraryChanges();
+        browser.Reload();
+        screen.Log($"Made {Path.GetFileName(path)}: {edit.Summary}");
+    }
+
     browser.AnalyseAllCancelled += left => screen.Log($"Stopped analysing all; {left} {(left == 1 ? "song was" : "songs were")} left unanalysed");
 
     // Taking songs out of a virtual folder, or putting them in another order, can be undone with Ctrl + Z.
@@ -3124,6 +3198,7 @@ static int Run(ScreenshotTool.Request? capture)
             );
     }
     var nextSessionSave = 0.0;
+    string? djEditStatus = null;
 
     // Sound cards come and go, a controller's unplugged by mistake, say: they're looked at every second, so the music
     // carries on somewhere within a second or two, and goes back as soon as they're back.
@@ -3284,6 +3359,19 @@ static int Run(ScreenshotTool.Request? capture)
                 analyser.Update();
                 if (analyser.SaveError is { } newSaveError && newSaveError != saveError)
                     screen.Log($"Couldn't save {database.FilePath}: {newSaveError}");
+            }
+        );
+
+        // DJ edits being made move along, saying how they're getting on, and become songs once they're made.
+        Guarded(
+            "making DJ edits",
+            () =>
+            {
+                if (djEdits.Update() is { } done)
+                    TakeInDjEdit(done);
+                if (djEdits.Status is { } status && status != djEditStatus)
+                    screen.Log(status);
+                djEditStatus = djEdits.Status;
             }
         );
 

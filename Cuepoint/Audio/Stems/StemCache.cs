@@ -52,6 +52,11 @@ sealed class StemCache(string folder)
         }
     }
 
+    /// <summary>
+    /// Whether there are stems kept for the song at <paramref name="songPath"/>, without reading them.
+    /// </summary>
+    public bool Has(string songPath) => FileFor(songPath) is { } path && File.Exists(path);
+
     public void Save(string songPath, SongStems stems)
     {
         if (FileFor(songPath) is not { } path)

@@ -291,8 +291,8 @@ sealed partial class MusicLibrary : IDisposable
             {
                 _toTag.Wait(stop);
                 if (_browsedToTag.TryDequeue(out var song) || _libraryToTag.TryDequeue(out song))
-                    // Windows has no tags or length for an AIFF, so it's read here.
-                    _readTags.Enqueue((song, Aiff.IsAiff(song.Path) ? Aiff.ReadTags(song.Path) : WindowsTags.Read(song.Path)));
+                    // Windows has no tags for an AIFF or a WAV, so those are read here.
+                    _readTags.Enqueue((song, WavFile.ReadAnyTags(song.Path)));
             }
         }
         catch (OperationCanceledException)

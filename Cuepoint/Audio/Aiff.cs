@@ -267,7 +267,7 @@ static class Aiff
 }
 
 /// <summary>
-/// The title, artist and album text frames of an ID3v2 tag (versions 2.2 to 2.4), header and all.
+/// The title, artist, album and genre text frames of an ID3v2 tag (versions 2.2 to 2.4), header and all.
 /// </summary>
 static class Id3Text
 {
@@ -291,7 +291,7 @@ static class Id3Text
 
         var idLength = version == 2 ? 3 : 4;
         var headerLength = version == 2 ? 6 : 10;
-        string? title = null, artist = null, albumArtist = null, album = null;
+        string? title = null, artist = null, albumArtist = null, album = null, genre = null;
         while (at >= 0 && at + headerLength <= tag.Length && tag[at] != 0)
         {
             var id = Encoding.ASCII.GetString(tag.Slice(at, idLength));
@@ -318,10 +318,13 @@ static class Id3Text
                 case "TALB" or "TAL":
                     album ??= Decode(frame);
                     break;
+                case "TCON" or "TCO":
+                    genre ??= Decode(frame);
+                    break;
             }
             at += headerLength + length;
         }
-        return new SongTags(title, artist ?? albumArtist, album, null);
+        return new SongTags(title, artist ?? albumArtist, album, null, genre);
     }
 
     /// <summary>

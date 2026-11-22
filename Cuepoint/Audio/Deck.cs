@@ -990,7 +990,7 @@ sealed partial class Deck : IDisposable
         // Media Foundation decodes but brings no tags, and SDL_mixer can't read .m4a tags, so ask Windows.
         if (string.IsNullOrEmpty(title) && OperatingSystem.IsWindows())
         {
-            var tags = WindowsTags.Read(path);
+            var tags = WavFile.ReadAnyTags(path);
             (title, artist) = (tags.Title, tags.Artist);
         }
 
