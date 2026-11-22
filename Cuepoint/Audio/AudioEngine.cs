@@ -355,6 +355,18 @@ sealed unsafe class AudioEngine : IDisposable
     }
 
     /// <summary>
+    /// A second recording of the final mix, apart from <see cref="Recorder"/>: the feature tour's soundtrack, so the
+    /// app's own record button can be shown working while it goes. Set it to null before stopping it.
+    /// </summary>
+    public MixRecorder? Tap
+    {
+        get => Volatile.Read(ref _tap);
+        set => Volatile.Write(ref _tap, value);
+    }
+
+    MixRecorder? _tap;
+
+    /// <summary>
     /// Where the final mix is recorded to, as it goes to the speakers; none if null. Set it to null before stopping
     /// the recorder, so the audio thread lets go of it.
     /// </summary>
@@ -1049,6 +1061,7 @@ sealed unsafe class AudioEngine : IDisposable
                 engine.Limiter.Process(new Span<float>(samples, count));
             engine.Meter.Measure(samples, count, spec->channels);
             engine.Recorder?.Write(samples, count);
+            engine.Tap?.Write(samples, count);
             if (spec->channels == AudioOutput.CHANNELS)
                 engine.Stream?.Write(samples, count);
             engine.FeedHeadphones(samples, count);

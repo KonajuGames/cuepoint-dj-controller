@@ -16,7 +16,10 @@ WindowsShell.AttachParentConsole();
 // a scratch app folder and made-up songs, leaving the user's alone.
 var capture = ScreenshotTool.Parse(args);
 if (capture is { } scratch)
-    ScreenshotTool.UseScratch(scratch.Look);
+    ScreenshotTool.UseScratch(scratch.Look, scratch.Tour);
+// The tour records the mix itself, so it plays to no sound card, and nothing's heard while it goes.
+if (capture is { Tour: true })
+    Environment.SetEnvironmentVariable("SDL_AUDIO_DRIVER", "dummy");
 
 // What goes wrong is written down beside the settings, to look into after a set; even on another thread, where it
 // still ends the app.
@@ -68,6 +71,14 @@ static int Run(ScreenshotTool.Request? capture)
     // drawn.
     Glfw.WindowHint(GlfwWindowHint.Visible, 0);
     Glfw.WindowHint(GlfwWindowHint.Maximized, capture is null ? 1 : 0);
+    // The feature tour drives the window itself: the mouse passes through it to whatever's beneath, and it doesn't
+    // take the focus from what's being worked in, so nothing typed or clicked meanwhile reaches it.
+    if (capture is { Tour: true })
+    {
+        Glfw.WindowHint(GlfwWindowHint.MousePassthrough, 1);
+        Glfw.WindowHint(GlfwWindowHint.FocusOnShow, 0);
+        Glfw.WindowHint(GlfwWindowHint.Focused, 0);
+    }
 
     // Declared first so it's disposed last, after the GPU objects that draw to it. It can't be made too small for the
     // decks and mixer to fit side by side.
@@ -336,7 +347,8 @@ static int Run(ScreenshotTool.Request? capture)
     // The songs in Duplicates by their paths, in their groups of copies.
     List<IReadOnlyList<string>> duplicateGroups = [];
     var repairing = false;
-    var smartPlaylists = new SmartPlaylists(settings.SmartPlaylists, library, database, analyser);
+    // The screenshot tool, self-test and tour see only their own made-up songs, never those in other drives' files.
+    var smartPlaylists = new SmartPlaylists(settings.SmartPlaylists, library, database, analyser, capture is null ? null : () => []);
     // Every set played, kept between runs, this one as it goes.
     var playLog = new PlayLog(Path.Combine(AppFolder.Path, "history"));
     var sessionStarted = DateTime.Now;
@@ -1791,7 +1803,10 @@ static int Run(ScreenshotTool.Request? capture)
             keyMap.Save(keysPath);
     };
 
-    input.UnhandledKey += (key, action, mods) =>
+    input.UnhandledKey += OnUnhandledKey;
+
+    // A key the UI didn't use; the feature tour presses keys through here too.
+    void OnUnhandledKey(GlfwKey key, GlfwKeyAction action, GlfwModifier mods)
     {
         if (screen.Keys.Visible)
         {
@@ -1930,7 +1945,7 @@ static int Run(ScreenshotTool.Request? capture)
                 Load(song, deckB);
                 break;
         }
-    };
+    }
 
     // Where a key moves through the lists, as KeyboardShortcuts lists them: the song list's on its own, the folder
     // list's with Shift. Enter loads the chosen song onto a free deck, or opens out the chosen folder.
@@ -3193,7 +3208,10 @@ static int Run(ScreenshotTool.Request? capture)
                 {
                     StopRecording();
                     return lastRecording;
-                }
+                },
+                ui,
+                screen,
+                OnUnhandledKey
             ),
             shots
         )

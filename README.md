@@ -221,7 +221,14 @@ Before a gig, the self-test runs the same way and checks what the unit tests can
 dotnet run --project Cuepoint -c Release -- --self-test [folder]
 ```
 
-Both run on a scratch app folder in `%TEMP%\cuepoint-capture`, with a dozen songs made up for it (a beat and a chord each, at a tempo and in a key, under made-up names), and the master volume down, so nothing of yours is read or changed and nothing's heard. Once they're analysed, two are loaded and played in step, and the window's own picture is saved as `screenshot.png` (or `screenshot-light.png`, `screenshot-high-contrast.png`), 1920 by 1050.
+A video tour of the main features is made the same way. The app plays through them by itself, recording every frame it draws and the mix (it needs [ffmpeg](https://ffmpeg.org/) built with libass), and then [docs/tour/annotate.py](docs/tour/annotate.py) (Python 3.8+ with Pillow) adds the captions, highlights, keys and mouse as `cuepoint-tour.mp4`. Nothing is heard while it records, and the window lets the mouse through, so the computer can be used meanwhile:
+
+```
+dotnet run --project Cuepoint -c Release -- --tour tour --ffmpeg path	ofmpeg.exe
+python docs/tour/annotate.py tour --ffmpeg path	ofmpeg.exe
+```
+
+All three run on a scratch app folder in `%TEMP%\cuepoint-capture`, with a dozen songs made up for it (a beat and a chord each, at a tempo and in a key, under made-up names), so nothing of yours is read or changed, and nothing's heard. For the screenshot, once they're analysed, two are loaded and played in step, and the window's own picture is saved as `screenshot.png` (or `screenshot-light.png`, `screenshot-high-contrast.png`), 1920 by 1050.
 
 ## Tests
 

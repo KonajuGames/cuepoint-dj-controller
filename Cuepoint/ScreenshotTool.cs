@@ -8,6 +8,7 @@ using System.Text;
 using Cuepoint.Audio;
 using Cuepoint.Music;
 using Cuepoint.Streaming;
+using Cuepoint.UI;
 
 namespace Cuepoint;
 
@@ -20,9 +21,10 @@ namespace Cuepoint;
 /// Run as <c>Cuepoint --self-test [folder]</c>, on the same scratch folder and songs, it's a check before a gig: it
 /// loads, plays, syncs, records, edits the recording's tracklist, streams to a pretend server of its own and panics,
 /// says what passed and what didn't, writes that to <c>self-test.txt</c>, and quits, with an exit code of 1 if
-/// anything failed.
+/// anything failed. Run as <c>Cuepoint --tour [folder] [--ffmpeg path]</c>, it plays through a feature tour instead,
+/// recording every frame and the mix as a video (see ScreenshotTool.Tour.cs).
 /// </summary>
-sealed class ScreenshotTool
+sealed partial class ScreenshotTool
 {
     /// <summary>
     /// The window's size for the shot: a 1080p screen with the taskbar taken off, as the README's has always been.
@@ -42,14 +44,17 @@ sealed class ScreenshotTool
         Action ListEverySong,
         Func<Song, bool> IsAnalysed,
         Action StartRecording,
-        Func<string?> StopRecording
+        Func<string?> StopRecording,
+        Root Ui,
+        MainScreen Screen,
+        Action<GlfwKey, GlfwKeyAction, GlfwModifier> Key
     );
 
     /// <summary>
     /// What the command line asked for: where to put what's made, the look, and whether it's the self-test rather
     /// than the screenshot.
     /// </summary>
-    public sealed record Request(string Folder, string? Look, bool SelfTest);
+    public sealed record Request(string Folder, string? Look, bool SelfTest, bool Tour = false, string Ffmpeg = "ffmpeg");
 
     abstract record Step;
 
@@ -63,6 +68,21 @@ sealed class ScreenshotTool
     /// A check of the self-test, passed or not, and what was found.
     /// </summary>
     sealed record Check(string Name, bool Passed, string Found) : Step;
+
+    /// <summary>
+    /// Something done at once, before the next step.
+    /// </summary>
+    sealed record Do(Action Act) : Step;
+
+    /// <summary>
+    /// A wait of so many seconds, by the clock rather than frames.
+    /// </summary>
+    sealed record Hold(double Seconds) : Step;
+
+    /// <summary>
+    /// Something done a little each frame over so many seconds, told how far through it is, from 0 to 1.
+    /// </summary>
+    sealed record Over(double Seconds, Action<double> Progress) : Step;
 
     /// <summary>
     /// The made-up songs: artist, album, title, tempo and key (its tonic as a semitone from C, and whether it's
@@ -90,6 +110,11 @@ sealed class ScreenshotTool
     readonly IEnumerator<Step> _script;
     int _waiting;
     Until? _until;
+    Over? _over;
+    double _overStarted;
+    double _holdUntil;
+    readonly bool _tour;
+    readonly string _ffmpeg;
     Shot? _taking;
     readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
     readonly bool _selfTest;
@@ -107,14 +132,17 @@ sealed class ScreenshotTool
     {
         var testAt = Array.IndexOf(args, "--self-test");
         var selfTest = testAt >= 0;
-        var at = selfTest ? testAt : Array.IndexOf(args, "--capture");
+        var tourAt = Array.IndexOf(args, "--tour");
+        var tour = !selfTest && tourAt >= 0;
+        var at = selfTest ? testAt : tour ? tourAt : Array.IndexOf(args, "--capture");
         if (at < 0)
             return null;
         var folder = at + 1 < args.Length && !args[at + 1].StartsWith("--", StringComparison.Ordinal)
             ? Path.GetFullPath(args[at + 1])
-            : Path.Combine(Environment.CurrentDirectory, selfTest ? "." : "screenshots");
+            : Path.Combine(Environment.CurrentDirectory, selfTest ? "." : tour ? "tour" : "screenshots");
         var look = Array.IndexOf(args, "--look") is var lookAt and >= 0 && lookAt + 1 < args.Length ? args[lookAt + 1] : null;
-        return new Request(Path.GetFullPath(folder), look, selfTest);
+        var ffmpeg = Array.IndexOf(args, "--ffmpeg") is var ffmpegAt and >= 0 && ffmpegAt + 1 < args.Length ? args[ffmpegAt + 1] : "ffmpeg";
+        return new Request(Path.GetFullPath(folder), look, selfTest, tour, ffmpeg);
     }
 
     /// <summary>
@@ -122,7 +150,7 @@ sealed class ScreenshotTool
     /// <paramref name="look"/> as its look, so the run starts from nothing and leaves the user's settings, library and
     /// music alone. Call before anything reads <see cref="AppFolder.Path"/>.
     /// </summary>
-    public static void UseScratch(string? look)
+    public static void UseScratch(string? look, bool tour = false)
     {
         var scratch = Path.Combine(Path.GetTempPath(), "cuepoint-capture");
         try
@@ -140,8 +168,10 @@ sealed class ScreenshotTool
             var song = Songs[i];
             var folder = Path.Combine(music, song.Artist, song.Album);
             Directory.CreateDirectory(folder);
-            WriteSong(Path.Combine(folder, $"{i % 4 + 1:00} {song.Title}.wav"), song.Bpm, song.Tonic, song.Minor, seed: i);
+            WriteSong(Path.Combine(folder, $"{i % 4 + 1:00} {song.Title}.wav"), song.Bpm, song.Tonic, song.Minor, seed: i, tour ? TOUR_SECONDS : SECONDS, tour);
         }
+        if (tour)
+            WriteTourPlaylist(app, music);
         new AppSettings
         {
             MusicFolder = music,
@@ -157,7 +187,9 @@ sealed class ScreenshotTool
         _selfTest = request.SelfTest;
         _name = request.Look is "Light" ? "screenshot-light" : request.Look is "HighContrast" ? "screenshot-high-contrast" : "screenshot";
         Directory.CreateDirectory(_out);
-        _script = (_selfTest ? SelfTest() : Run()).GetEnumerator();
+        _tour = request.Tour;
+        _ffmpeg = request.Ffmpeg;
+        _script = (_selfTest ? SelfTest() : _tour ? Tour() : Run()).GetEnumerator();
     }
 
     /// <summary>
@@ -172,6 +204,8 @@ sealed class ScreenshotTool
     {
         if (Done)
             return;
+        if (_tour)
+            TourFrame();
         if (_taking is { } shot)
         {
             if (_app.Renderer.TakeWindowCapture() is not { } picture)
@@ -195,34 +229,60 @@ sealed class ScreenshotTool
             // What's left of its time limit isn't waited out.
             (_until, _waiting) = (null, 0);
         }
+        if (_over is { } over)
+        {
+            var through = Math.Min(1, (_clock.Elapsed.TotalSeconds - _overStarted) / Math.Max(over.Seconds, 1e-6));
+            over.Progress(through);
+            if (through < 1)
+                return;
+            _over = null;
+        }
+        if (_clock.Elapsed.TotalSeconds < _holdUntil)
+            return;
         if (_waiting > 0)
         {
             _waiting--;
             return;
         }
-        if (!_script.MoveNext())
+        // Steps done at once run on to the next, so a run of them all happens in the one frame.
+        while (true)
         {
-            if (_selfTest)
-                Report();
-            Done = true;
-            return;
-        }
-        switch (_script.Current)
-        {
-            case Wait wait:
-                _waiting = wait.Frames;
-                break;
-            case Until next:
-                (_until, _waiting) = (next, next.MaxFrames);
-                break;
-            case Shot take:
-                _taking = take;
-                _app.Renderer.CaptureWindow = true;
-                break;
-            case Check check:
-                _checks.Add(check);
-                Console.WriteLine($"{(check.Passed ? "PASS" : "FAIL")}  {check.Name}: {check.Found}");
-                break;
+            if (!_script.MoveNext())
+            {
+                if (_selfTest)
+                    Report();
+                if (_tour)
+                    FinishTour();
+                Done = true;
+                return;
+            }
+            switch (_script.Current)
+            {
+                case Wait wait:
+                    _waiting = wait.Frames;
+                    return;
+                case Until next:
+                    (_until, _waiting) = (next, next.MaxFrames);
+                    return;
+                case Shot take:
+                    _taking = take;
+                    _app.Renderer.CaptureWindow = true;
+                    return;
+                case Hold hold:
+                    _holdUntil = _clock.Elapsed.TotalSeconds + hold.Seconds;
+                    return;
+                case Over next:
+                    (_over, _overStarted) = (next, _clock.Elapsed.TotalSeconds);
+                    next.Progress(0);
+                    return;
+                case Do act:
+                    act.Act();
+                    break;
+                case Check check:
+                    _checks.Add(check);
+                    Console.WriteLine($"{(check.Passed ? "PASS" : "FAIL")}  {check.Name}: {check.Found}");
+                    break;
+            }
         }
     }
 
@@ -398,16 +458,16 @@ sealed class ScreenshotTool
     /// A song of <see cref="SECONDS"/> as a mono WAV: a chord in its key throughout, a bass note and hi-hats, and a
     /// kick on every beat but in the intro, a breakdown and the outro, so the analysis finds its tempo, key and shape.
     /// </summary>
-    static void WriteSong(string path, double bpm, int tonic, bool minor, int seed)
+    static void WriteSong(string path, double bpm, int tonic, bool minor, int seed, double seconds = SECONDS, bool lead = false)
     {
         var random = new Random(seed);
-        var frames = (int)(SECONDS * RATE);
+        var frames = (int)(seconds * RATE);
         var samples = new float[frames];
         var beat = 60 / bpm;
         double Note(int semitone, int octave) => 440 * Math.Pow(2, (semitone - 9) / 12.0 + octave - 4);
         double[] chord = [Note(tonic, 3), Note(tonic + (minor ? 3 : 4), 3), Note(tonic + 7, 3), Note(tonic, 4)];
         var bass = Note(tonic, 2);
-        var beats = (int)(SECONDS / beat);
+        var beats = (int)(seconds / beat);
         for (var n = 0; n < beats; n++)
         {
             var start = (int)(n * beat * RATE);
@@ -429,6 +489,22 @@ sealed class ScreenshotTool
                 var off = t - beat / 2;
                 if (off >= 0)
                     sample += 0.08 * (random.NextDouble() * 2 - 1) * Math.Exp(-off / 0.03);
+                if (lead && kick)
+                {
+                    // For the tour, a clap on the backbeat and a plucked arpeggio of the chord in eighths, so it
+                    // sounds a little more like music.
+                    if (n % 2 == 1)
+                        sample += 0.18 * (random.NextDouble() * 2 - 1) * Math.Exp(-t / 0.045);
+                    for (var half = 0; half < 2; half++)
+                    {
+                        var pluck = t - half * beat / 2;
+                        if (pluck < 0)
+                            continue;
+                        var step = (n * 2 + half + seed) % 8;
+                        var note = chord[(step * 5 + seed) % 4] * (step % 3 == 0 ? 4 : 2);
+                        sample += 0.07 * Math.Sin(2 * Math.PI * note * pluck) * Math.Exp(-pluck / 0.12);
+                    }
+                }
                 samples[start + i] += (float)sample;
             }
         }
