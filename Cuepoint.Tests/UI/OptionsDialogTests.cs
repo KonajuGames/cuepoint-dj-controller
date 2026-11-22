@@ -29,6 +29,48 @@ public class OptionsDialogTests
     }
 
     [Fact]
+    public void Settings_that_go_together_are_on_the_same_tab_and_one_tab_shows_at_a_time()
+    {
+        var atlas = new FontAtlas();
+        var font = atlas.Add(FontAtlas.FindSystemFont() ?? throw new InvalidOperationException("No system font"), 14);
+        using var engine = new AudioEngine();
+        var options = new OptionsDialog(engine, @"C:\Music", @"C:\library.json", font, font, font);
+
+        Assert.Equal(["Mixing", "Sound", "Screen", "Controls", "Library"], options.Tabs);
+        Assert.Equal(0, options.TabOf("Crossfader curve"));
+        Assert.Equal(1, options.TabOf("Headphones"));
+        Assert.Equal(1, options.TabOf("Buffer size"));
+        Assert.Equal(2, options.TabOf("Screen size"));
+        Assert.Equal(3, options.TabOf("MIDI clock out"));
+        Assert.Equal(3, options.TabOf("Keyboard"));
+        Assert.Equal(4, options.TabOf("Analyse when idle"));
+        Assert.Equal(4, options.TabOf("Settings"));
+
+        Assert.Equal(0, options.Tab);
+        options.Tab = 2;
+        var shown = Within(options).OfType<Dropdown<WaveformColours>>().Single();
+        Assert.True(IsShown(shown, options));
+        Assert.False(IsShown(Within(options).OfType<Dropdown<CrossfaderCurve>>().Single(), options));
+    }
+
+    // Whether it and everything it's in are visible.
+    static bool IsShown(Element element, Element root) => Path(root, element) is { } path && path.Skip(1).All(each => each.Visible);
+
+    static List<Element>? Path(Element from, Element to)
+    {
+        if (from == to)
+            return [from];
+        if (from is not Panel panel)
+            return null;
+        foreach (var child in panel.Children)
+        {
+            if (Path(child, to) is { } rest)
+                return [from, .. rest];
+        }
+        return null;
+    }
+
+    [Fact]
     public void The_waveform_colours_list_has_both_choices()
     {
         var atlas = new FontAtlas();

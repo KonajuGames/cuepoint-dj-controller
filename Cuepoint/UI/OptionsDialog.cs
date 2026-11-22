@@ -29,6 +29,40 @@ sealed class OptionsDialog : Panel
     /// the wheel after.
     /// </summary>
     Element? _lastFocused;
+
+    readonly Panel _tabStrip;
+    readonly Font _tabFont;
+    readonly List<(Button Tab, Panel Page)> _pages = [];
+    Panel _page = null!;
+    int _tab;
+
+    /// <summary>
+    /// The names of the tabs, in order.
+    /// </summary>
+    public IReadOnlyList<string> Tabs => _pages.Select(page => page.Tab.Text).ToList();
+
+    /// <summary>
+    /// Which tab's showing, by its place; kept while the options are closed, so they open where they were left.
+    /// </summary>
+    public int Tab
+    {
+        get => _tab;
+        set
+        {
+            _tab = Math.Clamp(value, 0, _pages.Count - 1);
+            for (var i = 0; i < _pages.Count; i++)
+            {
+                _pages[i].Tab.Lit = i == _tab;
+                _pages[i].Page.Visible = i == _tab;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The tab a setting's on, by the name on its row; -1 if there's none by that name.
+    /// </summary>
+    public int TabOf(string setting) =>
+        _pages.FindIndex(page => page.Page.Children.OfType<Panel>().Any(row => row.Children.FirstOrDefault() is Panel { Children: [Label { Text: var name }, ..] } && name == setting));
     readonly Checkbox _autoGain;
     readonly Checkbox _limiter;
     readonly Dropdown<CrossfaderCurve> _crossfaderCurve;
@@ -281,11 +315,36 @@ sealed class OptionsDialog : Panel
         );
         _content = _box.Add(new Panel { Spacing = 14 });
         _content.Add(new Label(heading, "Options") { Color = Theme.Text });
+        _tabStrip = _content.Add(new Panel { Direction = Direction.Horizontal, Spacing = 2 });
+        _tabFont = bold;
 
+        // Each page of settings behind a tab, so what goes together is together: what plays, the sound cards, what's
+        // shown, what controls it from outside, and where things are kept.
+        void Page(string title)
+        {
+            var page = _content.Add(new Panel { Spacing = 14, Visible = _pages.Count == 0 });
+            var index = _pages.Count;
+            var tab = _tabStrip.Add(
+                new Button(_tabFont, title)
+                {
+                    Padding = 7,
+                    Background = Theme.Control,
+                    HoverBackground = Theme.ControlHover,
+                    LitBackground = Theme.Accent,
+                    FocusColor = Theme.Focus,
+                    Lit = index == 0,
+                }
+            );
+            tab.Clicked += _ => Tab = index;
+            _pages.Add((tab, page));
+            _page = page;
+        }
+
+        Page("Mixing");
         var gainRow = Row("Automatic gain", body);
         _autoGain = gainRow.Add(new Checkbox(body));
         _autoGain.Changed += box => engine.AutoGain = box.Checked;
-        _content.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
+        _page.Add(new Label(body, "Plays every song at about the same loudness, from its analysis.") { Color = Theme.Muted });
 
         var protectRow = Row("Protect playing decks", body);
         ProtectPlayingDecks = protectRow.Add(
@@ -305,15 +364,6 @@ sealed class OptionsDialog : Panel
             }
         );
 
-        var idleRow = Row("Analyse when idle", body);
-        AnalyseWhenIdle = idleRow.Add(
-            new Checkbox(body, "While nothing's playing")
-            {
-                Checked = true,
-                Tooltip = "Songs in the list you're looking at, then the music library, are analysed one at a time while no deck is playing, so finding them by tempo or key works without scrolling to them first",
-            }
-        );
-
         var tempoRow = Row("Tempo range", body);
         _tempoRange = tempoRow.Add(
             new Dropdown<double>(body)
@@ -326,7 +376,7 @@ sealed class OptionsDialog : Panel
             }
         );
         _tempoRange.Chosen += min => TempoRangeChanged?.Invoke(min);
-        _content.Add(new Label(body, "The octave analysed tempos are shown in; nothing's analysed again.") { Color = Theme.Muted });
+        _page.Add(new Label(body, "The octave analysed tempos are shown in; nothing's analysed again.") { Color = Theme.Muted });
 
         var limiterRow = Row("Master limiter", body);
         _limiter = limiterRow.Add(new Checkbox(body));
@@ -335,7 +385,7 @@ sealed class OptionsDialog : Panel
             engine.Limiter.Enabled = box.Checked;
             MasterLimiterToggled?.Invoke();
         };
-        _content.Add(
+        _page.Add(
             new Label(body, "Keeps the mix from clipping when the decks are loud together, turning it down smoothly just before a peak.")
             {
                 Color = Theme.Muted,
@@ -357,7 +407,7 @@ sealed class OptionsDialog : Panel
             engine.CrossfaderCurve = curve;
             CrossfaderCurveChanged?.Invoke();
         };
-        _content.Add(
+        _page.Add(
             new Label(body, "Smooth fades one deck into the other across the whole fader. Sharp keeps both up until the very end, then cuts.")
             {
                 Color = Theme.Muted,
@@ -365,6 +415,7 @@ sealed class OptionsDialog : Panel
         );
 
         // Every playback device there is now, to choose the main mix's from; the system's default first.
+        Page("Sound");
         var outputRow = Row("Main output", body);
         _output = outputRow.Add(
             new Dropdown<string?>(body)
@@ -396,7 +447,7 @@ sealed class OptionsDialog : Panel
             engine.UseHeadphoneDevice(name);
             HeadphonesChanged?.Invoke(engine.HeadphoneDevice);
         };
-        _content.Add(
+        _page.Add(
             new Label(body, "A second sound card, or a controller's own channels 3 and 4, to hear decks with PFL on before the room does.")
             {
                 Color = Theme.Muted,
@@ -418,7 +469,7 @@ sealed class OptionsDialog : Panel
             engine.UseMicrophoneDevice(name);
             MicrophoneChanged?.Invoke(engine.ChosenMicrophoneDevice);
         };
-        _content.Add(
+        _page.Add(
             new Label(body, "A microphone or a sound card's input, to speak over the music. MIC on the title bar puts it in the mix.")
             {
                 Color = Theme.Muted,
@@ -455,7 +506,7 @@ sealed class OptionsDialog : Panel
             }
         );
         _boothVolume.Changed += slider => engine.BoothVolume = slider.Value;
-        _content.Add(
+        _page.Add(
             new Label(body, "The main mix again, before the master volume, on a sound card of its own for monitors in the DJ booth.")
             {
                 Color = Theme.Muted,
@@ -479,13 +530,14 @@ sealed class OptionsDialog : Panel
             BufferSizeChanged?.Invoke();
         };
         _latency = Row("Latency", body).Add(new Label(body) { Color = Theme.Text, MaxWidth = 380 });
-        _content.Add(
+        _page.Add(
             new Label(body, "Smaller feels tighter under your hands when scratching; larger stops crackles on a busy laptop. A driver that keeps its own size gets the rest mixed ahead, which can make it larger but not smaller.")
             {
                 Color = Theme.Muted,
             }
         );
 
+        Page("Screen");
         var zoomRow = Row("Waveform shows", body);
         WaveformSeconds = zoomRow.Add(
             new Slider
@@ -501,7 +553,7 @@ sealed class OptionsDialog : Panel
             }
         );
         _waveformSeconds = zoomRow.Add(new Label(body) { Color = Theme.Text });
-        _content.Add(new Label(body, "The mouse wheel over the waveforms zooms them too.") { Color = Theme.Muted });
+        _page.Add(new Label(body, "The mouse wheel over the waveforms zooms them too.") { Color = Theme.Muted });
 
         var coloursRow = Row("Waveform colours", body);
         WaveformColours = coloursRow.Add(
@@ -523,7 +575,7 @@ sealed class OptionsDialog : Panel
         var tallRow = Row("Tall waveforms", body);
         TallWaveforms = tallRow.Add(new Checkbox(body));
         TallWaveforms.Changed += _ => WaveformsChanged?.Invoke();
-        _content.Add(new Label(body, "Taller scrolling waveforms, to read from further away.") { Color = Theme.Muted });
+        _page.Add(new Label(body, "Taller scrolling waveforms, to read from further away.") { Color = Theme.Muted });
 
         // The look, which the screen takes on as it's built, so a new one shows the next time the app starts.
         var lookRow = Row("Look", body);
@@ -537,7 +589,7 @@ sealed class OptionsDialog : Panel
             }
         );
         look.Chosen += kind => LookChosen?.Invoke(kind);
-        _content.Add(
+        _page.Add(
             new Label(body, "Dark for dark rooms, Light for daylight, High contrast for bright rooms. It changes the next time Cuepoint starts.")
             {
                 Color = Theme.Muted,
@@ -555,7 +607,7 @@ sealed class OptionsDialog : Panel
             }
         );
         _screenSize.Chosen += scale => ScreenSizeChosen?.Invoke(scale);
-        _content.Add(
+        _page.Add(
             new Label(body, "Everything drawn bigger, for a 4K screen or one seen from further away. It changes the next time Cuepoint starts.")
             {
                 Color = Theme.Muted,
@@ -565,7 +617,15 @@ sealed class OptionsDialog : Panel
         var textRow = Row("Large list text", body);
         _largeListText = textRow.Add(new Checkbox(body));
         _largeListText.Changed += _ => LargeListTextToggled?.Invoke();
-        _content.Add(new Label(body, "Bigger text in the folder list and song list, to read in the dark or without glasses.") { Color = Theme.Muted });
+        _page.Add(new Label(body, "Bigger text in the folder list and song list, to read in the dark or without glasses.") { Color = Theme.Muted });
+
+        Page("Controls");
+        var keysRow = Row("Keyboard", body);
+        var showKeys = keysRow.Add(new Button(body, "Show the shortcuts") { FocusColor = Theme.Focus });
+        showKeys.Clicked += _ => ShortcutsClicked?.Invoke();
+        var changeKeys = keysRow.Add(new Button(body, "Change keys...") { FocusColor = Theme.Focus });
+        changeKeys.Clicked += _ => ChangeKeysClicked?.Invoke();
+        keysRow.Add(new Label(body, "or press ? at any time") { Color = Theme.Muted });
 
         var controllerRow = Row("Controller", body);
         _controller = controllerRow.Add(new Label(body) { Color = Theme.Text, MaxWidth = 200 });
@@ -582,7 +642,7 @@ sealed class OptionsDialog : Panel
             }
         );
         _midiClock.Chosen += name => MidiClockChanged?.Invoke(name);
-        _content.Add(
+        _page.Add(
             new Label(body, "The tempo of the deck leading the mix, for drum machines, effects units and lighting desks: started on its next downbeat.")
             {
                 Color = Theme.Muted,
@@ -596,28 +656,31 @@ sealed class OptionsDialog : Panel
         var addressRow = Row("Lighting address", body);
         LightingAddress = addressRow.Add(new TextBox(body) { Width = 220, Placeholder = "Found by itself; or host:port", FocusColor = Theme.Focus });
         LightingAddress.Submitted += box => LightingAddressChanged?.Invoke(box.Text.Trim());
-        _content.Add(
+        _page.Add(
             new Label(body, "Sends beats and each deck's play state to lighting software such as SoundSwitch, QLC+ or sLight.") { Color = Theme.Muted }
         );
 
+        Page("Library");
+        var idleRow = Row("Analyse when idle", body);
+        AnalyseWhenIdle = idleRow.Add(
+            new Checkbox(body, "While nothing's playing")
+            {
+                Checked = true,
+                Tooltip = "Songs in the list you're looking at, then the music library, are analysed one at a time while no deck is playing, so finding them by tempo or key works without scrolling to them first",
+            }
+        );
+
         _musicFolder = Row("Music library", body).Add(new Label(body, musicFolder) { Color = Theme.Text, MaxWidth = 340 });
-        _content.Add(new Label(body, "Right-click a folder in the folder list to make it the music library.") { Color = Theme.Muted });
+        _page.Add(new Label(body, "Right-click a folder in the folder list to make it the music library.") { Color = Theme.Muted });
         Row("Analysis saved in", body).Add(new Label(body, databasePath) { Color = Theme.Text, MaxWidth = 340 });
         _recordingsFolder = Row("Recordings saved in", body).Add(new Label(body) { Color = Theme.Text, MaxWidth = 340 });
-
-        var keysRow = Row("Keyboard", body);
-        var showKeys = keysRow.Add(new Button(body, "Show the shortcuts") { FocusColor = Theme.Focus });
-        showKeys.Clicked += _ => ShortcutsClicked?.Invoke();
-        var changeKeys = keysRow.Add(new Button(body, "Change keys...") { FocusColor = Theme.Focus });
-        changeKeys.Clicked += _ => ChangeKeysClicked?.Invoke();
-        keysRow.Add(new Label(body, "or press ? at any time") { Color = Theme.Muted });
 
         var backupRow = Row("Settings", body);
         var backUp = backupRow.Add(new Button(body, "Back up...") { FocusColor = Theme.Focus });
         backUp.Clicked += _ => BackUpClicked?.Invoke();
         var restore = backupRow.Add(new Button(body, "Restore...") { FocusColor = Theme.Focus });
         restore.Clicked += _ => RestoreClicked?.Invoke();
-        _content.Add(
+        _page.Add(
             new Label(body, "Everything set up here, the keys and controller mappings and virtual folders too, in one file.")
             {
                 Color = Theme.Muted,
@@ -644,7 +707,7 @@ sealed class OptionsDialog : Panel
     /// </summary>
     Panel Row(string name, Font font)
     {
-        var row = _content.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
+        var row = _page.Add(new Panel { Direction = Direction.Horizontal, Spacing = 12 });
         row.Add(new Panel { MinSize = new float2(140, 0) }).Add(new Label(font, name) { Color = Theme.Muted });
         return row;
     }
@@ -653,6 +716,15 @@ sealed class OptionsDialog : Panel
     public override Cursor Cursor => Cursor.Arrow;
 
     public void Open() => Visible = true;
+
+    // Escape puts it away while one of its own controls has focus too, such as a tab just clicked.
+    public override bool KeyDown(Key key, Modifiers modifiers)
+    {
+        if (key != Key.Escape)
+            return false;
+        Close();
+        return true;
+    }
 
     public void Close()
     {
@@ -688,6 +760,16 @@ sealed class OptionsDialog : Panel
         // Never past the window's edges, scrolling instead.
         _box.MaxWidth = MathF.Max(0, ScreenSize.X - 2 * MARGIN);
         _box.MaxHeight = MathF.Max(0, ScreenSize.Y - 2 * MARGIN);
+        // The box keeps one size whichever tab's showing, that of the largest page, so it doesn't jump about.
+        var largest = new float2(0, 0);
+        foreach (var (_, page) in _pages)
+        {
+            page.MinSize = new float2(0, 0);
+            var size = page.Measure();
+            largest = new float2(MathF.Max(largest.X, size.X), MathF.Max(largest.Y, size.Y));
+        }
+        foreach (var (_, page) in _pages)
+            page.MinSize = largest;
         _box.Measure();
         return Size = ScreenSize;
     }
