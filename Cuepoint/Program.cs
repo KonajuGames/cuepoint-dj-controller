@@ -4,6 +4,7 @@ using Brutal.VulkanApi;
 using Cuepoint;
 using Cuepoint.Audio;
 using Cuepoint.Audio.Analysis;
+using Cuepoint.Audio.Stems;
 using Cuepoint.Midi;
 using Cuepoint.Music;
 using Cuepoint.Music.Imports;
@@ -390,6 +391,12 @@ static int Run(ScreenshotTool.Request? capture)
     var samplerPads = gridEditors.Select((editor, i) => new SamplerPads(editor.Deck, sampler, editor, rollPads[i], jumpPads[i])).ToArray();
     SamplerPads? SamplerPadsFor(Deck deck) => samplerPads.FirstOrDefault(pads => pads.Deck == deck);
 
+    // Or the song's stems, with them in STEMS mode: separated with Demucs, and kept on disk once they have been.
+    var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint");
+    using var separator = new StemSeparator(new StemCache(Path.Combine(appData, "stems")), Path.Combine(appData, "models", "htdemucs.onnx"));
+    var stemPads = gridEditors.Select((editor, i) => new StemPads(editor.Deck, separator, editor, rollPads[i], jumpPads[i], samplerPads[i])).ToArray();
+    StemPads? StemPadsFor(Deck deck) => stemPads.FirstOrDefault(pads => pads.Deck == deck);
+
     // Quantise is on for each deck unless it was turned off.
     audio.MicrophoneLevel = settings.MicrophoneLevel;
     audio.Talkover = settings.Talkover;
@@ -417,7 +424,7 @@ static int Run(ScreenshotTool.Request? capture)
     }
 
     var ui = new Root { TooltipFont = fonts.Body, Scale = screenScale };
-    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor, JumpPadsFor, SamplerPadsFor));
+    var screen = ui.Add(new MainScreen(audio, decks, library, analyser, folders, $"{database.FilePath}, or \\{LibraryDatabase.DRIVE_FOLDER} on other drives", fonts, images, HotcueKeys.Labels, KeyboardControls.HintsFor, GridEditorFor, RollPadsFor, JumpPadsFor, SamplerPadsFor, StemPadsFor));
     sampler.LoadFailed += (slot, error) => screen.Log($"Couldn't put that on sampler pad {slot + 1}: {error}");
     foreach (var editor in gridEditors)
         editor.Log += screen.Log;

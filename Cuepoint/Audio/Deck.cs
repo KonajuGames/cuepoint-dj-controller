@@ -904,7 +904,9 @@ sealed partial class Deck : IDisposable
         var end = Math.Clamp(ToFrames(to), 0, pcm.Frames);
         if (end <= start)
             return null;
-        return new PcmAudio(pcm.Samples.AsSpan((int)(start * pcm.Channels), (int)((end - start) * pcm.Channels)).ToArray(), pcm.Channels, pcm.SampleRate);
+        // With stems turned down, the samples played are their mix, so the song as decoded is the stems' original.
+        var samples = _stems?.Original ?? pcm.Samples;
+        return new PcmAudio(samples.AsSpan((int)(start * pcm.Channels), (int)((end - start) * pcm.Channels)).ToArray(), pcm.Channels, pcm.SampleRate);
     }
 
     /// <summary>
@@ -1030,6 +1032,7 @@ sealed partial class Deck : IDisposable
     void Apply(DecodedSong song)
     {
         _rolls.Clear();
+        DetachStems();
         Effects.Silence();
         _slipCauses = SlipCause.None;
         KeyShift = 0;
@@ -1239,7 +1242,7 @@ sealed partial class Deck : IDisposable
     /// </summary>
     public TimeSpan? AutoCuePoint()
     {
-        if (_pcm is not { } pcm || FirstSound(pcm) is not { } sound)
+        if (_pcm is not { } pcm || FirstSound(_stems is { } stems ? pcm with { Samples = stems.Original } : pcm) is not { } sound)
             return null;
         if (_analysis?.Grid is { } grid)
         {

@@ -76,6 +76,7 @@ sealed class DeckPanel : Panel
     readonly RollPads? _roll;
     readonly JumpPads? _jump;
     readonly SamplerPads? _sampler;
+    readonly StemPads? _stems;
 
     /// <summary>
     /// What the pads do: hotcues, or one of the modes there are for this deck.
@@ -88,6 +89,7 @@ sealed class DeckPanel : Panel
         Grid,
         Sampler,
         SamplerB,
+        Stems,
     }
 
     readonly Dropdown<PadMode>? _padMode;
@@ -242,9 +244,11 @@ sealed class DeckPanel : Panel
         Images? images = null,
         RollPads? roll = null,
         JumpPads? jump = null,
-        SamplerPads? sampler = null
+        SamplerPads? sampler = null,
+        StemPads? stems = null
     )
     {
+        _stems = stems;
         _images = images;
         _sampler = sampler;
         _roll = roll;
@@ -581,7 +585,7 @@ sealed class DeckPanel : Panel
 
         // What the pads do, chosen from a list: hotcues, loop rolls held as long as each pad is, beat jumps, or tools
         // for fixing the beat grid by hand. Only the modes there are for this deck are listed.
-        if (grid is not null || roll is not null || jump is not null || sampler is not null)
+        if (grid is not null || roll is not null || jump is not null || sampler is not null || stems is not null)
         {
             List<PadMode> modes = [PadMode.Hotcues];
             if (roll is not null)
@@ -590,6 +594,8 @@ sealed class DeckPanel : Panel
                 modes.Add(PadMode.Jump);
             if (sampler is not null)
                 modes.AddRange([PadMode.Sampler, PadMode.SamplerB]);
+            if (stems is not null)
+                modes.Add(PadMode.Stems);
             if (grid is not null)
                 modes.Add(PadMode.Grid);
             _padMode = Add(
@@ -606,16 +612,22 @@ sealed class DeckPanel : Panel
                         (PadMode.Sampler, true) => "SAMPLE",
                         (PadMode.SamplerB, false) => "SAMPLER 2",
                         (PadMode.SamplerB, true) => "SAMPLE 2",
+                        (PadMode.Stems, false) => "STEMS",
+                        (PadMode.Stems, true) => "STEM",
                         _ => "GRID",
                     },
                     Width = 96,
-                    Tooltip = "What the pads do: hotcues, loop rolls held as long as each pad is, beat jumps back and on staying in time, samples played into the mix, or tools for fixing the beat grid by hand",
+                    Tooltip = "What the pads do: hotcues, loop rolls held as long as each pad is, beat jumps back and on staying in time, samples played into the mix, the song's vocals, drums, bass and instruments on and off, or tools for fixing the beat grid by hand",
                 }
             );
             _padMode.Chosen += mode =>
             {
                 // Each turned on turns the others off; hotcues is all of them off.
-                if (mode == PadMode.Roll && roll is not null)
+                if (stems is not null && mode != PadMode.Stems)
+                    stems.Active = false;
+                if (mode == PadMode.Stems && stems is not null)
+                    stems.Active = true;
+                else if (mode == PadMode.Roll && roll is not null)
                     roll.Active = true;
                 else if (mode == PadMode.Jump && jump is not null)
                     jump.Active = true;
@@ -656,7 +668,9 @@ sealed class DeckPanel : Panel
             // rolls a loop while it's held.
             pad.Triggered += _ =>
             {
-                if (_grid is { Active: true })
+                if (_stems is { Active: true })
+                    _stems.Down(index);
+                else if (_grid is { Active: true })
                     _grid.Pad(index);
                 else if (_roll is { Active: true })
                     _roll.Down(index);
@@ -679,7 +693,7 @@ sealed class DeckPanel : Panel
                     _grid.Pad(index, fine: true);
                 else if (_sampler is { Active: true })
                     _sampler.Clear(index);
-                else
+                else if (_stems is not { Active: true })
                     _deck.DeleteHotcue(index);
             };
             // A right-click does as Shift does in the other modes, and opens a hotcue's menu.
@@ -689,7 +703,7 @@ sealed class DeckPanel : Panel
                     _grid.Pad(index, fine: true);
                 else if (_sampler is { Active: true })
                     SamplerPadMenuRequested?.Invoke(_sampler.Slot(index), at);
-                else if (_roll is not { Active: true } && _jump is not { Active: true } && _deck.IsLoaded)
+                else if (_roll is not { Active: true } && _jump is not { Active: true } && _stems is not { Active: true } && _deck.IsLoaded)
                     HotcueMenuRequested?.Invoke(this, index, at);
             };
             _pads.Add(pad);
@@ -716,10 +730,12 @@ sealed class DeckPanel : Panel
 
     public void Refresh()
     {
+        _stems?.Update();
         RefreshTempo();
         if (_padMode is not null)
         {
-            var mode = _grid is { Active: true } ? PadMode.Grid
+            var mode = _stems is { Active: true } ? PadMode.Stems
+                : _grid is { Active: true } ? PadMode.Grid
                 : _roll is { Active: true } ? PadMode.Roll
                 : _jump is { Active: true } ? PadMode.Jump
                 : _sampler is { Active: true, Bank: 1 } ? PadMode.SamplerB
@@ -732,6 +748,7 @@ sealed class DeckPanel : Panel
                 PadMode.Roll => (AppTheme.Loop, 0.5f),
                 PadMode.Jump => (Theme.Focus, 0.5f),
                 PadMode.Sampler or PadMode.SamplerB => (AppTheme.Sampler, 0.5f),
+                PadMode.Stems => (AppTheme.Stems, 0.5f),
                 _ => (Theme.PanelRaised, 0f),
             };
             _padMode.Background = amount > 0 ? Theme.Mix(Theme.PanelRaised, tint, amount) : Theme.Control;
@@ -763,7 +780,7 @@ sealed class DeckPanel : Panel
         _fxOn.Background = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.6f) : Theme.Control;
         _fxOn.HoverBackground = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
         _fxOn.TextColor = fx.On ? Theme.Text : Theme.Muted;
-        _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "";
+        _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : _stems is { Active: true, Status: { } status } ? status : "";
 
         if (!_deck.IsLoaded)
         {
@@ -860,8 +877,25 @@ sealed class DeckPanel : Panel
         var rollMode = !gridMode && _roll is { Active: true };
         var jumpMode = !gridMode && !rollMode && _jump is { Active: true };
         var samplerMode = !gridMode && !rollMode && !jumpMode && _sampler is { Active: true };
+        var stemsMode = _stems is { Active: true };
         for (var i = 0; i < _pads.Count; i++)
         {
+            if (stemsMode)
+            {
+                var stem = i % StemPads.Labels.Count;
+                // Until the stems are ready the first pad says how they're getting on, with the whole story in its
+                // tooltip, which needs it enabled.
+                var stemStatus = i == 0 ? _stems!.Status : null;
+                _pads[i].Enabled = _deck.HasStems || stemStatus is not null;
+                _pads[i].IsSet = _stems!.IsLit(i);
+                _pads[i].Text = _stems.Label(i);
+                _pads[i].Icon = null;
+                _pads[i].Color = AppTheme.StemColor(stem);
+                _pads[i].Tooltip = stemStatus ?? (i < StemPads.Labels.Count ? $"The {StemPads.Names[stem]} on and off" : $"Just the {StemPads.Names[stem]}, or everything again");
+                if (_deck.Hotcues[i] is { } stemCueAt)
+                    flags.Add(((float)stemCueAt.TotalSeconds, AppTheme.HotcueColor(_deck, i), (i + 1).ToString()));
+                continue;
+            }
             if (samplerMode)
             {
                 ShowSample(_pads[i], _sampler!.Sampler, _sampler.Slot(i));

@@ -1,0 +1,121 @@
+namespace Cuepoint.Audio.Stems;
+
+/// <summary>
+/// Finding one song's stems, in the background: <see cref="Done"/> once it's finished, with the stems, or null if
+/// they weren't on disk and it wasn't asked to separate them.
+/// </summary>
+sealed class StemJob
+{
+    public required string Path { get; init; }
+
+    public required bool Separating { get; init; }
+
+    internal Task<SongStems?> Task { get; set; } = null!;
+
+    internal float _progress;
+
+    /// <summary>
+    /// How far separating has got, from 0 to 1.
+    /// </summary>
+    public float Progress => Volatile.Read(ref _progress);
+
+    public bool Done => Task.IsCompleted;
+
+    public SongStems? Stems => Task.IsCompletedSuccessfully ? Task.Result : null;
+
+    public Exception? Failed => Task.IsFaulted ? Task.Exception?.GetBaseException() : null;
+}
+
+/// <summary>
+/// Separates songs into their stems with Demucs, one at a time on a low-priority thread, keeping each on disk so it's
+/// only done once. The model is an ONNX export of Demucs's htdemucs (tools/export_demucs.py makes it), which isn't
+/// shipped with the app; without it, only stems already on disk can be had.
+/// </summary>
+sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
+{
+    readonly SemaphoreSlim _one = new(1, 1);
+    readonly Lock _lock = new();
+    readonly Dictionary<string, StemJob> _jobs = [];
+    Demucs? _model;
+
+    public string ModelPath { get; } = modelPath;
+
+    public bool HasModel => File.Exists(ModelPath);
+
+    /// <summary>
+    /// Finds the stems of the song at <paramref name="path"/>, whose decoded samples are <paramref name="audio"/>:
+    /// from disk, or if they aren't there and <paramref name="separate"/>, by separating it. Asking again for a song
+    /// already being found gives the same job, unless that one failed or didn't separate and this one would.
+    /// </summary>
+    public StemJob Request(string path, PcmAudio audio, bool separate)
+    {
+        lock (_lock)
+        {
+            if (_jobs.TryGetValue(path, out var existing) && existing.Failed is null && (existing.Separating || !separate || !existing.Done || existing.Stems is not null))
+                return existing;
+            var job = new StemJob { Path = path, Separating = separate };
+            job.Task = Task.Run(() => Find(job, audio));
+            _jobs[path] = job;
+            return job;
+        }
+    }
+
+    async Task<SongStems?> Find(StemJob job, PcmAudio audio)
+    {
+        if (cache.Load(job.Path) is { } cached && cached.Channels == audio.Channels && cached.Frames == audio.Frames)
+            return cached;
+        if (!job.Separating)
+            return null;
+        if (!HasModel)
+            throw new FileNotFoundException($"There's no stem model at {ModelPath}");
+
+        await _one.WaitAsync();
+        try
+        {
+            var stems = await OnLowPriorityThread(() =>
+            {
+                _model ??= new Demucs(ModelPath);
+                return _model.Separate(audio, progress => Volatile.Write(ref job._progress, progress));
+            });
+            try
+            {
+                cache.Save(job.Path, stems);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                ErrorLog.Write($"keeping the stems of {job.Path}", e);
+            }
+            return stems;
+        }
+        finally
+        {
+            _one.Release();
+        }
+    }
+
+    // Separating takes a while, so it gives way to everything else, the decks' audio above all.
+    static Task<T> OnLowPriorityThread<T>(Func<T> work)
+    {
+        var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                done.SetResult(work());
+            }
+            catch (Exception e)
+            {
+                done.SetException(e);
+            }
+        })
+        {
+            IsBackground = true,
+            Priority = ThreadPriority.Lowest,
+            Name = "Stem separation",
+        };
+        thread.Start();
+        return done.Task;
+    }
+
+    public void Dispose() => _model?.Dispose();
+}

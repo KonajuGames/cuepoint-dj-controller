@@ -24,6 +24,16 @@ static class AppTheme
     public static readonly float4 Sampler = Colors.Hex(0xB57BE0);
 
     /// <summary>
+    /// STEMS mode's tint.
+    /// </summary>
+    public static readonly float4 Stems = Colors.Hex(0xE8A03C);
+
+    // Each stem's pads: vocals, drums, bass, instruments.
+    static readonly float4[] StemColors = [Colors.Hex(0xFF6FA8), Colors.Hex(0xFFB547), Colors.Hex(0x4FA3FF), Colors.Hex(0x5ED4A0)];
+
+    public static float4 StemColor(int stem) => StemColors[stem % StemColors.Length];
+
+    /// <summary>
     /// What the waveforms, the phase meter and the beat trackers are drawn on: dark in every look, as a DJ app's
     /// waveforms are, so the beat grid's and playhead's white lines show on it.
     /// </summary>
