@@ -49,6 +49,12 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
     public bool HasStems(string path) => cache.Has(path);
 
     /// <summary>
+    /// <see cref="HasStems"/>, cheaply enough for every song in view on every frame (the song list's stems icon), at
+    /// the cost of noticing a song's file changed outside the app only after a few seconds.
+    /// </summary>
+    public bool HasStemsQuickly(string path) => cache.HasQuickly(path);
+
+    /// <summary>
     /// How many bytes the stems kept on disk for the song at <paramref name="path"/> take; null if there are none.
     /// </summary>
     public long? StemsSize(string path) => cache.SizeOf(path);

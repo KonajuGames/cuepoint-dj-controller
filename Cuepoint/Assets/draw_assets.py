@@ -217,6 +217,17 @@ LOGO_SMALL = logo(dict(gap=40, stroke=5.6, spindle=3.3, width=2.4, near=0.95, fa
 # A tick, for a song played this session.
 PLAYED = [(segment(3.2, 8.4, 6.4, 11.6, 2.4), hex_colour(WHITE)), (segment(6.4, 11.6, 12.8, 4.4, 2.4), hex_colour(WHITE))]
 
+
+def wave(y, amplitude, x0, x1, width, cycles=1.0, steps=14):
+    """A line rising and falling as a sine wave from x0 to x1 about y, drawn as short segments."""
+    points = [(x0 + (x1 - x0) * i / steps, y + amplitude * math.sin(cycles * 2 * math.pi * i / steps)) for i in range(steps + 1)]
+    return union(*(segment(ax, ay, bx, by, width) for (ax, ay), (bx, by) in zip(points, points[1:])))
+
+
+# A song separated into its stems: four waves one above another, one for each stem, as a multitrack shows them. They
+# rise and fall together, so at 14 pixels they read as four lines rather than a crosshatch.
+STEMS = [(union(*(wave(2.4 + 3.75 * i, 0.85, 1.6, 14.4, 1.45) for i in range(4))), hex_colour(WHITE))]
+
 # Arrows: small triangles with their corners softened, pointing right, down and left.
 TRIANGLE_RIGHT = [(rounded(polygon([(3.6, 1.8), (8.6, 5), (3.6, 8.2)]), 0.5), hex_colour(WHITE))]
 TRIANGLE_DOWN = [(rounded(polygon([(1.8, 3.4), (8.2, 3.4), (5, 8.4)]), 0.5), hex_colour(WHITE))]
@@ -368,6 +379,7 @@ def main():
         ("logo-48.png", LOGO, 48, 32),
         ("logo-256.png", LOGO, 256, 32),
         ("played-14.png", PLAYED, 14, 16),
+        ("stems-14.png", STEMS, 14, 16),
         ("triangle-right-10.png", TRIANGLE_RIGHT, 10, 10),
         ("triangle-down-10.png", TRIANGLE_DOWN, 10, 10),
         ("triangle-left-10.png", TRIANGLE_LEFT, 10, 10),
@@ -397,7 +409,7 @@ def main():
         ("icon-filter-20.png", FUNNEL, 20, 14),
     ]
     # Previews go over the title bar's colour, since the icons are white.
-    previews = [("preview-logo.png", LOGO, 512, 32), ("preview-logo-small.png", LOGO_SMALL, 22, 32), ("preview-played.png", PLAYED, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16), ("preview-headphones.png", HEADPHONES, 256, 16), ("preview-knob.png", KNOB, 200, 20)]
+    previews = [("preview-logo.png", LOGO, 512, 32), ("preview-logo-small.png", LOGO_SMALL, 22, 32), ("preview-played.png", PLAYED, 256, 16), ("preview-stems.png", STEMS, 256, 16), ("preview-triangle.png", TRIANGLE_RIGHT, 160, 10), ("preview-cog.png", COG, 256, 16), ("preview-headphones.png", HEADPHONES, 256, 16), ("preview-knob.png", KNOB, 200, 20)]
     for name, layers, size, units in jobs:
         path = os.path.join(HERE, name)
         write_png(path, size, size, render(layers, size, units))

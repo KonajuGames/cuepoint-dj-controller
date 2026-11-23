@@ -188,4 +188,37 @@ public class StemTests
         // Nothing more to follow.
         Assert.False(cache.Follow(before, songPath));
     }
+
+    [Fact]
+    public void The_quick_look_for_stems_follows_them_being_saved_deleted_and_followed()
+    {
+        using var folder = new TempFolder();
+        var songPath = folder.File("song.mp3");
+        var (_, stems, _) = MakeSong(1);
+        var cache = new StemCache(folder["stems"]);
+        Assert.False(cache.HasQuickly(songPath));
+
+        cache.Save(songPath, stems);
+        Assert.True(cache.HasQuickly(songPath));
+
+        var before = cache.FileFor(songPath);
+        File.AppendAllText(songPath, "new tags");
+        cache.Follow(before, songPath);
+        Assert.True(cache.HasQuickly(songPath));
+
+        cache.Delete(songPath);
+        Assert.False(cache.HasQuickly(songPath));
+    }
+
+    [Fact]
+    public void The_quick_look_for_stems_finds_those_kept_before_the_app_started()
+    {
+        using var folder = new TempFolder();
+        var songPath = folder.File("song.mp3");
+        var (_, stems, _) = MakeSong(1);
+        new StemCache(folder["stems"]).Save(songPath, stems);
+
+        Assert.True(new StemCache(folder["stems"]).HasQuickly(songPath));
+        Assert.False(new StemCache(folder["stems"]).HasQuickly(folder.File("other.mp3")));
+    }
 }

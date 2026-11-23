@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -15,6 +16,44 @@ sealed class StemCache(string folder)
     const int VERSION = 1;
 
     public string Folder { get; } = folder;
+
+    // For HasQuickly: the stems files there are, by name, read from the folder the first time and kept up to date as
+    // they're saved, deleted and moved; and each song's stems file name, found again every few seconds in case the
+    // song's file has changed.
+    ConcurrentDictionary<string, byte>? _names;
+    readonly ConcurrentDictionary<string, (string? Name, long At)> _songs = new(StringComparer.OrdinalIgnoreCase);
+    const long RECHECK_MS = 5000;
+
+    /// <summary>
+    /// Whether there are stems kept for the song at <paramref name="songPath"/>, cheaply enough to ask for every song
+    /// in view on every frame: it's <see cref="Has"/>, but with the song's file looked at again only every few
+    /// seconds.
+    /// </summary>
+    public bool HasQuickly(string songPath)
+    {
+        var now = Environment.TickCount64;
+        if (!_songs.TryGetValue(songPath, out var known) || now - known.At > RECHECK_MS)
+        {
+            known = (FileFor(songPath) is { } file ? Path.GetFileName(file) : null, now);
+            _songs[songPath] = known;
+        }
+        return known.Name is { } name && Names().ContainsKey(name);
+    }
+
+    ConcurrentDictionary<string, byte> Names()
+    {
+        if (Volatile.Read(ref _names) is { } names)
+            return names;
+        var found = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (Directory.Exists(Folder))
+                foreach (var file in Directory.EnumerateFiles(Folder, "*.stems"))
+                    found[Path.GetFileName(file)] = 0;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        return Interlocked.CompareExchange(ref _names, found, null) ?? found;
+    }
 
     /// <summary>
     /// The stems kept for the song at <paramref name="songPath"/>; null if there are none, or they're unreadable.
@@ -69,7 +108,10 @@ sealed class StemCache(string folder)
     public void Delete(string songPath)
     {
         if (FileFor(songPath) is { } path)
+        {
             File.Delete(path);
+            Names().TryRemove(Path.GetFileName(path), out _);
+        }
     }
 
     /// <summary>
@@ -83,6 +125,9 @@ sealed class StemCache(string folder)
         if (oldFile is null || !File.Exists(oldFile) || FileFor(songPath) is not { } path || string.Equals(oldFile, path, StringComparison.OrdinalIgnoreCase))
             return false;
         File.Move(oldFile, path, overwrite: true);
+        Names().TryRemove(Path.GetFileName(oldFile), out _);
+        Names()[Path.GetFileName(path)] = 0;
+        _songs.TryRemove(songPath, out _);
         return true;
     }
 
@@ -109,6 +154,7 @@ sealed class StemCache(string folder)
             }
         }
         File.Move(temporary, path, overwrite: true);
+        Names()[Path.GetFileName(path)] = 0;
     }
 
     /// <summary>

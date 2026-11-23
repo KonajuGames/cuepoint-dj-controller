@@ -139,6 +139,12 @@ sealed class SongBrowser : Panel
     public Func<Song, bool> IsPlayed { get; set; } = _ => false;
 
     /// <summary>
+    /// Whether a song's been separated into its stems, kept on disk, for its stems icon: asked for every song in view on
+    /// every frame, so it must be quick.
+    /// </summary>
+    public Func<Song, bool> HasStems { get; set; } = _ => false;
+
+    /// <summary>
     /// The decks a song's loaded on, by name, for their letters in the first column.
     /// </summary>
     public Func<Song, IReadOnlyList<string>> DecksOf { get; set; } = _ => [];
@@ -242,6 +248,17 @@ sealed class SongBrowser : Panel
                 Id = "Played",
                 Icon = song => IsPlayed(song) ? (images.Played, AppTheme.Played) : null,
                 SortKey = song => IsPlayed(song) ? 0 : null,
+                Resizable = false,
+            }
+        );
+        // Four waves one above another, in STEMS mode's colour, for a song separated into its stems. As wide as the
+        // played column, so the icon fits between the cell's padding.
+        _columns.Add(
+            new ListColumn<Song>("", 30, _ => "")
+            {
+                Id = "Stems",
+                Icon = song => HasStems(song) ? (images.Stems, AppTheme.OnPage(AppTheme.Stems)) : null,
+                SortKey = song => HasStems(song) ? 0 : null,
                 Resizable = false,
             }
         );

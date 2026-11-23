@@ -13,6 +13,7 @@ namespace Cuepoint.UI;
 sealed record Images(
     Image Logo,
     Image Played,
+    Image Stems,
     Image TriangleRight,
     Image TriangleDown,
     Image TriangleLeft,
@@ -36,6 +37,7 @@ sealed record Images(
         new(
             Logo: atlas.AddImage(Read("logo-22.png")),
             Played: atlas.AddImage(Read("played-14.png")),
+            Stems: atlas.AddImage(Read("stems-14.png")),
             TriangleRight: atlas.AddImage(Read("triangle-right-10.png")),
             TriangleDown: atlas.AddImage(Read("triangle-down-10.png")),
             TriangleLeft: atlas.AddImage(Read("triangle-left-10.png")),

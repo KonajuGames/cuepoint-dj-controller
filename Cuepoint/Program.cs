@@ -925,6 +925,7 @@ static int Run(ScreenshotTool.Request? capture)
         );
     }
     browser.IsPlayed = song => plays.Contains(song.Path);
+    browser.HasStems = song => separator.HasStemsQuickly(song.Path);
 
 
     // Decks being put back after the app didn't close properly, and where each goes once its song is in.
