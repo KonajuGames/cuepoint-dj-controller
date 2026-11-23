@@ -3157,12 +3157,10 @@ static int Run(ScreenshotTool.Request? capture)
                 .Select(loop => (loop.Start!.Value, loop.End!.Value))
                 .ToList()
         );
-        // Cued to the intro's first beat, at the very start, rather than the first memory cue, where the song starts;
-        // or where the song was cued, if it got no intro.
-        if (edit.IntroEnd is not null)
-            database.SetCuePoint(path, TimeSpan.Zero);
-        else if (Moved(database.GetCuePoint(original.Path)) is { } cuePoint)
-            database.SetCuePoint(path, cuePoint);
+        // Always cued somewhere, rather than to its first memory cue, which can be where the song starts or the outro:
+        // to the intro's first beat at the very start; or with no intro, where the song was cued, if it was, or where
+        // it's first heard.
+        database.SetCuePoint(path, edit.IntroEnd is null && Moved(database.GetCuePoint(original.Path)) is { } cuePoint ? cuePoint : TimeSpan.FromSeconds(edit.Cue));
         var replaced = library.Find(path) is not null;
         if (library.SongAt(path) is { } song)
         {
@@ -3183,6 +3181,13 @@ static int Run(ScreenshotTool.Request? capture)
         analyser.SaveSoon();
         if (Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(library.Root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             TakeInLibraryChanges();
+        // The folders that list it, wherever they are, in the music folder or not, read again: those in the folder list,
+        // and the one listed now, so it's there straight away.
+        var editFolder = LibraryFile.WithSeparator(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        foreach (var node in folders)
+            node.RefreshSongsHolding(editFolder);
+        if (browser.Source is { Path: { } shown } source && editFolder.StartsWith(LibraryFile.WithSeparator(shown), StringComparison.OrdinalIgnoreCase))
+            source.RefreshSongs();
         browser.Reload();
         screen.Log($"{(replaced ? "Made again" : "Made")} {Path.GetFileName(path)}: {edit.Summary}");
     }

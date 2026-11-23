@@ -240,6 +240,23 @@ sealed class LibraryNode
     }
 
     /// <summary>
+    /// Forgets the songs of this folder and every folder below it already looked in that holds
+    /// <paramref name="folder"/> (it, or one above it, which may list the songs under it), after a song's been added
+    /// there. Headings without a folder of their own are looked under.
+    /// </summary>
+    public void RefreshSongsHolding(string folder)
+    {
+        if (Path is { } path)
+        {
+            if (!folder.StartsWith(LibraryFile.WithSeparator(path), StringComparison.OrdinalIgnoreCase))
+                return;
+            RefreshSongs();
+        }
+        foreach (var child in _loadedChildren ?? [])
+            child.RefreshSongsHolding(folder);
+    }
+
+    /// <summary>
     /// Whether choosing it shows songs; a heading doesn't.
     /// </summary>
     public bool HasSongs => _songs is not null;

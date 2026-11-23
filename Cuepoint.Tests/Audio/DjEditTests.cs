@@ -84,6 +84,8 @@ public class DjEditTests
         // The intro's sixteen bars end on the song's first downbeat.
         Assert.Equal(16 * BAR - FIRST_BEAT, edit.Offset, 3);
         Assert.Equal(16 * BAR, edit.IntroEnd!.Value, 3);
+        // Cued to the very start, the intro's first beat.
+        Assert.Equal(0, edit.Cue);
         // Its drums play from the very start, on a downbeat.
         Assert.True(Rms(edit.Audio.Samples, 0, 0.1) > 0.1, $"{Rms(edit.Audio.Samples, 0, 0.1)} {Rms(edit.Audio.Samples, 0.1, 0.5)} {Rms(song.Samples, FIRST_BEAT, FIRST_BEAT + 0.1)} {edit.Summary}");
         Assert.True(Rms(edit.Audio.Samples, 4 * BAR, 6 * BAR) > 0.05);
@@ -207,6 +209,8 @@ public class DjEditTests
         Assert.Equal(0, edit!.Offset);
         Assert.Null(edit.IntroEnd);
         Assert.NotNull(edit.OutroStart);
+        // Cued to the song's first beat, where it's first heard, not to the outro.
+        Assert.Equal(FIRST_BEAT, edit.Cue, 2);
         for (var i = 0; i < (int)(30 * BAR * RATE) * CHANNELS; i += 97)
             Assert.Equal(song.Samples[i], edit.Audio.Samples[i]);
     }

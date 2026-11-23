@@ -174,6 +174,31 @@ public class LibraryTreeTests : IDisposable
     }
 
     [Fact]
+    public void A_song_added_to_a_folder_is_listed_once_the_folders_holding_it_are_refreshed()
+    {
+        var music = MusicFolder();
+        var album = music.Children.Single(node => node.Name == "Album");
+        var disc = album.Children.Single();
+        _ = music.Songs;
+        _ = album.Songs;
+        _ = disc.Songs;
+        ApplyAll();
+
+        _folder.File("Music", "Album", "b (Cuepoint DJ Edit).wav");
+        music.RefreshSongsHolding(LibraryFile.WithSeparator(_folder["Music", "Album"]));
+        _ = music.Songs;
+        _ = album.Songs;
+        _ = disc.Songs;
+        ApplyAll();
+
+        // The album and the folder above it (which may list what's under it) are read again; the disc below isn't.
+        Assert.Equal(2, album.Songs.Count);
+        Assert.Single(music.Songs);
+        Assert.Single(disc.Songs);
+        Assert.False(disc.IsLoadingSongs);
+    }
+
+    [Fact]
     public void Subfolders_found_there_and_then_are_kept_over_ones_still_coming()
     {
         var music = MusicFolder();

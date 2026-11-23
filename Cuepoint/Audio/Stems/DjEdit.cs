@@ -4,10 +4,11 @@ using Cuepoint.Audio.Analysis;
 namespace Cuepoint.Audio.Stems;
 
 /// <summary>
-/// A DJ edit of a song, made: its samples, its beat grid, how far into the edit the song itself was moved, and where
-/// the beats added at either end meet the song, in seconds through the edit (null for an end left as it was).
+/// A DJ edit of a song, made: its samples, its beat grid, how far into the edit the song itself was moved, where the
+/// beats added at either end meet the song, in seconds through the edit (null for an end left as it was), and where
+/// it's cued to start: the intro's first beat, or without one, where the song's first heard, on the nearest beat.
 /// </summary>
-sealed record DjEditResult(PcmAudio Audio, BeatGrid Grid, double Offset, double? IntroEnd, double? OutroStart, string Summary);
+sealed record DjEditResult(PcmAudio Audio, BeatGrid Grid, double Offset, double? IntroEnd, double? OutroStart, string Summary, double Cue = 0);
 
 /// <summary>
 /// Makes a DJ edit of a song: <see cref="BARS"/> bars of its own drums, from its drum stem, before it starts and after
@@ -644,8 +645,19 @@ static partial class DjEdit
             outroAt = start;
         }
 
+        // Cued to the intro's first beat, at the very start; or without one, to where the song's first heard, moved
+        // onto the nearest beat if it's within half of one, as a deck cues a song it's given.
+        var cue = 0.0;
+        if (intro is null)
+        {
+            var heard = look.FirstAudible;
+            var beat = grid.TimeOfBeat(Math.Round(grid.BeatNumberAt(heard)));
+            cue = beat >= 0 && Math.Abs(beat - heard) <= 30 / grid.BpmAt(heard) ? beat : heard;
+        }
+
         var audio = new PcmAudio(output, channels, rate);
-        return new DjEditResult(audio, EditGrid(look, offset, intro is not null, outro is not null ? (outroStart, 60 / outroBeat) : null, (double)frames / rate), offset, introEnd, outroAt, string.Join("; ", summary));
+        var editGrid = EditGrid(look, offset, intro is not null, outro is not null ? (outroStart, 60 / outroBeat) : null, (double)frames / rate);
+        return new DjEditResult(audio, editGrid, offset, introEnd, outroAt, string.Join("; ", summary), cue < 0.005 ? 0 : cue);
     }
 
     /// <summary>
