@@ -20,7 +20,7 @@ public class DjEditTests
     /// once the drums start; and anything else in <paramref name="extra"/>, a stereo frame at a time from a time in
     /// seconds.
     /// </summary>
-    static (PcmAudio Song, SongStems Stems, BeatGrid Grid) MakeSong(int bars, Range drums, Range vocals, int tailBars = 1, Func<double, float>? extra = null, int fadeBars = 0, bool bass = true, bool pads = true)
+    static (PcmAudio Song, SongStems Stems, BeatGrid Grid) MakeSong(int bars, Range drums, Range vocals, int tailBars = 1, Func<double, float>? extra = null, int fadeBars = 0, bool bass = true, bool pads = true, int drumPickupBeats = 0)
     {
         var duration = FIRST_BEAT + (bars + tailBars) * BAR;
         var frames = (int)(duration * RATE);
@@ -38,7 +38,8 @@ public class DjEditTests
             var noise = (float)(random.NextDouble() * 2 - 1);
 
             var drum = 0f;
-            if (beats >= 0 && bar >= drumFrom && bar < drumTo)
+            // The drums play their bars, and with a pickup, the last beats of the bar before them.
+            if (beats >= 0 && (bar >= drumFrom || bar == drumFrom - 1 && beatInBar >= 4 - drumPickupBeats) && bar < drumTo)
             {
                 drum += 0.5f * MathF.Sin((float)(2 * Math.PI * 60 * sinceBeat)) * MathF.Exp((float)(-sinceBeat / 0.06));
                 if (beatInBar is 1 or 3 && sinceBeat < 0.06)
@@ -245,7 +246,7 @@ public class DjEditTests
 
         Assert.Null(why);
         Assert.Equal(16 * BAR - (FIRST_BEAT + BAR), edit!.Offset, 3);
-        Assert.Contains("gap for its pickup", edit.Summary);
+        Assert.Contains("fill into its first beat", edit.Summary);
     }
 
     [Fact]
@@ -298,23 +299,46 @@ public class DjEditTests
     }
 
     [Fact]
-    public void A_pickup_before_the_first_downbeat_is_left_a_gap_in_the_beats()
+    public void A_drum_fill_before_the_first_downbeat_is_left_a_gap_in_the_beats()
     {
-        // A vocal beat before the first bar of drums: the first downbeat is the second bar's.
-        var pickup = FIRST_BEAT + 3 * BEAT;
-        var (song, stems, grid) = MakeSong(40, 1.., 1.., extra: t => t >= pickup && t < FIRST_BEAT + BAR ? 0.3f * MathF.Sin((float)(2 * Math.PI * 660 * t)) : 0);
+        // Two beats of drums before the first bar of them: the first downbeat is the second bar's.
+        var pickup = FIRST_BEAT + 2 * BEAT;
+        var (song, stems, grid) = MakeSong(40, 1.., 1.., drumPickupBeats: 2);
 
         var (edit, why) = DjEdit.Make(song, stems, grid);
 
         Assert.Null(why);
         Assert.Equal(16 * BAR - (FIRST_BEAT + BAR), edit!.Offset, 3);
         Assert.Contains("gap for its pickup", edit.Summary);
-        // Over the pickup there's nothing but the pickup.
+        // Over the fill there's nothing but the fill.
         var shift = (long)Math.Round(edit.Offset * RATE);
         for (var frame = (long)((pickup + 0.01) * RATE); frame < (long)((FIRST_BEAT + BAR - 0.01) * RATE); frame += 13)
             Assert.Equal(song.Samples[frame * CHANNELS], edit.Audio.Samples[(frame + shift) * CHANNELS]);
         // And the beats play up to it.
         Assert.True(Rms(edit.Audio.Samples, pickup + edit.Offset - BEAT, pickup + edit.Offset - 0.05) > 0.05);
+    }
+
+    [Fact]
+    public void A_voice_before_the_first_downbeat_has_the_beats_carry_on_under_it()
+    {
+        // A sung beat and a half before the first bar of the song, which comes in without drums, as an a cappella
+        // start does: the beats carry on under it, rather than stopping dead for it, and die away from the downbeat.
+        var pickup = FIRST_BEAT + 2.5 * BEAT;
+        var (song, stems, grid) = MakeSong(40, 3.., 1.., extra: t => t >= pickup && t < FIRST_BEAT + BAR ? 0.3f * MathF.Sin((float)(2 * Math.PI * 660 * t)) : 0);
+
+        var (edit, why) = DjEdit.Make(song, stems, grid);
+
+        Assert.Null(why);
+        Assert.Contains("landing on its first beat", edit!.Summary);
+        Assert.DoesNotContain("gap", edit.Summary);
+        var downbeat = edit.IntroEnd!.Value;
+        var under = edit.Audio.Samples.AsSpan((int)((downbeat - BEAT) * RATE) * CHANNELS, (int)(BEAT * RATE) * CHANNELS).ToArray();
+        var alone = song.Samples.AsSpan((int)((downbeat - BEAT - edit.Offset) * RATE) * CHANNELS, (int)(BEAT * RATE) * CHANNELS).ToArray();
+        Assert.True(Rms(under, 0, BEAT) > Rms(alone, 0, BEAT) * 1.2, $"{Rms(under, 0, BEAT)} against the voice alone, {Rms(alone, 0, BEAT)}");
+        // The bass brought in with the beats dies away over the first beat of the song, rather than stopping dead.
+        double Bass(double from, double seconds) => Goertzel(edit.Audio.Samples.AsSpan((int)(from * RATE) * CHANNELS, (int)(seconds * RATE) * CHANNELS).ToArray(), 55);
+        Assert.True(Bass(downbeat, BEAT / 4) > 0.03, $"{Bass(downbeat, BEAT / 4)}");
+        Assert.True(Bass(downbeat + BEAT, BEAT) < 0.01, $"{Bass(downbeat + BEAT, BEAT)}");
     }
 
     [Fact]

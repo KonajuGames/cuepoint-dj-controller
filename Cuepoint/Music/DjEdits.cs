@@ -8,7 +8,7 @@ namespace Cuepoint.Music;
 /// A DJ edit finished, or given up on: the song it's of, and the edit's file, title and what was made, or why there's
 /// none; and whether the song was separated into its stems for it, rather than having them on disk already.
 /// </summary>
-sealed record DjEditDone(Song Song, string? EditPath, string Title, DjEditResult? Edit, string? Why, bool Separated = false);
+sealed record DjEditDone(Song Song, string? EditPath, string Title, DjEditResult? Edit, string? Why, bool Separated = false, DjEditOptions? Options = null);
 
 /// <summary>
 /// Makes DJ edits of songs (see <see cref="DjEdit"/>), one at a time in the background: decoding the song, finding its
@@ -17,8 +17,9 @@ sealed record DjEditDone(Song Song, string? EditPath, string Title, DjEditResult
 /// </summary>
 sealed class DjEdits(StemSeparator separator)
 {
-    sealed class Job(Song song, string title, string artist, string album, string genre, BeatGrid grid, bool replace)
+    sealed class Job(Song song, string title, string artist, string album, string genre, BeatGrid grid, bool replace, DjEditOptions options)
     {
+        public DjEditOptions Options { get; } = options;
         public bool Replace { get; } = replace;
         public Song Song { get; } = song;
         public string Title { get; } = title;
@@ -57,17 +58,17 @@ sealed class DjEdits(StemSeparator separator)
     public static bool HasEdit(Song song) => File.Exists(DjEdit.EditPath(song.Path)) || File.Exists(DjEdit.OldEditPath(song.Path));
 
     /// <summary>
-    /// Starts making a DJ edit of <paramref name="song"/>, after any being made already, replacing one made before
-    /// only with <paramref name="replace"/>. Returns why not, if it can't be: see <see cref="WhyNot"/>, or there's one
-    /// already.
+    /// Starts making a DJ edit of <paramref name="song"/> as <paramref name="options"/> say (the defaults, if null),
+    /// after any being made already, replacing one made before only with <paramref name="replace"/>. Returns why not,
+    /// if it can't be: see <see cref="WhyNot"/>, or there's one already.
     /// </summary>
-    public string? Start(Song song, bool replace = false)
+    public string? Start(Song song, bool replace = false, DjEditOptions? options = null)
     {
         if (WhyNot(song) is { } why)
             return why;
         if (!replace && HasEdit(song))
             return "there's one already";
-        _waiting.Enqueue(new Job(song, DjEdit.EditTitle(song.Title), song.Artist, song.Album, song.Genre, song.Analysis!.Grid, replace));
+        _waiting.Enqueue(new Job(song, DjEdit.EditTitle(song.Title), song.Artist, song.Album, song.Genre, song.Analysis!.Grid, replace, (options ?? DjEditOptions.Default).Checked()));
         return null;
     }
 
@@ -101,7 +102,7 @@ sealed class DjEdits(StemSeparator separator)
             {
                 _job = null;
                 var (edit, why) = making.GetAwaiter().GetResult();
-                return new DjEditDone(job.Song, edit is null ? null : job.EditPath, job.Title, edit, why, Separated(job));
+                return new DjEditDone(job.Song, edit is null ? null : job.EditPath, job.Title, edit, why, Separated(job), job.Options);
             }
             if (job.Making is not null)
                 return null;
@@ -140,7 +141,7 @@ sealed class DjEdits(StemSeparator separator)
 
     static (DjEditResult? Edit, string? Why) Make(Job job, PcmAudio audio, SongStems stems)
     {
-        var (edit, why) = DjEdit.Make(audio, stems, job.Grid);
+        var (edit, why) = DjEdit.Make(audio, stems, job.Grid, job.Options);
         if (edit is not null)
         {
             // The original's cover, as it is, so the edit looks like the song it's of.

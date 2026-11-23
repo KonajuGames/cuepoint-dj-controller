@@ -1421,6 +1421,8 @@ static int Run(ScreenshotTool.Request? capture)
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var details = new DetailsDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
+    // How to make a DJ edit, its dropdowns opening in the menu drawn over it.
+    var djEditDialog = new DjEditDialog(ui, fonts.Body, fonts.Bold, fonts.Heading) { Menu = menu };
 
     // A set hotcue's menu: name it, colour it, make it a hot loop of so many beats, or clear it.
     void ChangeHotcue(Deck deck, int index, string? name, uint? color, double? loopEnd)
@@ -2012,6 +2014,7 @@ static int Run(ScreenshotTool.Request? capture)
     ui.Add(masterFx);
     ui.Add(microphone);
     ui.Add(liveStream);
+    ui.Add(djEditDialog);
     ui.Add(menu);
     ui.Add(prompt);
     ui.Add(details);
@@ -3077,10 +3080,10 @@ static int Run(ScreenshotTool.Request? capture)
                 // own, or made again in place of the one made before. Not for one that's an edit or extended mix
                 // already.
                 new MenuItem(
-                    songs.Count != 1 ? "Make a DJ edit"
+                    songs.Count != 1 ? "Make a DJ edit..."
                     : djEdits.WhyNot(songs[0]) is { } noEdit ? $"Make a DJ edit ({noEdit})"
                     : DjEdits.HasEdit(songs[0]) ? "Remake the DJ edit..."
-                    : "Make a DJ edit",
+                    : "Make a DJ edit...",
                     () => MakeDjEdit(songs[0]),
                     Enabled: songs.Count == 1 && djEdits.WhyNot(songs[0]) is null
                 ),
@@ -3195,33 +3198,39 @@ static int Run(ScreenshotTool.Request? capture)
         );
     }
 
-    // A DJ edit made before is only made again once it's agreed to replace it.
+    // How to make a DJ edit is asked first, starting from how this song's was made before, or else how the last was;
+    // one made before is replaced, as the dialog says.
     void MakeDjEdit(Song song)
     {
-        if (!DjEdits.HasEdit(song))
+        string? replacing = null;
+        if (DjEdits.HasEdit(song))
         {
-            StartDjEdit(song, replace: false);
-            return;
-        }
-        var (flac, wav) = (DjEdit.EditPath(song.Path), DjEdit.OldEditPath(song.Path));
-        var wavGoes = !File.Exists(wav) ? ""
-            : $" The WAV it was before, {Path.GetFileName(wav)}, {(FileDeletion.WouldRecycle(wav) ? "goes to the Recycle Bin" : "is deleted, as its drive has no Recycle Bin")}.";
-        confirmation.Show(
-            $"Replace the DJ edit of {song.Title}?",
-            (File.Exists(flac) ? $"{Path.GetFileName(flac)} is made again from the song, in place of the one there." : $"It's made again from the song as {Path.GetFileName(flac)}, a FLAC about half the size.")
+            var (flac, wav) = (DjEdit.EditPath(song.Path), DjEdit.OldEditPath(song.Path));
+            var wavGoes = !File.Exists(wav) ? ""
+                : $" The WAV it was before, {Path.GetFileName(wav)}, {(FileDeletion.WouldRecycle(wav) ? "goes to the Recycle Bin" : "is deleted, as its drive has no Recycle Bin")}.";
+            replacing = (File.Exists(flac) ? $"{Path.GetFileName(flac)} is made again from the song, in place of the one there." : $"It's made again from the song as {Path.GetFileName(flac)}, a FLAC about half the size.")
                 + wavGoes
-                + " Its hot cues and memory cues are the song's again, so any set on the edit itself are lost.",
-            "Replace",
-            () => StartDjEdit(song, replace: true)
+                + " Its hot cues and memory cues are the song's again, so any set on the edit itself are lost.";
+        }
+        djEditDialog.Show(
+            song.Title,
+            song.Notes.DjEditOptions ?? settings.DjEditOptions ?? DjEditOptions.Default,
+            replacing,
+            options =>
+            {
+                settings.DjEditOptions = options;
+                settings.Save(settingsPath);
+                StartDjEdit(song, replace: replacing is not null, options);
+            }
         );
     }
 
-    void StartDjEdit(Song song, bool replace)
+    void StartDjEdit(Song song, bool replace, DjEditOptions options)
     {
         string[] editPaths = [DjEdit.EditPath(song.Path), DjEdit.OldEditPath(song.Path)];
         if (replace && decks.FirstOrDefault(deck => editPaths.Contains(deck.FilePath, StringComparer.OrdinalIgnoreCase)) is { } loaded)
             screen.Log($"Can't make the DJ edit of {song.Title} again while it's on deck {loaded.Name}");
-        else if (djEdits.Start(song, replace) is { } why)
+        else if (djEdits.Start(song, replace, options) is { } why)
             screen.Log($"Can't make a DJ edit of {song.Title}: {why}");
         else
             screen.Log(
@@ -3299,7 +3308,7 @@ static int Run(ScreenshotTool.Request? capture)
                 (song.Analysis, song.AnalysisError) = (moved, null);
             }
         }
-        var notes = original.Notes with { DjEdit = Path.GetFileName(path) };
+        var notes = original.Notes with { DjEdit = Path.GetFileName(path), DjEditOptions = done.Options };
         database.SetNotes(original.Path, notes);
         original.Notes = notes;
         analyser.SaveSoon();
@@ -3696,7 +3705,7 @@ static int Run(ScreenshotTool.Request? capture)
                 screen.ScreenSize = new float2(size.X, size.Y) / screenScale;
                 if (controllerDialog is not null)
                     controllerDialog.ScreenSize = screen.ScreenSize;
-                headphones.ScreenSize = masterFx.ScreenSize = microphone.ScreenSize = liveStream.ScreenSize = menu.ScreenSize = prompt.ScreenSize = details.ScreenSize = confirmation.ScreenSize = tracklistDialog.ScreenSize = screen.ScreenSize;
+                headphones.ScreenSize = masterFx.ScreenSize = microphone.ScreenSize = liveStream.ScreenSize = menu.ScreenSize = prompt.ScreenSize = djEditDialog.ScreenSize = details.ScreenSize = confirmation.ScreenSize = tracklistDialog.ScreenSize = screen.ScreenSize;
                 screen.Update();
                 headphones.Refresh();
                 masterFx.Refresh();

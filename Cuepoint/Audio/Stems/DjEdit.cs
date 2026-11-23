@@ -11,6 +11,78 @@ namespace Cuepoint.Audio.Stems;
 sealed record DjEditResult(PcmAudio Audio, BeatGrid Grid, double Offset, double? IntroEnd, double? OutroStart, string Summary, double Cue = 0);
 
 /// <summary>
+/// What changes halfway through a DJ edit's intro and outro: the song's bass, its instruments or both, from the same bars
+/// as the drums, coming in (or in the outro, dropping out), or a bar without the kick, or nothing; or Auto, the bass if
+/// those bars have it, or else the instruments, or else the break.
+/// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<DjEditChange>))]
+enum DjEditChange
+{
+    Auto,
+    Nothing,
+    Bass,
+    Instruments,
+    BassAndInstruments,
+    Break,
+}
+
+/// <summary>
+/// How a DJ edit's beats give way to the song after its intro, take over from it at its outro, or end: Auto, as the
+/// song suits; a hit on the downbeat dying away; a fade; a low-pass filter sweep; an echo; or a cut.
+/// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<DjEditTransition>))]
+enum DjEditTransition
+{
+    Auto,
+    Hit,
+    Fade,
+    Filter,
+    Echo,
+    Cut,
+}
+
+/// <summary>
+/// Choices in how a DJ edit's made: how many bars of beats each end has, what changes halfway through, and how the
+/// beats give way to the song, take over from it, and end, over how many beats, and for the intro, whether before the
+/// song starts or across its start; and how often an echo repeats. The defaults are what suits most songs.
+/// </summary>
+sealed record DjEditOptions
+{
+    public int IntroBars { get; init; } = 16;
+    public DjEditChange IntroChange { get; init; } = DjEditChange.Auto;
+    public DjEditTransition IntroEnd { get; init; } = DjEditTransition.Auto;
+    public int IntroEndBeats { get; init; } = 4;
+    public bool IntroEndAcrossSong { get; init; }
+
+    public int OutroBars { get; init; } = 16;
+    public DjEditChange OutroChange { get; init; } = DjEditChange.Auto;
+    public DjEditTransition OutroStart { get; init; } = DjEditTransition.Auto;
+    public int OutroStartBeats { get; init; } = 4;
+    public bool OutroStartUnderSong { get; init; }
+    public DjEditTransition OutroEnd { get; init; } = DjEditTransition.Auto;
+    public int OutroEndBeats { get; init; } = 4;
+
+    public double EchoBeats { get; init; } = 1;
+
+    public static readonly DjEditOptions Default = new();
+
+    /// <summary>
+    /// The same, with anything out of range brought into it: ends of 4 to 64 bars, in whole bars of 4, transitions
+    /// of 1 to 64 beats, and echoes every eighth note to every bar.
+    /// </summary>
+    public DjEditOptions Checked() =>
+        this with
+        {
+            IntroBars = Math.Clamp(IntroBars / 4 * 4, 4, 64),
+            OutroBars = Math.Clamp(OutroBars / 4 * 4, 4, 64),
+            IntroEndBeats = Math.Clamp(IntroEndBeats, 1, 64),
+            OutroStartBeats = Math.Clamp(OutroStartBeats, 1, 64),
+            OutroEndBeats = Math.Clamp(OutroEndBeats, 1, 64),
+            EchoBeats = Math.Clamp(EchoBeats, 0.5, 4),
+        };
+}
+
+/// <summary>
 /// Makes a DJ edit of a song: <see cref="BARS"/> bars of its own drums, from its drum stem, before it starts and after
 /// it ends, so it can be mixed in and out over beats alone. A phrase into each something changes: the song's bass,
 /// from the same bars as the drums, comes in (or at the end, drops out a phrase before it), or failing that its
@@ -115,7 +187,7 @@ static partial class DjEdit
     /// <paramref name="grid"/> says. Returns why not instead, if there's nothing to add or nothing to make the beats
     /// from.
     /// </summary>
-    public static (DjEditResult? Edit, string? Why) Make(PcmAudio song, SongStems stems, BeatGrid grid)
+    public static (DjEditResult? Edit, string? Why) Make(PcmAudio song, SongStems stems, BeatGrid grid, DjEditOptions? options = null)
     {
         if (song.Channels != stems.Channels || song.Frames != stems.Frames)
             return (null, "its stems aren't the same length as it");
@@ -130,7 +202,7 @@ static partial class DjEdit
             return (null, "it hasn't a steady bar of drums to loop for an intro");
         if (!look.HasOutro && (outro = look.ChooseLoop(look.OutroBar - 1, -1)) is null)
             return (null, "it hasn't a steady bar of drums to loop for an outro");
-        return (Render(look, intro, outro), null);
+        return (Render(look, intro, outro, (options ?? DjEditOptions.Default).Checked()), null);
     }
 
     /// <summary>
@@ -149,6 +221,7 @@ static partial class DjEdit
         Break,
         Bass,
         Instruments,
+        BassAndInstruments,
     }
 
     /// <summary>
@@ -166,6 +239,13 @@ static partial class DjEdit
         Fill,
         Hit,
     }
+
+    // How faint an echo's last repeat is.
+    const float ECHO_LAST = 0.03f;
+
+    // Each echo loses more of its lows and highs than the one before, below and above these, in hertz.
+    const double ECHO_LOW_HZ = 250;
+    const double ECHO_HIGH_HZ = 7000;
 
     /// <summary>
     /// The song looked over bar by bar from its first downbeat: where it's audible, where its drums play, where it
@@ -439,18 +519,20 @@ static partial class DjEdit
         /// What's looped with the drums of <paramref name="loop"/> for its change: the song's bass stem; its
         /// instruments, around the loop's bars; or for a break, its drums there without the kick.
         /// </summary>
-        public Source LayerSource(Loop loop)
+        public Source LayerSource(Loop loop, Layer layer)
         {
-            if (loop.Layer == Layer.Bass)
+            if (layer == Layer.Bass)
                 return new Source(Stems.Bass, 0);
             var (from, to) = (Frame(loop.Beat - BEATS_PER_BAR), Frame(loop.Beat + (loop.Bars + 1) * BEATS_PER_BAR));
             var samples = new float[(to - from) * Channels];
-            if (loop.Layer == Layer.Instruments)
+            if (layer is Layer.Instruments or Layer.BassAndInstruments)
             {
+                // The song less its vocals and drums, and its bass too unless it's wanted.
+                var bass = layer == Layer.BassAndInstruments ? 0 : 1;
                 for (var i = 0; i < samples.Length; i++)
                 {
                     var at = from * Channels + i;
-                    samples[i] = Song.Samples[at] - Stems.Vocals[at] - Stems.Drums[at] - Stems.Bass[at];
+                    samples[i] = Song.Samples[at] - Stems.Vocals[at] - Stems.Drums[at] - bass * Stems.Bass[at];
                 }
                 return new Source(samples, from);
             }
@@ -493,53 +575,73 @@ static partial class DjEdit
         }
 
         /// <summary>
-        /// How the song should come in after the intro's beats: if it has a pickup before its first downbeat, the
-        /// beats leave a gap for it from where it starts (to the eighth note); if it comes straight in on its drums,
-        /// a fill rolls into it; and if it starts without drums, the beats land on its first downbeat with a hit.
+        /// How the song should come in after the intro's beats: if it has a drum fill before its first downbeat, the
+        /// beats leave a gap for it from where it starts (to the eighth note), so it takes over from them; otherwise
+        /// they carry on under any pickup it has (a voice, say, which they'd otherwise stop dead for), and if it comes
+        /// straight in on its drums, a fill rolls into it, or if it starts without drums, they land on its first
+        /// downbeat with a hit.
         /// </summary>
         public (Entry Entry, double GapFrom) ChooseEntry()
         {
             var downbeat = Time(Downbeat);
-            var eighth = 30 / Grid.BpmAt(downbeat);
-            if (FirstAudible < downbeat - eighth / 2)
-            {
-                var from = Math.Max(downbeat - BEATS_PER_BAR * 2 * eighth, downbeat - Math.Ceiling((downbeat - FirstAudible) / eighth - 0.25) * eighth);
-                return (Entry.Gap, from);
-            }
+            var leadIn = LeadInStart();
+            if (leadIn < downbeat && Rms(Stems.Drums, Channels, (long)(FirstAudible * Rate), (long)(downbeat * Rate)) >= DRUMS_PLAYING * DrumLevel)
+                return (Entry.Gap, leadIn);
             return (Playing(0) ? Entry.Fill : Entry.Hit, downbeat);
+        }
+
+        /// <summary>
+        /// Where the song's first heard, if that's before its first downbeat (a pickup, or a lead-in, up to a bar of
+        /// it), moved back to the eighth note; its first downbeat, if not.
+        /// </summary>
+        public double LeadInStart()
+        {
+            var downbeat = Time(Downbeat);
+            var eighth = 30 / Grid.BpmAt(downbeat);
+            return FirstAudible < downbeat - eighth / 2
+                ? Math.Max(downbeat - BEATS_PER_BAR * 2 * eighth, downbeat - Math.Ceiling((downbeat - FirstAudible) / eighth - 0.25) * eighth)
+                : downbeat;
         }
     }
 
     /// <summary>
     /// The edit: the intro's beats, the song moved along to follow them, and the outro's after it.
     /// </summary>
-    static DjEditResult Render(Look look, Loop? intro, Loop? outro)
+    static DjEditResult Render(Look look, Loop? intro, Loop? outro, DjEditOptions options)
     {
         var (song, grid, rate, channels) = (look.Song, look.Grid, look.Rate, look.Channels);
         var downbeat = look.Time(look.Downbeat);
+        var (introBars, outroBars) = (options.IntroBars, options.OutroBars);
 
         // How far along the song moves: the intro's bars before its first downbeat, to the nearest frame. A song
         // that's silent for longer than that before its first downbeat loses the start of its silence.
         var introBeat = 60 / grid.BpmAt(downbeat);
-        var shift = intro is null ? 0 : (long)Math.Round((BARS * BEATS_PER_BAR * introBeat - downbeat) * rate);
+        var shift = intro is null ? 0 : (long)Math.Round((introBars * BEATS_PER_BAR * introBeat - downbeat) * rate);
         var offset = (double)shift / rate;
 
-        // Where the outro's beats start and finish, in the song's time: from the bar its drums stop at, for BARS
-        // bars or more, to the end of a phrase, or of half a phrase if the whole one would be more than four over.
+        // Where the outro's beats start and finish, in the song's time: from the bar its drums stop at, for its bars
+        // or more, to the end of a phrase, or of half a phrase if the whole one would be more than four over.
         var outroBar = look.OutroBar;
         var endBar = outroBar;
-        double outroBeat = 0, outroStart = 0, outroEnd = 0;
+        double outroBeat = 0, outroStart = 0, outroEnd = 0, tail = 0;
         if (outro is not null)
         {
-            endBar = (outroBar + BARS + PHRASE_BARS - 1) / PHRASE_BARS * PHRASE_BARS;
-            if (endBar - outroBar > BARS + 4)
-                endBar = (outroBar + BARS + 3) / 4 * 4;
+            endBar = (outroBar + outroBars + PHRASE_BARS - 1) / PHRASE_BARS * PHRASE_BARS;
+            if (endBar - outroBar > outroBars + 4)
+                endBar = (outroBar + outroBars + 3) / 4 * 4;
             outroStart = look.Time(look.BarBeat(outroBar));
             outroBeat = 60 / grid.BpmAt(outroStart - 0.001);
             outroEnd = outroStart + (endBar - outroBar) * BEATS_PER_BAR * outroBeat;
+            // A last hit, or echoes, ring on past the end of the phrase.
+            tail = options.OutroEnd switch
+            {
+                DjEditTransition.Auto => outroBeat,
+                DjEditTransition.Hit or DjEditTransition.Echo => options.OutroEndBeats * outroBeat,
+                _ => 0.01,
+            };
         }
 
-        var frames = outro is not null ? (long)Math.Ceiling((outroEnd + offset + outroBeat) * rate) : song.Frames + shift;
+        var frames = outro is not null ? (long)Math.Ceiling((outroEnd + offset + tail) * rate) : song.Frames + shift;
         var output = new float[frames * channels];
 
         // The song, faded out over the outro's last two bars if it's still going then, or over its first two in
@@ -556,98 +658,20 @@ static partial class DjEdit
                 output[to * channels + c] = song.Samples[frame * channels + c] * gain;
         }
 
-        var drums = new Source(look.Stems.Drums, 0);
         var summary = new List<string>();
         double? introEnd = null;
         if (intro is not null)
         {
-            var bar = BEATS_PER_BAR * introBeat;
-            var end = downbeat + offset;
-            var start = end - BARS * bar;
-            var change = start + PHRASE_BARS * bar;
-            var (entry, gapFrom) = look.ChooseEntry();
-            var gapStart = entry switch
-            {
-                Entry.Gap => gapFrom + offset,
-                Entry.Fill => end - introBeat,
-                _ => end,
-            };
-            double Open(double time) => 1 - Within(time, gapStart, double.MaxValue);
-
-            // The drums all through but for the gap, and a break, if there's nothing to bring in, in the bar before
-            // the change; or what there is to bring in, from the change on.
-            var layer = look.LayerSource(intro);
-            if (intro.Layer == Layer.Break)
-            {
-                Lay(output, channels, rate, drums, grid, intro, start, end, introBeat, time => Open(time) * (1 - Within(time, change - bar, change)));
-                Lay(output, channels, rate, layer, grid, intro, start, end, introBeat, time => Within(time, change - bar, change));
-            }
-            else
-            {
-                Lay(output, channels, rate, drums, grid, intro, start, end, introBeat, Open);
-                Lay(output, channels, rate, layer, grid, intro, start, end, introBeat, time => Open(time) * Within(time, change, double.MaxValue));
-            }
-
-            var gain = intro.Gain;
-            var loopStart = grid.TimeOfBeat(intro.Beat);
-            var changing = intro.Layer switch
-            {
-                Layer.Bass => $"its bass coming in after {PHRASE_BARS}",
-                Layer.Instruments => $"its instruments coming in after {PHRASE_BARS}",
-                _ => $"the kick dropping out for bar {PHRASE_BARS}",
-            };
-            switch (entry)
-            {
-                case Entry.Fill:
-                    // The loop's backbeat, the snare or clap, on each sixteenth of the last beat, getting louder.
-                    var backbeat = grid.TimeOfBeat(intro.Beat + 1);
-                    for (var i = 0; i < 4; i++)
-                        Hit(output, channels, rate, look.Stems.Drums, backbeat, end - introBeat + i * introBeat / 4, introBeat / 4, gain * (0.55f + 0.15f * i), decay: false);
-                    summary.Add($"{BARS} bars of beats before it, {changing}, with a fill into its first beat");
-                    break;
-                case Entry.Gap:
-                    summary.Add($"{BARS} bars of beats before it, {changing}, leaving a gap for its pickup");
-                    break;
-                default:
-                    Hit(output, channels, rate, look.Stems.Drums, loopStart, end, introBeat, gain, decay: true);
-                    summary.Add($"{BARS} bars of beats before it, {changing}, landing on its first beat");
-                    break;
-            }
+            introEnd = downbeat + offset;
+            summary.Add(RenderIntro(output, look, intro, options, introEnd.Value, introBeat, offset));
             FadeIn(output, channels, rate);
-            introEnd = end;
         }
 
         double? outroAt = null;
         if (outro is not null)
         {
-            var bar = BEATS_PER_BAR * outroBeat;
-            var (start, end) = (outroStart + offset, outroEnd + offset);
-            var change = end - PHRASE_BARS * bar;
-
-            // The drums all through, with what was brought in with them until a phrase before the end, coming in over
-            // the song's fade if it fades out; or if there's nothing, a break in the bar before then.
-            var layer = look.LayerSource(outro);
-            if (outro.Layer == Layer.Break)
-            {
-                Lay(output, channels, rate, drums, grid, outro, start, end, outroBeat, time => 1 - Within(time, change - bar, change));
-                Lay(output, channels, rate, layer, grid, outro, start, end, outroBeat, time => Within(time, change - bar, change));
-            }
-            else
-            {
-                Lay(output, channels, rate, drums, grid, outro, start, end, outroBeat, _ => 1);
-                Lay(output, channels, rate, layer, grid, outro, start, end, outroBeat, time => Within(time, double.MinValue, change) * (look.FadesOut ? Math.Min(1, (time - start) / (2 * bar)) : 1));
-            }
-
-            // A last hit on the one after the phrase.
-            Hit(output, channels, rate, look.Stems.Drums, grid.TimeOfBeat(outro.Beat), end, outroBeat, outro.Gain, decay: true);
-            var changing = outro.Layer switch
-            {
-                Layer.Bass => $"its bass dropping out for the last {PHRASE_BARS}",
-                Layer.Instruments => $"its instruments dropping out for the last {PHRASE_BARS}",
-                _ => $"the kick dropping out for a bar before the last {PHRASE_BARS}",
-            };
-            summary.Add($"{endBar - outroBar} bars after it{(look.FadesOut ? " in place of its fade-out" : "")}, {changing}, to the end of the phrase");
-            outroAt = start;
+            outroAt = outroStart + offset;
+            summary.Add(RenderOutro(output, look, outro, options, outroAt.Value, outroEnd + offset, outroBeat, endBar - outroBar));
         }
 
         // Cued to the intro's first beat, at the very start; or without one, to where the song's first heard, moved
@@ -661,8 +685,333 @@ static partial class DjEdit
         }
 
         var audio = new PcmAudio(output, channels, rate);
-        var editGrid = EditGrid(look, offset, intro is not null, outro is not null ? (outroStart, 60 / outroBeat) : null, (double)frames / rate);
+        var editGrid = EditGrid(look, offset, intro is not null ? introBars : null, outro is not null ? (outroStart, 60 / outroBeat) : null, (double)frames / rate);
         return new DjEditResult(audio, editGrid, offset, introEnd, outroAt, string.Join("; ", summary), cue < 0.005 ? 0 : cue);
+    }
+
+    /// <summary>
+    /// What's brought in with the beats of <paramref name="loop"/> for its change, as <paramref name="change"/> asks:
+    /// for Auto, what the loop's bars have; null for nothing.
+    /// </summary>
+    static Layer? ChangeLayer(DjEditChange change, Loop loop) =>
+        change switch
+        {
+            DjEditChange.Auto => loop.Layer,
+            DjEditChange.Bass => Layer.Bass,
+            DjEditChange.Instruments => Layer.Instruments,
+            DjEditChange.BassAndInstruments => Layer.BassAndInstruments,
+            DjEditChange.Break => Layer.Break,
+            _ => null,
+        };
+
+    static string Changing(Layer? layer, int bars, bool intro) =>
+        layer switch
+        {
+            Layer.Bass => intro ? $"its bass coming in after {bars}" : $"its bass dropping out for the last {bars}",
+            Layer.Instruments => intro ? $"its instruments coming in after {bars}" : $"its instruments dropping out for the last {bars}",
+            Layer.BassAndInstruments => intro ? $"its bass and instruments coming in after {bars}" : $"its bass and instruments dropping out for the last {bars}",
+            Layer.Break => intro ? $"the kick dropping out for bar {bars}" : $"the kick dropping out for a bar before the last {bars}",
+            _ => "beats alone",
+        };
+
+    static string Span(double seconds, double beat)
+    {
+        var beats = (int)Math.Round(seconds / beat);
+        return beats % BEATS_PER_BAR == 0 ? (beats == BEATS_PER_BAR ? "a bar" : $"{beats / BEATS_PER_BAR} bars") : beats == 1 ? "a beat" : $"{beats} beats";
+    }
+
+    /// <summary>
+    /// The intro's beats, laid over the edit: <paramref name="end"/> is the song's first downbeat in it. Returns what
+    /// was done, to say.
+    /// </summary>
+    static string RenderIntro(float[] output, Look look, Loop intro, DjEditOptions options, double end, double beat, double offset)
+    {
+        var (grid, rate, channels) = (look.Grid, look.Rate, look.Channels);
+        var bars = options.IntroBars;
+        var bar = BEATS_PER_BAR * beat;
+        var start = end - bars * bar;
+        var half = bars / 2;
+        var change = start + half * bar;
+        var drums = new Source(look.Stems.Drums, 0);
+        var kind = ChangeLayer(options.IntroChange, intro);
+        var layer = kind is { } k ? look.LayerSource(intro, k) : null;
+        var changing = Changing(kind, half, intro: true);
+        var gain = intro.Gain;
+        var loopStart = grid.TimeOfBeat(intro.Beat);
+
+        // The drums all through, but for a gap, and a break, if that's the change, in the bar before it; or what's
+        // brought in, from the change on.
+        void LayBeats(float[] into, double to, Func<double, double> open)
+        {
+            if (kind == Layer.Break)
+            {
+                Lay(into, channels, rate, drums, grid, intro, start, to, beat, time => open(time) * (1 - Within(time, change - bar, change)));
+                Lay(into, channels, rate, layer!, grid, intro, start, to, beat, time => open(time) * Within(time, change - bar, change));
+            }
+            else
+            {
+                Lay(into, channels, rate, drums, grid, intro, start, to, beat, open);
+                if (layer is not null)
+                    Lay(into, channels, rate, layer, grid, intro, start, to, beat, time => open(time) * Within(time, change, double.MaxValue));
+            }
+        }
+
+        if (options.IntroEnd == DjEditTransition.Auto)
+        {
+            var (entry, gapFrom) = look.ChooseEntry();
+            var gapStart = entry switch
+            {
+                Entry.Gap => gapFrom + offset,
+                Entry.Fill => end - beat,
+                _ => end,
+            };
+            LayBeats(output, end, time => 1 - Within(time, gapStart, double.MaxValue));
+            switch (entry)
+            {
+                case Entry.Fill:
+                    // The loop's backbeat, the snare or clap, on each sixteenth of the last beat, getting louder.
+                    var backbeat = grid.TimeOfBeat(intro.Beat + 1);
+                    for (var i = 0; i < 4; i++)
+                        Hit(output, channels, rate, drums, backbeat, end - beat + i * beat / 4, beat / 4, gain * (0.55f + 0.15f * i), decay: false);
+                    return $"{bars} bars of beats before it, {changing}, with a fill into its first beat";
+                case Entry.Gap:
+                    return $"{bars} bars of beats before it, {changing}, leaving a gap for its pickup";
+                default:
+                    // The drums, and what came in with them, die away from the song's first downbeat rather than
+                    // stopping dead on it.
+                    Hit(output, channels, rate, drums, loopStart, end, beat, gain, decay: true);
+                    if (layer is not null && kind != Layer.Break)
+                        Hit(output, channels, rate, layer, loopStart, end, beat, gain, decay: true);
+                    return $"{bars} bars of beats before it, {changing}, landing on its first beat";
+            }
+        }
+
+        // The way out as chosen, over the stretch before the song's first downbeat, or after it, under the song's
+        // start: the beats stop at its end (cut, faded or filtered away), or at its start (a hit or echoes ringing on
+        // over it). A hit lands on the downbeat, whichever.
+        var length = options.IntroEndBeats * beat;
+        var transition = options.IntroEnd;
+        var (from, to) = transition == DjEditTransition.Hit || options.IntroEndAcrossSong ? (end, end + length) : (end - length, end);
+        var stop = transition is DjEditTransition.Hit or DjEditTransition.Echo ? from : to;
+        var beats = new float[(long)Math.Ceiling((to + length + bar) * rate) * channels];
+        LayBeats(beats, stop, _ => 1);
+        string ending;
+        switch (transition)
+        {
+            case DjEditTransition.Fade:
+                Shape(beats, channels, rate, from, to, comingIn: false, filter: false);
+                ending = $"fading out over {Span(length, beat)}";
+                break;
+            case DjEditTransition.Filter:
+                Shape(beats, channels, rate, from, to, comingIn: false, filter: true);
+                ending = $"filtering out over {Span(length, beat)}";
+                break;
+            case DjEditTransition.Echo:
+                Echo(beats, channels, rate, from, options.EchoBeats * beat, length);
+                ending = $"echoing out over {Span(length, beat)}";
+                break;
+            case DjEditTransition.Hit:
+                Hit(beats, channels, rate, drums, loopStart, from, length, gain, decay: true);
+                if (layer is not null && kind != Layer.Break)
+                    Hit(beats, channels, rate, layer, loopStart, from, length, gain, decay: true);
+                ending = $"landing on its first beat and dying away over {Span(length, beat)}";
+                break;
+            default:
+                ending = "stopping";
+                break;
+        }
+        Mix(output, beats, 0, channels);
+        var where = transition == DjEditTransition.Hit ? "" : options.IntroEndAcrossSong ? " into its start" : " before it starts";
+        return $"{bars} bars of beats before it, {changing}, {ending}{where}";
+    }
+
+    /// <summary>
+    /// The outro's beats, laid over the edit from <paramref name="start"/>, where the song's beats stop, to
+    /// <paramref name="end"/>, the end of the phrase, <paramref name="bars"/> bars on. Returns what was done, to say.
+    /// </summary>
+    static string RenderOutro(float[] output, Look look, Loop outro, DjEditOptions options, double start, double end, double beat, int bars)
+    {
+        var (grid, rate, channels) = (look.Grid, look.Rate, look.Channels);
+        var bar = BEATS_PER_BAR * beat;
+        var half = options.OutroBars / 2;
+        var change = end - half * bar;
+        var drums = new Source(look.Stems.Drums, 0);
+        var kind = ChangeLayer(options.OutroChange, outro);
+        var layer = kind is { } k ? look.LayerSource(outro, k) : null;
+        var changing = Changing(kind, half, intro: false);
+
+        // Taking over from the song: straight away (cut), or faded or filtered in, over the stretch after the song's
+        // beats stop, or before, under its last bars.
+        var coming = options.OutroStart is DjEditTransition.Fade or DjEditTransition.Filter;
+        var inLength = options.OutroStartBeats * beat;
+        var (inFrom, inTo) = !coming ? (start, start) : options.OutroStartUnderSong ? (start - inLength, start) : (start, start + inLength);
+        // Laid from a bar line, so the loop's bars fall where the song's do.
+        var layFrom = start - Math.Ceiling((start - inFrom) / bar - 1e-9) * bar;
+
+        // Going out: faded or filtered away over the end of the phrase, or stopped at it, with a hit or echoes ringing
+        // on after it.
+        var going = options.OutroEnd == DjEditTransition.Auto ? DjEditTransition.Hit : options.OutroEnd;
+        var outLength = options.OutroEnd == DjEditTransition.Auto ? beat : options.OutroEndBeats * beat;
+        var origin = Math.Max(0, layFrom - bar);
+        var beats = new float[(long)Math.Ceiling((end + outLength + bar - origin) * rate) * channels];
+        var (from, to) = (layFrom - origin, end - origin);
+        double Fading(double time) => look.FadesOut ? Math.Min(1, (time + origin - start) / (2 * bar)) : 1;
+        if (kind == Layer.Break)
+        {
+            Lay(beats, channels, rate, drums, grid, outro, from, to, beat, time => 1 - Within(time + origin, change - bar, change));
+            Lay(beats, channels, rate, layer!, grid, outro, from, to, beat, time => Within(time + origin, change - bar, change));
+        }
+        else
+        {
+            Lay(beats, channels, rate, drums, grid, outro, from, to, beat, _ => 1);
+            if (layer is not null)
+                Lay(beats, channels, rate, layer, grid, outro, from, to, beat, time => Within(time + origin, double.MinValue, change) * Fading(time));
+        }
+
+        // Nothing before the beats come in, then in as chosen.
+        Shape(beats, channels, rate, inFrom - origin, inTo - origin, comingIn: true, filter: options.OutroStart == DjEditTransition.Filter);
+
+        string ending;
+        switch (going)
+        {
+            case DjEditTransition.Fade:
+                Shape(beats, channels, rate, end - outLength - origin, end - origin, comingIn: false, filter: false);
+                ending = $"fading out over the last {Span(outLength, beat)}";
+                break;
+            case DjEditTransition.Filter:
+                Shape(beats, channels, rate, end - outLength - origin, end - origin, comingIn: false, filter: true);
+                ending = $"filtering out over the last {Span(outLength, beat)}";
+                break;
+            case DjEditTransition.Echo:
+                Echo(beats, channels, rate, end - origin, options.EchoBeats * beat, outLength);
+                ending = $"echoing out over {Span(outLength, beat)} after it";
+                break;
+            case DjEditTransition.Cut:
+                ending = "stopping at the end of the phrase";
+                break;
+            default:
+                // A last hit on the one after the phrase.
+                Hit(beats, channels, rate, drums, grid.TimeOfBeat(outro.Beat), end - origin, outLength, outro.Gain, decay: true);
+                ending = options.OutroEnd == DjEditTransition.Auto ? "to the end of the phrase" : $"landing on the end of the phrase and dying away over {Span(outLength, beat)}";
+                break;
+        }
+        Mix(output, beats, (long)Math.Round(origin * rate), channels);
+
+        var takingOver = !coming ? "" : $", {(options.OutroStart == DjEditTransition.Filter ? "filtering" : "fading")} in over {Span(inLength, beat)}{(options.OutroStartUnderSong ? " under its end" : "")}";
+        return $"{bars} bars after it{(look.FadesOut ? " in place of its fade-out" : "")}{takingOver}, {changing}, {ending}";
+    }
+
+    // Adds what's in `beats` into `output`, from frame `at` of it.
+    static void Mix(float[] output, float[] beats, long at, int channels)
+    {
+        var from = at * channels;
+        for (long i = 0; i < beats.Length && from + i < output.Length; i++)
+        {
+            if (from + i >= 0)
+                output[from + i] += beats[i];
+        }
+    }
+
+    /// <summary>
+    /// Brings <paramref name="beats"/> in from nothing, or with <paramref name="comingIn"/> false, takes them away to
+    /// nothing, from <paramref name="from"/> to <paramref name="to"/> seconds: by their level, on a curve even to the
+    /// ear, or with <paramref name="filter"/>, a low-pass sweeping between the whole sound and the deepest bass, its
+    /// level following over the quarter nearest nothing. Silent before it coming in, and after it going out.
+    /// </summary>
+    static void Shape(float[] beats, int channels, int rate, double from, double to, bool comingIn, bool filter)
+    {
+        var frames = beats.Length / channels;
+        var (first, last) = (from * rate, to * rate);
+        var state = new double[channels * 2];
+        for (var frame = 0; frame < frames; frame++)
+        {
+            var along = last > first ? Math.Clamp((frame - first) / (last - first), 0, 1) : frame >= first ? 1 : 0;
+            var presence = comingIn ? along : 1 - along;
+            if (presence >= 1 && !filter)
+                continue;
+            double gain;
+            var cutoff = 0.0;
+            if (filter)
+            {
+                cutoff = FILTER_LOW_HZ * Math.Pow(FILTER_HIGH_HZ / FILTER_LOW_HZ, presence);
+                gain = Math.Min(1, presence / 0.25);
+            }
+            else
+                gain = presence <= 0 ? 0 : Math.Pow(10, -FADE_DB * (1 - presence) / 20);
+            var a = filter ? 1 - Math.Exp(-2 * Math.PI * cutoff / rate) : 1;
+            for (var c = 0; c < channels; c++)
+            {
+                var x = (double)beats[frame * channels + c];
+                if (filter && presence < 1)
+                {
+                    state[c * 2] += a * (x - state[c * 2]);
+                    state[c * 2 + 1] += a * (state[c * 2] - state[c * 2 + 1]);
+                    x = state[c * 2 + 1];
+                }
+                else if (filter)
+                    state[c * 2] = state[c * 2 + 1] = x;
+                beats[frame * channels + c] = (float)(x * gain);
+            }
+        }
+    }
+
+    // A fade's far end, this far down, in decibels, before nothing; and a filter sweep's ends, in hertz.
+    const double FADE_DB = 48;
+    const double FILTER_LOW_HZ = 40;
+    const double FILTER_HIGH_HZ = 18000;
+
+    /// <summary>
+    /// An echo of the last <paramref name="delay"/> seconds of <paramref name="beats"/> before <paramref name="at"/>,
+    /// repeating every <paramref name="delay"/> seconds from there for <paramref name="length"/> seconds, each repeat
+    /// quieter than the one before, down to a whisper by the end, and thinner, through one more pass of a high-pass at
+    /// <see cref="ECHO_LOW_HZ"/> and a low-pass at <see cref="ECHO_HIGH_HZ"/>.
+    /// </summary>
+    static void Echo(float[] beats, int channels, int rate, double at, double delay, double length)
+    {
+        var size = (int)Math.Round(delay * rate);
+        var start = (int)Math.Round(at * rate) - size;
+        if (size <= 0 || start < 0 || (start + size) * channels > beats.Length)
+            return;
+        var echo = beats.AsSpan(start * channels, size * channels).ToArray();
+
+        // Eased in and out over a moment, so its repeats don't click where they join.
+        var ease = Math.Max(1, (int)(GAP_SECONDS * rate));
+        for (var i = 0; i < Math.Min(ease, size); i++)
+        {
+            for (var c = 0; c < channels; c++)
+            {
+                echo[i * channels + c] *= (float)i / ease;
+                echo[(size - 1 - i) * channels + c] *= (float)i / ease;
+            }
+        }
+
+        var repeats = Math.Max(1, (int)Math.Round(length / delay));
+        var feedback = (float)Math.Clamp(Math.Pow(ECHO_LAST, 1.0 / repeats), 0.3, 0.85);
+        var low = (float)(1 - Math.Exp(-2 * Math.PI * ECHO_LOW_HZ / rate));
+        var high = (float)(1 - Math.Exp(-2 * Math.PI * ECHO_HIGH_HZ / rate));
+        var frames = beats.Length / channels;
+        var gain = 1f;
+        for (var repeat = 1; repeat <= repeats; repeat++)
+        {
+            gain *= feedback;
+            for (var c = 0; c < channels; c++)
+            {
+                float below = 0, smooth = 0;
+                for (var i = 0; i < size; i++)
+                {
+                    var x = echo[i * channels + c];
+                    below += low * (x - below);
+                    smooth += high * (x - below - smooth);
+                    echo[i * channels + c] = smooth;
+                }
+            }
+            var to = start + repeat * size;
+            for (var i = 0; i < size && to + i < frames; i++)
+            {
+                for (var c = 0; c < channels; c++)
+                    beats[(to + i) * channels + c] += echo[i * channels + c] * gain;
+            }
+        }
     }
 
     /// <summary>
@@ -681,15 +1030,16 @@ static partial class DjEdit
     /// its first beat, at the very start, so a grid kept to a few decimal places still has its first beat there rather
     /// than a moment after, counted back from the song.
     /// </summary>
-    static BeatGrid EditGrid(Look look, double offset, bool intro, (double At, double Bpm)? outro, double duration)
+    static BeatGrid EditGrid(Look look, double offset, int? introBars, (double At, double Bpm)? outro, double duration)
     {
         var grid = look.Grid;
         var downbeat = look.Time(look.Downbeat);
         var markers = new List<GridMarker>();
-        if (intro)
+        var intro = introBars is not null;
+        if (introBars is { } bars)
         {
             var bpm = grid.BpmAt(downbeat);
-            var start = downbeat + offset - BARS * BEATS_PER_BAR * 60 / bpm;
+            var start = downbeat + offset - bars * BEATS_PER_BAR * 60 / bpm;
             markers.Add(new GridMarker(Math.Abs(start) < 1e-3 ? 0 : start, bpm));
         }
         foreach (var marker in grid.Markers)
@@ -761,22 +1111,24 @@ static partial class DjEdit
     }
 
     /// <summary>
-    /// One hit from the song's drums, <paramref name="length"/> seconds of them from <paramref name="source"/>, at
-    /// <paramref name="at"/> seconds through the edit: dying away across it, or cut off cleanly at its end.
+    /// One hit from <paramref name="source"/>, <paramref name="length"/> seconds of it from <paramref name="from"/>
+    /// seconds through the song, at <paramref name="at"/> seconds through the edit: dying away across it, or cut off
+    /// cleanly at its end.
     /// </summary>
-    static void Hit(float[] output, int channels, int rate, float[] drums, double source, double at, double length, float gain, bool decay)
+    static void Hit(float[] output, int channels, int rate, Source source, double from, double at, double length, float gain, bool decay)
     {
-        var (from, to, frames) = ((long)Math.Round(source * rate), (long)Math.Round(at * rate), (long)(length * rate));
+        var (first, to, frames) = ((long)Math.Round(from * rate) - source.First, (long)Math.Round(at * rate), (long)(length * rate));
+        var samples = source.Samples;
         var fade = Math.Max(1, (long)(GAP_SECONDS * rate));
         for (long i = 0; i < frames; i++)
         {
-            var (s, o) = (from + i, to + i);
-            if (s < 0 || s >= drums.Length / channels || o < 0 || o >= output.Length / channels)
+            var (s, o) = (first + i, to + i);
+            if (s < 0 || s >= samples.Length / channels || o < 0 || o >= output.Length / channels)
                 continue;
             var x = (float)i / frames;
             var level = gain * (decay ? (1 - x) * (1 - x) : Math.Min(1f, (float)(frames - i) / fade));
             for (var c = 0; c < channels; c++)
-                output[o * channels + c] += drums[s * channels + c] * level;
+                output[o * channels + c] += samples[s * channels + c] * level;
         }
     }
 

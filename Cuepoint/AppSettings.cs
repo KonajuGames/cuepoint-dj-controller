@@ -192,6 +192,11 @@ sealed class AppSettings
     public string? MusicFolder { get; set; }
 
     /// <summary>
+    /// How the last DJ edit was made, to start the next from; null for the defaults.
+    /// </summary>
+    public Cuepoint.Audio.Stems.DjEditOptions? DjEditOptions { get; set; }
+
+    /// <summary>
     /// The folder recordings of the mix go in; null for Cuepoint Recordings in Windows' own Music folder.
     /// </summary>
     public string? RecordingsFolder { get; set; }

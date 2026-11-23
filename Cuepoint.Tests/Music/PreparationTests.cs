@@ -29,6 +29,19 @@ public sealed class PreparationTests : IDisposable
     }
 
     [Fact]
+    public void A_songs_dj_edit_and_how_it_was_made_are_kept_between_runs()
+    {
+        var song = Song(_folder["a.mp3"]);
+        var notes = Noted with { DjEdit = "a (Cuepoint DJ Edit).flac", DjEditOptions = new() { IntroBars = 32, IntroEnd = Cuepoint.Audio.Stems.DjEditTransition.Fade, IntroEndAcrossSong = true } };
+        _database.SetNotes(song.Path, notes);
+        _database.Save();
+
+        var again = LibraryDatabase.Load(_folder["library.json"], _folder.Path, _ => _folder.Path);
+
+        Assert.Equal(notes, again.GetNotes(song.Path));
+    }
+
+    [Fact]
     public void Notes_are_kept_between_runs_and_put_on_songs_as_they_re_looked_up()
     {
         var song = Song(_folder["a.mp3"]);
