@@ -16,10 +16,11 @@ public class DjEditTests
     /// <summary>
     /// A made-up song at 120 BPM, its bars starting at a quarter of a second: kick on every beat, clap on two and
     /// four, hi-hats between, in bars <paramref name="drums"/>; a vocal in bars <paramref name="vocals"/>; bass and
-    /// pads all through <paramref name="bars"/> bars; and anything else in <paramref name="extra"/>, a stereo frame
-    /// at a time from a time in seconds.
+    /// pads (unless not <paramref name="bass"/> or <paramref name="pads"/>) all through <paramref name="bars"/> bars
+    /// once the drums start; and anything else in <paramref name="extra"/>, a stereo frame at a time from a time in
+    /// seconds.
     /// </summary>
-    static (PcmAudio Song, SongStems Stems, BeatGrid Grid) MakeSong(int bars, Range drums, Range vocals, int tailBars = 1, Func<double, float>? extra = null, int fadeBars = 0)
+    static (PcmAudio Song, SongStems Stems, BeatGrid Grid) MakeSong(int bars, Range drums, Range vocals, int tailBars = 1, Func<double, float>? extra = null, int fadeBars = 0, bool bass = true, bool pads = true)
     {
         var duration = FIRST_BEAT + (bars + tailBars) * BAR;
         var frames = (int)(duration * RATE);
@@ -47,16 +48,16 @@ public class DjEditTests
                     drum += 0.15f * noise;
             }
             var vocal = beats >= 0 && bar >= vocalFrom && bar < vocalTo ? 0.2f * MathF.Sin((float)(2 * Math.PI * 440 * t)) : 0f;
-            var bass = beats >= 0 && bar >= drumFrom && bar < bars ? 0.2f * MathF.Sin((float)(2 * Math.PI * 55 * t)) : 0f;
-            var rest = (beats >= 0 && bar >= drumFrom && bar < bars ? 0.05f * MathF.Sin((float)(2 * Math.PI * 330 * t)) : 0f) + (extra?.Invoke(t) ?? 0);
+            var low = bass && beats >= 0 && bar >= drumFrom && bar < bars ? 0.2f * MathF.Sin((float)(2 * Math.PI * 55 * t)) : 0f;
+            var rest = (pads && beats >= 0 && bar >= drumFrom && bar < bars ? 0.05f * MathF.Sin((float)(2 * Math.PI * 330 * t)) : 0f) + (extra?.Invoke(t) ?? 0);
             // Everything fading away over the last bars, if it fades out.
             var fade = fadeBars > 0 ? (float)Math.Clamp((bars - beats / 4) / fadeBars, 0, 1) : 1;
-            (vocal, drum, bass, rest) = (vocal * fade, drum * fade, bass * fade, rest * fade);
+            (vocal, drum, low, rest) = (vocal * fade, drum * fade, low * fade, rest * fade);
             for (var c = 0; c < CHANNELS; c++)
             {
                 var at = i * CHANNELS + c;
-                (v[at], d[at], b[at]) = (vocal, drum, bass);
-                song[at] = vocal + drum + bass + rest;
+                (v[at], d[at], b[at]) = (vocal, drum, low);
+                song[at] = vocal + drum + low + rest;
             }
         }
         return (new PcmAudio(song, CHANNELS, RATE), new SongStems(v, d, b, CHANNELS, RATE), BeatGrid.Constant(BPM, FIRST_BEAT, duration));
@@ -72,7 +73,7 @@ public class DjEditTests
     }
 
     [Fact]
-    public void A_song_with_vocals_end_to_end_gets_eight_bars_of_beats_at_each_end()
+    public void A_song_with_vocals_end_to_end_gets_sixteen_bars_of_beats_at_each_end()
     {
         var (song, stems, grid) = MakeSong(40, .., ..);
 
@@ -80,9 +81,9 @@ public class DjEditTests
 
         Assert.Null(why);
         Assert.NotNull(edit);
-        // The intro's eight bars end on the song's first downbeat.
-        Assert.Equal(8 * BAR - FIRST_BEAT, edit.Offset, 3);
-        Assert.Equal(8 * BAR, edit.IntroEnd!.Value, 3);
+        // The intro's sixteen bars end on the song's first downbeat.
+        Assert.Equal(16 * BAR - FIRST_BEAT, edit.Offset, 3);
+        Assert.Equal(16 * BAR, edit.IntroEnd!.Value, 3);
         // Its drums play from the very start, on a downbeat.
         Assert.True(Rms(edit.Audio.Samples, 0, 0.1) > 0.1, $"{Rms(edit.Audio.Samples, 0, 0.1)} {Rms(edit.Audio.Samples, 0.1, 0.5)} {Rms(song.Samples, FIRST_BEAT, FIRST_BEAT + 0.1)} {edit.Summary}");
         Assert.True(Rms(edit.Audio.Samples, 4 * BAR, 6 * BAR) > 0.05);
@@ -92,10 +93,63 @@ public class DjEditTests
         Assert.False(edit.Grid.IsVariable);
         Assert.Equal(BPM, edit.Grid.MainBpm, 6);
 
-        // The outro starts where the drums stop, after the fortieth bar, and runs a whole phrase to a last hit.
-        Assert.Equal(8 * BAR + 40 * BAR, edit.OutroStart!.Value, 3);
+        // The outro starts where the drums stop, after the fortieth bar, and runs two whole phrases to a last hit.
+        Assert.Equal(16 * BAR + 40 * BAR, edit.OutroStart!.Value, 3);
         Assert.True(Rms(edit.Audio.Samples, edit.OutroStart.Value + 2 * BAR, edit.OutroStart.Value + 4 * BAR) > 0.05);
-        Assert.Equal(edit.OutroStart.Value + 8 * BAR + BEAT, (double)edit.Audio.Frames / RATE, 2);
+        Assert.Equal(edit.OutroStart.Value + 16 * BAR + BEAT, (double)edit.Audio.Frames / RATE, 2);
+    }
+
+    [Fact]
+    public void The_bass_comes_in_a_phrase_into_the_intro_and_drops_out_a_phrase_before_the_end()
+    {
+        var (song, stems, grid) = MakeSong(40, .., ..);
+
+        var (edit, _) = DjEdit.Make(song, stems, grid);
+
+        var samples = edit!.Audio.Samples;
+        double Bass(double from) => Goertzel(samples.AsSpan((int)(from * RATE) * CHANNELS, (int)(2 * BAR * RATE) * CHANNELS).ToArray(), 55);
+        Assert.Contains("its bass coming in after 8", edit.Summary);
+        Assert.Contains("its bass dropping out for the last 8", edit.Summary);
+        // Drums alone for the first eight bars, then the bass with them.
+        Assert.True(Bass(3 * BAR) < 0.02, $"{Bass(3 * BAR)}");
+        Assert.True(Bass(11 * BAR) > 0.1, $"{Bass(11 * BAR)}");
+        // The bass carries on from the song, then the last eight bars are drums alone again.
+        var outro = edit.OutroStart!.Value;
+        Assert.True(Bass(outro + 3 * BAR) > 0.1, $"{Bass(outro + 3 * BAR)}");
+        Assert.True(Bass(outro + 11 * BAR) < 0.02, $"{Bass(outro + 11 * BAR)}");
+    }
+
+    [Fact]
+    public void Without_bass_the_instruments_come_in_instead()
+    {
+        var (song, stems, grid) = MakeSong(40, .., .., bass: false);
+
+        var (edit, _) = DjEdit.Make(song, stems, grid);
+
+        var samples = edit!.Audio.Samples;
+        double Pads(double from) => Goertzel(samples.AsSpan((int)(from * RATE) * CHANNELS, (int)(2 * BAR * RATE) * CHANNELS).ToArray(), 330);
+        Assert.Contains("its instruments coming in after 8", edit.Summary);
+        Assert.True(Pads(3 * BAR) < 0.01, $"{Pads(3 * BAR)}");
+        Assert.True(Pads(11 * BAR) > 0.03, $"{Pads(11 * BAR)}");
+    }
+
+    [Fact]
+    public void With_nothing_but_drums_the_kick_drops_out_for_a_bar_instead()
+    {
+        var (song, stems, grid) = MakeSong(40, .., .., bass: false, pads: false);
+
+        var (edit, _) = DjEdit.Make(song, stems, grid);
+
+        var samples = edit!.Audio.Samples;
+        double Kick(double from) => Goertzel(samples.AsSpan((int)(from * RATE) * CHANNELS, (int)(BAR * RATE) * CHANNELS).ToArray(), 60);
+        Assert.Contains("the kick dropping out for bar 8", edit.Summary);
+        Assert.Contains("the kick dropping out for a bar before the last 8", edit.Summary);
+        // The eighth bar has its hi-hats and claps, but not its kick.
+        Assert.True(Kick(7 * BAR) < Kick(6 * BAR) / 4, $"{Kick(7 * BAR)} against {Kick(6 * BAR)}");
+        Assert.True(Rms(samples, 7 * BAR, 8 * BAR) > 0.01);
+        Assert.True(Kick(8 * BAR) > Kick(6 * BAR) / 2);
+        var outro = edit.OutroStart!.Value;
+        Assert.True(Kick(outro + 7 * BAR) < Kick(outro + 5 * BAR) / 4, $"{Kick(outro + 7 * BAR)} against {Kick(outro + 5 * BAR)}");
     }
 
     [Fact]
@@ -134,7 +188,7 @@ public class DjEditTests
     [Fact]
     public void A_song_that_starts_and_ends_on_beats_alone_has_nothing_to_add()
     {
-        var (song, stems, grid) = MakeSong(40, .., 8..32);
+        var (song, stems, grid) = MakeSong(40, .., 16..24);
 
         var (edit, why) = DjEdit.Make(song, stems, grid);
 
@@ -145,7 +199,7 @@ public class DjEditTests
     [Fact]
     public void Only_the_end_without_beats_alone_gets_them()
     {
-        var (song, stems, grid) = MakeSong(40, .., 8..);
+        var (song, stems, grid) = MakeSong(40, .., 16..);
 
         var (edit, why) = DjEdit.Make(song, stems, grid);
 
@@ -160,14 +214,14 @@ public class DjEditTests
     [Fact]
     public void Beats_that_stop_partway_through_a_phrase_carry_on_to_the_end_of_the_next()
     {
-        // The drums stop after bar 37: the outro runs from there to bar 48, eleven bars.
+        // The drums stop after bar 37: the outro runs from there to bar 56, nineteen bars.
         var (song, stems, grid) = MakeSong(40, ..37, ..);
 
         var (edit, _) = DjEdit.Make(song, stems, grid);
 
         Assert.Equal(edit!.Offset + FIRST_BEAT + 37 * BAR, edit.OutroStart!.Value, 3);
-        Assert.Equal(edit.Offset + FIRST_BEAT + 48 * BAR + BEAT, (double)edit.Audio.Frames / RATE, 2);
-        Assert.Contains("11 bars after it", edit.Summary);
+        Assert.Equal(edit.Offset + FIRST_BEAT + 56 * BAR + BEAT, (double)edit.Audio.Frames / RATE, 2);
+        Assert.Contains("19 bars after it", edit.Summary);
     }
 
     [Fact]
@@ -215,7 +269,7 @@ public class DjEditTests
         var (edit, why) = DjEdit.Make(song, stems, grid);
 
         Assert.Null(why);
-        Assert.Equal(8 * BAR - (FIRST_BEAT + BAR), edit!.Offset, 3);
+        Assert.Equal(16 * BAR - (FIRST_BEAT + BAR), edit!.Offset, 3);
         Assert.Contains("gap for its pickup", edit.Summary);
         // Over the pickup there's nothing but the pickup.
         var shift = (long)Math.Round(edit.Offset * RATE);
@@ -248,6 +302,7 @@ public class DjEditTests
 
     [Theory]
     [InlineData("Song (DJ Edit)", true)]
+    [InlineData("Song (Cuepoint DJ Edit)", true)]
     [InlineData("Song (Extended Mix)", true)]
     [InlineData("Song [Extended]", true)]
     [InlineData("Song (Club Mix)", true)]
@@ -263,12 +318,23 @@ public class DjEditTests
     public void Edits_and_extended_mixes_are_known_by_their_names(string title, bool edit) =>
         Assert.Equal(edit, DjEdit.LooksLikeEdit(title, $@"C:\Music\{title.Replace('"', '_')}.mp3"));
 
+    [Theory]
+    [InlineData("Song", "Song (Cuepoint DJ Edit)")]
+    [InlineData("Song (Radio Edit)", "Song (Cuepoint DJ Edit)")]
+    [InlineData("Song (radio mix)", "Song (Cuepoint DJ Edit)")]
+    [InlineData("Song [Single Version]", "Song (Cuepoint DJ Edit)")]
+    [InlineData("Song - Radio Edit", "Song (Cuepoint DJ Edit)")]
+    [InlineData("Song (Original Mix)", "Song (Cuepoint DJ Edit)")]
+    [InlineData("Song (Edit)", "Song (Cuepoint DJ Edit)")]
+    [InlineData("Song (feat. Singer) (Radio Edit)", "Song (feat. Singer) (Cuepoint DJ Edit)")]
+    [InlineData("Song (Someone Remix)", "Song (Someone Remix) (Cuepoint DJ Edit)")]
+    [InlineData("Song (Acoustic Version)", "Song (Acoustic Version) (Cuepoint DJ Edit)")]
+    public void An_edit_is_named_for_the_song_in_place_of_its_radio_edit(string title, string edit) => Assert.Equal(edit, DjEdit.EditTitle(title));
+
     [Fact]
-    public void An_edit_is_named_for_the_song()
+    public void An_edits_file_is_named_as_its_title_is()
     {
-        Assert.Equal("Song (DJ Edit)", DjEdit.EditTitle("Song"));
-        Assert.Equal("Song (DJ Edit)", DjEdit.EditTitle("Song (Original Mix)"));
-        Assert.Equal("Song (Radio Edit) (DJ Edit)", DjEdit.EditTitle("Song (Radio Edit)"));
-        Assert.Equal(@"C:\Music\01 Artist - Song (DJ Edit).wav", DjEdit.EditPath(@"C:\Music\01 Artist - Song (Original Mix).mp3"));
+        Assert.Equal(@"C:\Music\01 Artist - Song (Cuepoint DJ Edit).wav", DjEdit.EditPath(@"C:\Music\01 Artist - Song (Radio Edit).mp3"));
+        Assert.Equal(@"C:\Music\Song (Cuepoint DJ Edit).wav", DjEdit.EditPath(@"C:\Music\Song.m4a"));
     }
 }

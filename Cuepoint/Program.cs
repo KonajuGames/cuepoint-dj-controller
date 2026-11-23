@@ -3022,10 +3022,14 @@ static int Run(ScreenshotTool.Request? capture)
                         ),
                     Enabled: songs.Count > 0
                 ),
-                // A DJ edit of the song: eight bars of its own drums before and after it, saved beside it as a song of
-                // its own. Not for one that's an edit or extended mix already.
+                // A DJ edit of the song: 16 bars of its own drums before and after it, saved beside it as a song of its
+                // own, or made again in place of the one made before. Not for one that's an edit or extended mix
+                // already.
                 new MenuItem(
-                    songs.Count == 1 && djEdits.WhyNot(songs[0]) is { } noEdit ? $"Make a DJ edit ({noEdit})" : "Make a DJ edit",
+                    songs.Count != 1 ? "Make a DJ edit"
+                    : djEdits.WhyNot(songs[0]) is { } noEdit ? $"Make a DJ edit ({noEdit})"
+                    : DjEdits.HasEdit(songs[0]) ? "Remake the DJ edit..."
+                    : "Make a DJ edit",
                     () => MakeDjEdit(songs[0]),
                     Enabled: songs.Count == 1 && djEdits.WhyNot(songs[0]) is null
                 ),
@@ -3083,16 +3087,39 @@ static int Run(ScreenshotTool.Request? capture)
         );
     };
 
+    // A DJ edit made before is only made again once it's agreed to replace it.
     void MakeDjEdit(Song song)
     {
-        if (djEdits.Start(song) is { } why)
+        if (!DjEdits.HasEdit(song))
+        {
+            StartDjEdit(song, replace: false);
+            return;
+        }
+        confirmation.Show(
+            $"Replace the DJ edit of {song.Title}?",
+            $"{Path.GetFileName(DjEdit.EditPath(song.Path))} is made again from the song, in place of the one there. Its hot cues and memory cues are the song's again, "
+                + "so any set on the edit itself are lost.",
+            "Replace",
+            () => StartDjEdit(song, replace: true)
+        );
+    }
+
+    void StartDjEdit(Song song, bool replace)
+    {
+        var editPath = DjEdit.EditPath(song.Path);
+        if (replace && decks.FirstOrDefault(deck => string.Equals(deck.FilePath, editPath, StringComparison.OrdinalIgnoreCase)) is { } loaded)
+            screen.Log($"Can't make the DJ edit of {song.Title} again while it's on deck {loaded.Name}");
+        else if (djEdits.Start(song, replace) is { } why)
             screen.Log($"Can't make a DJ edit of {song.Title}: {why}");
         else
-            screen.Log(separator.HasStems(song.Path) ? $"Making a DJ edit of {song.Title}..." : $"Making a DJ edit of {song.Title}, once it's separated into its stems...");
+            screen.Log(
+                $"{(replace ? "Making the DJ edit" : "Making a DJ edit")} of {song.Title}{(separator.HasStems(song.Path) ? "..." : ", once it's separated into its stems...")}"
+            );
     }
 
     // A DJ edit made becomes a song in its own right, with the original's analysis and cues moved along with it,
-    // memory cues where the song starts and where the outro's beats take over, and cued to its very start.
+    // memory cues where the song starts and where the outro's beats take over, and cued to its very start. One made
+    // again takes the old one's place. The original notes that it has one.
     void TakeInDjEdit(DjEditDone done)
     {
         if (done.Edit is not { } edit || done.EditPath is not { } path)
@@ -3134,18 +3161,28 @@ static int Run(ScreenshotTool.Request? capture)
             database.SetCuePoint(path, TimeSpan.Zero);
         else if (Moved(database.GetCuePoint(original.Path)) is { } cuePoint)
             database.SetCuePoint(path, cuePoint);
-        if (library.SongAt(path) is { } song && original.Analysis is { } analysis)
+        var replaced = library.Find(path) is not null;
+        if (library.SongAt(path) is { } song)
         {
-            // The beats are where the edit put them, so it needn't be analysed.
-            var moved = analysis with { Grid = edit.Grid };
-            database.Set(song, moved);
-            (song.Analysis, song.AnalysisError) = (moved, null);
+            // A song known already is the old edit: it's this file now.
+            var file = new FileInfo(path);
+            (song.Size, song.Modified, song.Title) = (file.Length, file.LastWriteTimeUtc, done.Title);
+            if (original.Analysis is { } analysis)
+            {
+                // The beats are where the edit put them, so it needn't be analysed.
+                var moved = analysis with { Grid = edit.Grid };
+                database.Set(song, moved);
+                (song.Analysis, song.AnalysisError) = (moved, null);
+            }
         }
+        var notes = original.Notes with { DjEdit = Path.GetFileName(path) };
+        database.SetNotes(original.Path, notes);
+        original.Notes = notes;
         analyser.SaveSoon();
         if (Path.GetFullPath(path).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(library.Root)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             TakeInLibraryChanges();
         browser.Reload();
-        screen.Log($"Made {Path.GetFileName(path)}: {edit.Summary}");
+        screen.Log($"{(replaced ? "Made again" : "Made")} {Path.GetFileName(path)}: {edit.Summary}");
     }
 
     browser.AnalyseAllCancelled += left => screen.Log($"Stopped analysing all; {left} {(left == 1 ? "song was" : "songs were")} left unanalysed");

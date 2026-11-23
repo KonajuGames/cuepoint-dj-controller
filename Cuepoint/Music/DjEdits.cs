@@ -5,19 +5,21 @@ using Cuepoint.Audio.Stems;
 namespace Cuepoint.Music;
 
 /// <summary>
-/// A DJ edit finished, or given up on: the song it's of, and the edit's file and what was made, or why there's none.
+/// A DJ edit finished, or given up on: the song it's of, and the edit's file, title and what was made, or why there's
+/// none.
 /// </summary>
-sealed record DjEditDone(Song Song, string? EditPath, DjEditResult? Edit, string? Why);
+sealed record DjEditDone(Song Song, string? EditPath, string Title, DjEditResult? Edit, string? Why);
 
 /// <summary>
 /// Makes DJ edits of songs (see <see cref="DjEdit"/>), one at a time in the background: decoding the song, finding its
 /// stems (separating it if they aren't on disk), then making the edit and writing it beside the song as a WAV tagged
-/// with its title and "(DJ Edit)". Call <see cref="Update"/> once a frame. UI thread only.
+/// with its title and <see cref="DjEdit.SUFFIX"/>. Call <see cref="Update"/> once a frame. UI thread only.
 /// </summary>
 sealed class DjEdits(StemSeparator separator)
 {
-    sealed class Job(Song song, string title, string artist, string album, string genre, BeatGrid grid)
+    sealed class Job(Song song, string title, string artist, string album, string genre, BeatGrid grid, bool replace)
     {
+        public bool Replace { get; } = replace;
         public Song Song { get; } = song;
         public string Title { get; } = title;
         public string Artist { get; } = artist;
@@ -35,28 +37,35 @@ sealed class DjEdits(StemSeparator separator)
 
     /// <summary>
     /// Why a DJ edit of <paramref name="song"/> can't be made, or null if it can: it isn't analysed, it's an edit or
-    /// extended mix already, it's being made already, there's one made already, or there's no model to separate it
-    /// with and its stems aren't on disk.
+    /// extended mix already, it's being made already, or there's no model to separate it with and its stems aren't on
+    /// disk.
     /// </summary>
     public string? WhyNot(Song song) =>
         song.Analysis is null ? "once it's analysed"
         : DjEdit.LooksLikeEdit(song.Title, song.Path) ? "it's an edit or extended mix already"
         : IsMaking(song) ? "it's being made"
-        : File.Exists(DjEdit.EditPath(song.Path)) ? "there's one already"
         : !separator.HasModel && !separator.HasStems(song.Path) ? "needs the stem model"
         : null;
 
     public bool IsMaking(Song song) => _job?.Song == song || _waiting.Any(job => job.Song == song);
 
     /// <summary>
-    /// Starts making a DJ edit of <paramref name="song"/>, after any being made already. Returns why not, if it can't
-    /// be: see <see cref="WhyNot"/>.
+    /// Whether there's a DJ edit of <paramref name="song"/> made already, where a new one would go.
     /// </summary>
-    public string? Start(Song song)
+    public static bool HasEdit(Song song) => File.Exists(DjEdit.EditPath(song.Path));
+
+    /// <summary>
+    /// Starts making a DJ edit of <paramref name="song"/>, after any being made already, replacing one made before
+    /// only with <paramref name="replace"/>. Returns why not, if it can't be: see <see cref="WhyNot"/>, or there's one
+    /// already.
+    /// </summary>
+    public string? Start(Song song, bool replace = false)
     {
         if (WhyNot(song) is { } why)
             return why;
-        _waiting.Enqueue(new Job(song, DjEdit.EditTitle(song.Title), song.Artist, song.Album, song.Genre, song.Analysis!.Grid));
+        if (!replace && HasEdit(song))
+            return "there's one already";
+        _waiting.Enqueue(new Job(song, DjEdit.EditTitle(song.Title), song.Artist, song.Album, song.Genre, song.Analysis!.Grid, replace));
         return null;
     }
 
@@ -90,7 +99,7 @@ sealed class DjEdits(StemSeparator separator)
             {
                 _job = null;
                 var (edit, why) = making.GetAwaiter().GetResult();
-                return new DjEditDone(job.Song, edit is null ? null : job.EditPath, edit, why);
+                return new DjEditDone(job.Song, edit is null ? null : job.EditPath, job.Title, edit, why);
             }
             if (job.Making is not null)
                 return null;
@@ -117,7 +126,7 @@ sealed class DjEdits(StemSeparator separator)
         {
             _job = null;
             ErrorLog.Write($"making a DJ edit of {job.Song.Path}", e);
-            return new DjEditDone(job.Song, null, null, e.GetBaseException().Message);
+            return new DjEditDone(job.Song, null, job.Title, null, e.GetBaseException().Message);
         }
     }
 
@@ -125,7 +134,7 @@ sealed class DjEdits(StemSeparator separator)
     {
         var (edit, why) = DjEdit.Make(audio, stems, job.Grid);
         if (edit is not null)
-            WavFile.Write(job.EditPath, edit.Audio, new SongTags(job.Title, job.Artist, job.Album, null, job.Genre));
+            WavFile.Write(job.EditPath, edit.Audio, new SongTags(job.Title, job.Artist, job.Album, null, job.Genre), job.Replace);
         // The samples are big, and done with, so they don't wait on the result being taken in.
         return (edit is null ? null : edit with { Audio = new PcmAudio([], edit.Audio.Channels, edit.Audio.SampleRate) }, why);
     }

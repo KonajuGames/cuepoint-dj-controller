@@ -115,12 +115,13 @@ static class WavFile
 
     /// <summary>
     /// Writes <paramref name="audio"/> to <paramref name="path"/>, by way of a file beside it, so a half-written one is
-    /// never left under its name; a file there already is never replaced. Samples past full scale are clipped. Throws
-    /// <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> if it can't.
+    /// never left under its name; a file there already is only replaced with <paramref name="replace"/>, and then
+    /// only once the new one's whole. Samples past full scale are clipped. Throws <see cref="IOException"/> or
+    /// <see cref="UnauthorizedAccessException"/> if it can't.
     /// </summary>
-    public static void Write(string path, PcmAudio audio, SongTags tags)
+    public static void Write(string path, PcmAudio audio, SongTags tags, bool replace = false)
     {
-        if (File.Exists(path))
+        if (!replace && File.Exists(path))
             throw new IOException($"There's a file at {path} already");
         var temporary = path + ".tmp";
         try
@@ -167,7 +168,7 @@ static class WavFile
                 if ((dataBytes & 1) != 0)
                     writer.Write((byte)0);
             }
-            File.Move(temporary, path, overwrite: false);
+            File.Move(temporary, path, overwrite: replace);
         }
         finally
         {

@@ -51,6 +51,25 @@ public class WavFileTests
     }
 
     [Fact]
+    public void An_existing_file_is_replaced_only_when_asked()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"cuepoint-wav-{Guid.NewGuid():N}.wav");
+        try
+        {
+            File.WriteAllText(path, "old");
+
+            WavFile.Write(path, new PcmAudio(new float[100], 2, 44100), new SongTags("New", null, null, null), replace: true);
+
+            Assert.Equal("New", WavFile.ReadTags(path).Title);
+            Assert.False(File.Exists(path + ".tmp"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void An_existing_file_is_never_replaced()
     {
         var path = Path.Combine(Path.GetTempPath(), $"cuepoint-wav-{Guid.NewGuid():N}.wav");

@@ -4,9 +4,10 @@ namespace Cuepoint.Music;
 
 /// <summary>
 /// What the DJ's noted about a song: a rating from 0 (none) to <see cref="MAX_RATING"/>, a comment, and one of
-/// <see cref="Colors"/> to tag it with. Kept apart from the analysis, as hot cues are.
+/// <see cref="Colors"/> to tag it with; and the file name of a DJ edit made of it, beside it, if one's been made. Kept
+/// apart from the analysis, as hot cues are.
 /// </summary>
-sealed record SongNotes(int Rating = 0, string? Comment = null, string? Color = null)
+sealed record SongNotes(int Rating = 0, string? Comment = null, string? Color = null, string? DjEdit = null)
 {
     public const int MAX_RATING = 5;
 
@@ -21,5 +22,5 @@ sealed record SongNotes(int Rating = 0, string? Comment = null, string? Color = 
     /// Whether there's nothing noted, so nothing to keep.
     /// </summary>
     [JsonIgnore]
-    public bool IsEmpty => Rating == 0 && Comment is null && Color is null;
+    public bool IsEmpty => Rating == 0 && Comment is null && Color is null && DjEdit is null;
 }
