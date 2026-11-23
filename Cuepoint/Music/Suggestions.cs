@@ -1,5 +1,6 @@
 using Cuepoint.Audio;
 using Cuepoint.Audio.Analysis;
+using Cuepoint.Audio.Stems;
 
 namespace Cuepoint.Music;
 
@@ -41,11 +42,12 @@ static class Suggestions
 
     /// <summary>
     /// The best <paramref name="count"/> of <paramref name="songs"/> to play after <paramref name="playing"/>, leaving
-    /// out any <paramref name="skip"/> says to (played already, or on a deck).
+    /// out any <paramref name="skip"/> says to (played already, or on a deck), and the song playing itself: its DJ edit,
+    /// or if it's a DJ edit, the song it's of.
     /// </summary>
     public static IReadOnlyList<Suggestion> For(Playing playing, IEnumerable<Song> songs, Func<Song, bool> skip, int count = 40) =>
         songs
-            .Where(song => !string.Equals(song.Path, playing.Path, StringComparison.OrdinalIgnoreCase) && !skip(song))
+            .Where(song => !DjEdit.SameSong(song.Path, playing.Path) && !skip(song))
             .Select(song => Score(playing, song))
             .OfType<Suggestion>()
             .OrderByDescending(suggestion => suggestion.Score)

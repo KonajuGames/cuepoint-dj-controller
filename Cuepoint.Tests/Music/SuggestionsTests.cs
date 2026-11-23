@@ -89,4 +89,18 @@ public class SuggestionsTests
         Assert.Equal("8A → 8A, same tempo, energy 7 → 8", suggested[0].Why);
         Assert.Equal("8A → 9A, +0.8% tempo, energy 7 → 7", suggested[1].Why);
     }
+
+    [Fact]
+    public void Neither_the_DJ_edit_of_the_song_playing_nor_the_song_a_playing_DJ_edit_is_of_is_suggested()
+    {
+        var original = At("now", A8, 124, 8);
+        var edit = Song(@"C:\Music\now (Cuepoint DJ Edit).flac", title: "now (Cuepoint DJ Edit)");
+        edit.Analysis = original.Analysis;
+        var oldEdit = Song(@"C:\Music\now (Cuepoint DJ Edit).wav", title: "now (Cuepoint DJ Edit) old");
+        oldEdit.Analysis = original.Analysis;
+        var other = At("other", A8, 124, 8);
+
+        Assert.Equal(["other"], Suggestions.For(Now, [original, edit, oldEdit, other], _ => false).Select(suggestion => suggestion.Song.Title));
+        Assert.Equal(["other"], Suggestions.For(Now with { Path = edit.Path }, [original, edit, oldEdit, other], _ => false).Select(suggestion => suggestion.Song.Title));
+    }
 }

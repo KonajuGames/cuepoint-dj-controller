@@ -177,6 +177,17 @@ static partial class DjEdit
     public static string EditPath(string path) => Path.ChangeExtension(OldEditPath(path), ".flac");
 
     /// <summary>
+    /// Whether the songs at <paramref name="path"/> and <paramref name="other"/> are one song: the same file, or one a
+    /// DJ edit (FLAC or older WAV) of the other, or both edits of one song, one a FLAC and one a WAV made before.
+    /// </summary>
+    public static bool SameSong(string path, string other) =>
+        Same(path, other) || Same(EditPath(path), other) || Same(OldEditPath(path), other) || Same(EditPath(other), path) || Same(OldEditPath(other), path)
+        || (Path.GetFileNameWithoutExtension(path).EndsWith(SUFFIX, StringComparison.OrdinalIgnoreCase) && Same(Path.ChangeExtension(path, null), Path.ChangeExtension(other, null)));
+
+    static bool Same(string path, string other) =>
+        string.Equals(Path.GetFullPath(path), Path.GetFullPath(other), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Where a DJ edit of the song at <paramref name="path"/> was kept before they were FLACs: beside it, as a WAV.
     /// </summary>
     public static string OldEditPath(string path) =>
