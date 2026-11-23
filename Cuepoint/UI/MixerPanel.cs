@@ -42,8 +42,6 @@ sealed class MixerPanel : Panel
     readonly Label[] _eqLabels;
     readonly List<Channel> _channels = [];
     readonly Slider _crossfader;
-    readonly Label _crossLeft;
-    readonly Label _crossRight;
 
     /// <param name="pflKeys">The key for each deck's PFL button, in order, to label them with.</param>
     public MixerPanel(AudioEngine engine, IReadOnlyList<Deck> decks, Font small, Font bold, Images images, IReadOnlyList<string?>? pflKeys = null)
@@ -127,12 +125,10 @@ sealed class MixerPanel : Panel
             _channels.Add(new Channel(deck, name, eq, meter, fader, pfl, vocals));
         }
 
-        _crossLeft = Add(new Label(bold, decks.Count > 0 ? decks[0].Name : "") { Color = decks.Count > 0 ? AppTheme.DeckColor(decks[0].Name) : Theme.Muted });
-        _crossRight = Add(new Label(bold, decks.Count > 1 ? decks[^1].Name : "") { Color = decks.Count > 1 ? AppTheme.DeckColor(decks[^1].Name) : Theme.Muted });
         _crossfader = Add(
             new Slider
             {
-                Length = WIDTH - 2 * PAD - 44,
+                Length = WIDTH - 2 * PAD,
                 Thickness = 22,
                 HandleLength = 12,
                 DefaultValue = 0.5f,
@@ -272,7 +268,5 @@ sealed class MixerPanel : Panel
 
         var crossY = position.Y + Height - PAD - _crossfader.Size.Y;
         Place(_crossfader, centre - _crossfader.Size.X / 2, crossY);
-        Place(_crossLeft, centre - _crossfader.Size.X / 2 - 8 - _crossLeft.Size.X, crossY + (_crossfader.Size.Y - _crossLeft.Size.Y) / 2);
-        Place(_crossRight, centre + _crossfader.Size.X / 2 + 8, crossY + (_crossfader.Size.Y - _crossRight.Size.Y) / 2);
     }
 }
