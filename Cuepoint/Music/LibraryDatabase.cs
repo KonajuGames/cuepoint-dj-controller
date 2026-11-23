@@ -141,6 +141,11 @@ sealed class LibraryDatabase
         }
     }
 
+    /// <summary>
+    /// The library.json what's known about the song at <paramref name="path"/> is kept in: its drive's, or the app's own.
+    /// </summary>
+    public string FileOf(string path) => FileFor(path).FilePath;
+
     public bool TryGet(Song song, out TrackAnalysis? analysis, out string? error) => FileFor(song.Path).TryGet(song, out analysis, out error);
 
     public bool TryGetAnalysed(Song song, out TrackAnalysis? analysis, out string? error) =>

@@ -168,4 +168,24 @@ public class StemTests
         Assert.Null(again.Stems);
         Assert.False(separator.HasStems(songPath));
     }
+
+    [Fact]
+    public void Stems_follow_a_song_whose_tags_were_written()
+    {
+        using var folder = new TempFolder();
+        var songPath = folder.File("song.mp3");
+        var (_, stems, _) = MakeSong(1);
+        var cache = new StemCache(folder["stems"]);
+        cache.Save(songPath, stems);
+        var before = cache.FileFor(songPath);
+
+        File.AppendAllText(songPath, "new tags");
+        Assert.False(cache.Has(songPath));
+
+        Assert.True(cache.Follow(before, songPath));
+        Assert.NotNull(cache.Load(songPath));
+        Assert.False(File.Exists(before));
+        // Nothing more to follow.
+        Assert.False(cache.Follow(before, songPath));
+    }
 }

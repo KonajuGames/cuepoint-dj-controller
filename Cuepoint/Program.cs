@@ -1420,6 +1420,7 @@ static int Run(ScreenshotTool.Request? capture)
     browser.ColumnMenuRequested += at => menu.Show(at, browser.ColumnMenu());
     var prompt = new NamePrompt(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var details = new DetailsDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
+    var properties = new PropertiesDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
     var confirmation = new ConfirmDialog(ui, fonts.Body, fonts.Bold, fonts.Heading);
     // How to make a DJ edit, its dropdowns opening in the menu drawn over it.
     var djEditDialog = new DjEditDialog(ui, fonts.Body, fonts.Bold, fonts.Heading) { Menu = menu };
@@ -2017,6 +2018,8 @@ static int Run(ScreenshotTool.Request? capture)
     ui.Add(djEditDialog);
     ui.Add(menu);
     ui.Add(prompt);
+    // A song's properties, under the details and confirmation its buttons bring up.
+    ui.Add(properties);
     ui.Add(details);
     ui.Add(confirmation);
     ui.Add(tracklistDialog);
@@ -2818,7 +2821,7 @@ static int Run(ScreenshotTool.Request? capture)
 
     // A song's title, artist and album, written into its file's tags. Its analysis, cues and notes stay with it, as
     // what's known is moved on to the file as it now is, rather than it counting as a new song to analyse.
-    void EditDetails(Song song)
+    void EditDetails(Song song, Action? saved = null)
     {
         if (!OperatingSystem.IsWindows())
             return;
@@ -2831,8 +2834,11 @@ static int Run(ScreenshotTool.Request? capture)
             {
                 if (!OperatingSystem.IsWindows())
                     throw new InvalidOperationException("Details can only be written on Windows");
+                // The stems stay the song's, though its file's size and time change.
+                var stems = separator.StemsFile(song.Path);
                 if (WindowsTags.Write(song.Path, title, artist, album, genre) is { } error)
                     throw new InvalidOperationException(error);
+                separator.FollowStems(stems, song.Path);
                 var file = new FileInfo(song.Path);
                 (song.Title, song.Artist, song.Album) = (title, artist.Length > 0 ? artist : song.Artist, album.Length > 0 ? album : song.Album);
                 if (genre.Length > 0)
@@ -2841,6 +2847,71 @@ static int Run(ScreenshotTool.Request? capture)
                 (song.Size, song.Modified) = (file.Length, file.LastWriteTimeUtc);
                 browser.Refilter();
                 screen.Log($"Saved the details of {song.Artist} - {song.Title}");
+                saved?.Invoke();
+            }
+        );
+    }
+
+    // A song's properties: its details, which can be edited from there, and what's kept for it, its stems deletable to
+    // free the room they take, once that's agreed.
+    void ShowProperties(Song song)
+    {
+        var editPath = File.Exists(DjEdit.EditPath(song.Path)) ? DjEdit.EditPath(song.Path)
+            : File.Exists(DjEdit.OldEditPath(song.Path)) ? DjEdit.OldEditPath(song.Path)
+            : null;
+        long? SizeOf(string? path) => path is not null && new FileInfo(path) is { Exists: true } file ? file.Length : null;
+        var stored = new StoredData(
+            database.FileOf(song.Path),
+            database.GetHotcues(song.Path).Count(cue => cue is not null),
+            database.GetMemoryCues(song.Path).Count,
+            database.GetMemoryLoops(song.Path).Count,
+            database.HasGridEdit(song.Path),
+            separator.StemsFile(song.Path),
+            separator.StemsSize(song.Path),
+            editPath,
+            SizeOf(editPath)
+        );
+        properties.Show(
+            song.Path,
+            TrackProperties.Of(song, stored),
+            OperatingSystem.IsWindows() ? () => EditDetails(song, () => RefreshProperties(song)) : null,
+            () => DeleteStemsOf(song)
+        );
+    }
+
+    void RefreshProperties(Song song)
+    {
+        if (properties.Visible && string.Equals(properties.SongPath, song.Path, StringComparison.OrdinalIgnoreCase))
+            ShowProperties(song);
+    }
+
+    void DeleteStemsOf(Song song)
+    {
+        if (separator.StemsSize(song.Path) is not { } bytes)
+        {
+            RefreshProperties(song);
+            return;
+        }
+        var onDeck = decks.Any(deck => string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase));
+        confirmation.Show(
+            $"Delete the stems of {song.Title}?",
+            $"They take {TrackProperties.Size(bytes)}. The song itself, its analysis, cues and notes stay; it's separated again if its stems are ever wanted, "
+                + "in STEMS mode or for a DJ edit, which takes a while."
+                + (onDeck ? " It's on a deck: the stems it has loaded stay until it's unloaded." : ""),
+            "Delete",
+            () =>
+            {
+                try
+                {
+                    separator.DeleteStems(song.Path);
+                    screen.Log($"Deleted the stems of {song.Title}, freeing {TrackProperties.Size(bytes)}");
+                    RefreshProperties(song);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    RefreshProperties(song);
+                    properties.ShowProblem($"Couldn't delete the stems: {e.Message}");
+                }
             }
         );
     }
@@ -2862,7 +2933,20 @@ static int Run(ScreenshotTool.Request? capture)
                 var paths = songs.Select(song => song.Path).ToList();
                 screen.Log($"Saving the details of {songs.Count} songs...");
                 library.Background.Start(
-                    () => paths.Select(path => OperatingSystem.IsWindows() ? WindowsTags.Write(path, null, artist, album, genre) : "Not on Windows").ToList(),
+                    () =>
+                        paths
+                            .Select(path =>
+                            {
+                                if (!OperatingSystem.IsWindows())
+                                    return "Not on Windows";
+                                // The stems stay the song's, though its file's size and time change.
+                                var stems = separator.StemsFile(path);
+                                var error = WindowsTags.Write(path, null, artist, album, genre);
+                                if (error is null)
+                                    separator.FollowStems(stems, path);
+                                return error;
+                            })
+                            .ToList(),
                     errors =>
                     {
                         var saved = 0;
@@ -3063,6 +3147,7 @@ static int Run(ScreenshotTool.Request? capture)
                     },
                     Enabled: songs.Count > 0 && OperatingSystem.IsWindows()
                 ),
+                new MenuItem("Properties...", () => ShowProperties(songs[0]), Enabled: songs.Count == 1),
                 RatingMenu(songs),
                 ColourMenu(songs),
                 new MenuItem(
@@ -3705,7 +3790,7 @@ static int Run(ScreenshotTool.Request? capture)
                 screen.ScreenSize = new float2(size.X, size.Y) / screenScale;
                 if (controllerDialog is not null)
                     controllerDialog.ScreenSize = screen.ScreenSize;
-                headphones.ScreenSize = masterFx.ScreenSize = microphone.ScreenSize = liveStream.ScreenSize = menu.ScreenSize = prompt.ScreenSize = djEditDialog.ScreenSize = details.ScreenSize = confirmation.ScreenSize = tracklistDialog.ScreenSize = screen.ScreenSize;
+                headphones.ScreenSize = masterFx.ScreenSize = microphone.ScreenSize = liveStream.ScreenSize = menu.ScreenSize = prompt.ScreenSize = djEditDialog.ScreenSize = properties.ScreenSize = details.ScreenSize = confirmation.ScreenSize = tracklistDialog.ScreenSize = screen.ScreenSize;
                 screen.Update();
                 headphones.Refresh();
                 masterFx.Refresh();

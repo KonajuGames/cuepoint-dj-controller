@@ -54,6 +54,25 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
     public long? StemsSize(string path) => cache.SizeOf(path);
 
     /// <summary>
+    /// The file the stems of the song at <paramref name="path"/> are kept in, made or not; null if the song isn't there.
+    /// </summary>
+    public string? StemsFile(string path) => cache.FileFor(path);
+
+    /// <summary>
+    /// Keeps the stems that were in <paramref name="oldFile"/> (from <see cref="StemsFile"/>) for the song at
+    /// <paramref name="path"/> as its file is now, once only its tags have changed, so it isn't separated again. Says
+    /// nothing if they can't be: it's separated again if they're wanted.
+    /// </summary>
+    public void FollowStems(string? oldFile, string path)
+    {
+        try
+        {
+            cache.Follow(oldFile, path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    /// <summary>
     /// Deletes the stems kept on disk for the song at <paramref name="path"/>, and forgets any found for it, so it's
     /// separated again if they're wanted. Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/>
     /// if they can't be deleted.

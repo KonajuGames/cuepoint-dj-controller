@@ -72,6 +72,20 @@ sealed class StemCache(string folder)
             File.Delete(path);
     }
 
+    /// <summary>
+    /// Keeps the stems that were in <paramref name="oldFile"/> (from <see cref="FileFor"/>) for the song at
+    /// <paramref name="songPath"/> as its file is now, after its tags were written, say: the samples haven't changed,
+    /// only the file's size and time. Returns whether there were any to keep. Throws <see cref="IOException"/> or
+    /// <see cref="UnauthorizedAccessException"/> if they can't be moved.
+    /// </summary>
+    public bool Follow(string? oldFile, string songPath)
+    {
+        if (oldFile is null || !File.Exists(oldFile) || FileFor(songPath) is not { } path || string.Equals(oldFile, path, StringComparison.OrdinalIgnoreCase))
+            return false;
+        File.Move(oldFile, path, overwrite: true);
+        return true;
+    }
+
     public void Save(string songPath, SongStems stems)
     {
         if (FileFor(songPath) is not { } path)
@@ -97,7 +111,11 @@ sealed class StemCache(string folder)
         File.Move(temporary, path, overwrite: true);
     }
 
-    string? FileFor(string songPath)
+    /// <summary>
+    /// The file the stems for the song at <paramref name="songPath"/> are kept in, whether or not they've been made;
+    /// null if the song's file isn't there.
+    /// </summary>
+    public string? FileFor(string songPath)
     {
         var file = new FileInfo(songPath);
         if (!file.Exists)
