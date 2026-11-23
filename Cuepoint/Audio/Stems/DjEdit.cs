@@ -99,10 +99,15 @@ static partial class DjEdit
     private static partial Regex Version();
 
     /// <summary>
-    /// Where a DJ edit of the song at <paramref name="path"/> is kept: beside it, as a WAV named from its file name as
+    /// Where a DJ edit of the song at <paramref name="path"/> is kept: beside it, as a FLAC named from its file name as
     /// its title is, by <see cref="EditTitle"/>.
     /// </summary>
-    public static string EditPath(string path) =>
+    public static string EditPath(string path) => Path.ChangeExtension(OldEditPath(path), ".flac");
+
+    /// <summary>
+    /// Where a DJ edit of the song at <paramref name="path"/> was kept before they were FLACs: beside it, as a WAV.
+    /// </summary>
+    public static string OldEditPath(string path) =>
         Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path)) ?? "", $"{EditTitle(Path.GetFileNameWithoutExtension(path))}.wav");
 
     /// <summary>
@@ -672,7 +677,9 @@ static partial class DjEdit
 
     /// <summary>
     /// The edit's beat grid: the song's, moved along with it, the intro's beats at the tempo of its first downbeat,
-    /// and the outro's at the tempo its drums stop at; its bars starting where the song's do.
+    /// and the outro's at the tempo its drums stop at; its bars starting where the song's do. The intro's marker is on
+    /// its first beat, at the very start, so a grid kept to a few decimal places still has its first beat there rather
+    /// than a moment after, counted back from the song.
     /// </summary>
     static BeatGrid EditGrid(Look look, double offset, bool intro, (double At, double Bpm)? outro, double duration)
     {
@@ -680,7 +687,11 @@ static partial class DjEdit
         var downbeat = look.Time(look.Downbeat);
         var markers = new List<GridMarker>();
         if (intro)
-            markers.Add(new GridMarker(downbeat + offset, grid.BpmAt(downbeat)));
+        {
+            var bpm = grid.BpmAt(downbeat);
+            var start = downbeat + offset - BARS * BEATS_PER_BAR * 60 / bpm;
+            markers.Add(new GridMarker(Math.Abs(start) < 1e-3 ? 0 : start, bpm));
+        }
         foreach (var marker in grid.Markers)
         {
             if (intro && marker.Time <= downbeat + 1e-3 || outro is { } o && marker.Time >= o.At - 1e-3)

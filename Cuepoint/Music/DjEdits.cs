@@ -12,8 +12,8 @@ sealed record DjEditDone(Song Song, string? EditPath, string Title, DjEditResult
 
 /// <summary>
 /// Makes DJ edits of songs (see <see cref="DjEdit"/>), one at a time in the background: decoding the song, finding its
-/// stems (separating it if they aren't on disk), then making the edit and writing it beside the song as a WAV tagged
-/// with its title and <see cref="DjEdit.SUFFIX"/>. Call <see cref="Update"/> once a frame. UI thread only.
+/// stems (separating it if they aren't on disk), then making the edit and writing it beside the song as a 16-bit FLAC
+/// tagged with its title and <see cref="DjEdit.SUFFIX"/>. Call <see cref="Update"/> once a frame. UI thread only.
 /// </summary>
 sealed class DjEdits(StemSeparator separator)
 {
@@ -51,9 +51,10 @@ sealed class DjEdits(StemSeparator separator)
     public bool IsMaking(Song song) => _job?.Song == song || _waiting.Any(job => job.Song == song);
 
     /// <summary>
-    /// Whether there's a DJ edit of <paramref name="song"/> made already, where a new one would go.
+    /// Whether there's a DJ edit of <paramref name="song"/> made already: where a new one would go, or a WAV made before
+    /// they were FLACs.
     /// </summary>
-    public static bool HasEdit(Song song) => File.Exists(DjEdit.EditPath(song.Path));
+    public static bool HasEdit(Song song) => File.Exists(DjEdit.EditPath(song.Path)) || File.Exists(DjEdit.OldEditPath(song.Path));
 
     /// <summary>
     /// Starts making a DJ edit of <paramref name="song"/>, after any being made already, replacing one made before
@@ -141,7 +142,7 @@ sealed class DjEdits(StemSeparator separator)
     {
         var (edit, why) = DjEdit.Make(audio, stems, job.Grid);
         if (edit is not null)
-            WavFile.Write(job.EditPath, edit.Audio, new SongTags(job.Title, job.Artist, job.Album, null, job.Genre), job.Replace);
+            FlacFile.Write(job.EditPath, edit.Audio, new SongTags(job.Title, job.Artist, job.Album, null, job.Genre), job.Replace);
         // The samples are big, and done with, so they don't wait on the result being taken in.
         return (edit is null ? null : edit with { Audio = new PcmAudio([], edit.Audio.Channels, edit.Audio.SampleRate) }, why);
     }

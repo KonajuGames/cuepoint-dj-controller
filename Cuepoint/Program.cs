@@ -3158,10 +3158,14 @@ static int Run(ScreenshotTool.Request? capture)
             StartDjEdit(song, replace: false);
             return;
         }
+        var (flac, wav) = (DjEdit.EditPath(song.Path), DjEdit.OldEditPath(song.Path));
+        var wavGoes = !File.Exists(wav) ? ""
+            : $" The WAV it was before, {Path.GetFileName(wav)}, {(FileDeletion.WouldRecycle(wav) ? "goes to the Recycle Bin" : "is deleted, as its drive has no Recycle Bin")}.";
         confirmation.Show(
             $"Replace the DJ edit of {song.Title}?",
-            $"{Path.GetFileName(DjEdit.EditPath(song.Path))} is made again from the song, in place of the one there. Its hot cues and memory cues are the song's again, "
-                + "so any set on the edit itself are lost.",
+            (File.Exists(flac) ? $"{Path.GetFileName(flac)} is made again from the song, in place of the one there." : $"It's made again from the song as {Path.GetFileName(flac)}, a FLAC about half the size.")
+                + wavGoes
+                + " Its hot cues and memory cues are the song's again, so any set on the edit itself are lost.",
             "Replace",
             () => StartDjEdit(song, replace: true)
         );
@@ -3169,8 +3173,8 @@ static int Run(ScreenshotTool.Request? capture)
 
     void StartDjEdit(Song song, bool replace)
     {
-        var editPath = DjEdit.EditPath(song.Path);
-        if (replace && decks.FirstOrDefault(deck => string.Equals(deck.FilePath, editPath, StringComparison.OrdinalIgnoreCase)) is { } loaded)
+        string[] editPaths = [DjEdit.EditPath(song.Path), DjEdit.OldEditPath(song.Path)];
+        if (replace && decks.FirstOrDefault(deck => editPaths.Contains(deck.FilePath, StringComparer.OrdinalIgnoreCase)) is { } loaded)
             screen.Log($"Can't make the DJ edit of {song.Title} again while it's on deck {loaded.Name}");
         else if (djEdits.Start(song, replace) is { } why)
             screen.Log($"Can't make a DJ edit of {song.Title}: {why}");
@@ -3224,7 +3228,19 @@ static int Run(ScreenshotTool.Request? capture)
         // to the intro's first beat at the very start; or with no intro, where the song was cued, if it was, or where
         // it's first heard.
         database.SetCuePoint(path, edit.IntroEnd is null && Moved(database.GetCuePoint(original.Path)) is { } cuePoint ? cuePoint : TimeSpan.FromSeconds(edit.Cue));
+        // An edit made again in place of a WAV from before they were FLACs sends the WAV to the Recycle Bin, or where
+        // the drive hasn't one, deletes it, as replacing it said.
         var replaced = library.Find(path) is not null;
+        var oldWav = DjEdit.OldEditPath(original.Path);
+        string? oldWavNews = null;
+        if (!string.Equals(oldWav, path, StringComparison.OrdinalIgnoreCase) && File.Exists(oldWav))
+        {
+            var recycle = FileDeletion.WouldRecycle(oldWav);
+            oldWavNews = FileDeletion.Delete(oldWav, recycle) is { } error ? $"; couldn't delete the old WAV: {error}"
+                : recycle ? "; the old WAV's in the Recycle Bin"
+                : "; the old WAV's deleted";
+            replaced = true;
+        }
         if (library.SongAt(path) is { } song)
         {
             // A song known already is the old edit: it's this file now.
@@ -3252,7 +3268,7 @@ static int Run(ScreenshotTool.Request? capture)
         if (browser.Source is { Path: { } shown } source && editFolder.StartsWith(LibraryFile.WithSeparator(shown), StringComparison.OrdinalIgnoreCase))
             source.RefreshSongs();
         browser.Reload();
-        screen.Log($"{(replaced ? "Made again" : "Made")} {Path.GetFileName(path)}: {edit.Summary}");
+        screen.Log($"{(replaced ? "Made again" : "Made")} {Path.GetFileName(path)}: {edit.Summary}{oldWavNews}");
     }
 
     // A song separated just to make its DJ edit has its stems taking up room on disk, which it's offered back, unless

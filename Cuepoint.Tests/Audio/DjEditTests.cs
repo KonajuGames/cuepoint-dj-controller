@@ -93,6 +93,9 @@ public class DjEditTests
         Assert.True(edit.Grid.IsBarStart(Math.Round(edit.Grid.BeatNumberAt(0))));
         Assert.True(edit.Grid.IsBarStart(Math.Round(edit.Grid.BeatNumberAt(edit.IntroEnd!.Value))));
         Assert.False(edit.Grid.IsVariable);
+        // Its marker's on the very first beat, so however few decimal places it's kept to, that's where its first beat is.
+        Assert.Equal(0, edit.Grid.Markers[0].Time);
+        Assert.Equal(0, edit.Grid.FirstBeat);
         Assert.Equal(BPM, edit.Grid.MainBpm, 6);
 
         // The outro starts where the drums stop, after the fortieth bar, and runs two whole phrases to a last hit.
@@ -369,7 +372,9 @@ public class DjEditTests
     [Fact]
     public void An_edits_file_is_named_as_its_title_is()
     {
-        Assert.Equal(@"C:\Music\01 Artist - Song (Cuepoint DJ Edit).wav", DjEdit.EditPath(@"C:\Music\01 Artist - Song (Radio Edit).mp3"));
-        Assert.Equal(@"C:\Music\Song (Cuepoint DJ Edit).wav", DjEdit.EditPath(@"C:\Music\Song.m4a"));
+        Assert.Equal(@"C:\Music\01 Artist - Song (Cuepoint DJ Edit).flac", DjEdit.EditPath(@"C:\Music\01 Artist - Song (Radio Edit).mp3"));
+        Assert.Equal(@"C:\Music\Song (Cuepoint DJ Edit).flac", DjEdit.EditPath(@"C:\Music\Song.m4a"));
+        // Before they were FLACs, they were WAVs.
+        Assert.Equal(@"C:\Music\Song (Cuepoint DJ Edit).wav", DjEdit.OldEditPath(@"C:\Music\Song.m4a"));
     }
 }
