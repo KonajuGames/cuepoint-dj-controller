@@ -59,6 +59,12 @@ static partial class DjEdit
     // The bars looped have a part of the song worth bringing in with their drums if it's this loud against its usual.
     const double LAYER_PRESENT = 0.4;
 
+    // A bar of the song this quiet against its usual bar, at its start, is a lead-in to it rather than its first bar,
+    // up to this many bars of them; and at its end, it's all but over.
+    const double LEAD_IN = 0.35;
+    const int MAX_LEAD_IN_BARS = 2;
+    const double DYING_AWAY = 0.6;
+
     /// <summary>
     /// Whether a song's title or file name says it's a DJ edit, an extended or club mix, or a DJ-pool intro version
     /// already: those have beats to mix over at their ends.
@@ -183,6 +189,7 @@ static partial class DjEdit
         readonly double[] _vocals = [];
         readonly double[] _bass = [];
         readonly double[] _others = [];
+        readonly double[] _mix = [];
         readonly double _bassLevel;
         readonly double _othersLevel;
         public readonly double DrumLevel;
@@ -227,6 +234,17 @@ static partial class DjEdit
                 beat++;
             Downbeat = beat;
 
+            // A bar or two much quieter than the song, a riser or a sound leading in, come before its first downbeat,
+            // as a pickup does, so its phrases are counted from where it really starts.
+            var mixes = new List<double>();
+            for (var bar = 0; grid.TimeOfBeat(BarBeat(bar + 1)) <= duration; bar++)
+                mixes.Add(Rms(song.Samples, Channels, Frame(BarBeat(bar)), Frame(BarBeat(bar + 1))));
+            var usual = Percentile([.. mixes], 0.5);
+            var leadIn = 0;
+            while (leadIn < MAX_LEAD_IN_BARS && leadIn < mixes.Count && mixes[leadIn] < LEAD_IN * usual)
+                leadIn++;
+            Downbeat += leadIn * BEATS_PER_BAR;
+
             while (grid.TimeOfBeat(BarBeat(BarCount + 1)) <= duration)
                 BarCount++;
             if (BarCount < BARS)
@@ -244,6 +262,7 @@ static partial class DjEdit
             _vocals = new double[BarCount];
             _bass = new double[BarCount];
             _others = new double[BarCount];
+            _mix = new double[BarCount];
             var beats = new double[BarCount * BEATS_PER_BAR];
             for (var bar = 0; bar < BarCount; bar++)
             {
@@ -261,6 +280,7 @@ static partial class DjEdit
                 _vocals[bar] = Rms(stems.Vocals, Channels, Frame(BarBeat(bar)), Frame(BarBeat(bar + 1)));
                 _bass[bar] = Rms(stems.Bass, Channels, Frame(BarBeat(bar)), Frame(BarBeat(bar + 1)));
                 _others[bar] = OthersRms(Frame(BarBeat(bar)), Frame(BarBeat(bar + 1)));
+                _mix[bar] = Rms(song.Samples, Channels, Frame(BarBeat(bar)), Frame(BarBeat(bar + 1)));
             }
             _bassLevel = Percentile(_bass, 0.7);
             _othersLevel = Percentile(_others, 0.7);
@@ -294,6 +314,21 @@ static partial class DjEdit
             {
                 FadesOut = true;
                 OutroBar = Math.Max(FirstPlaying + 1, (lastFull + 1) / 4 * 4);
+            }
+            else
+            {
+                // A song that carries on past its drums, with an ending of its own, has it heard: the outro's beats
+                // come in on the phrase line (or failing that the four-bar line) where it's dying away, overlapping no
+                // more than its last bar or two.
+                var usualBar = Percentile(_mix, 0.5);
+                var over = BarCount;
+                while (over > OutroBar && _mix[over - 1] < DYING_AWAY * usualBar)
+                    over--;
+                if (over - OutroBar > 1)
+                {
+                    var phrase = over / PHRASE_BARS * PHRASE_BARS;
+                    OutroBar = Math.Max(OutroBar, phrase >= over - 2 ? phrase : over / 4 * 4);
+                }
             }
 
             // Beats to mix over already: eight bars of drums without vocals from its start, give or take a bar or two

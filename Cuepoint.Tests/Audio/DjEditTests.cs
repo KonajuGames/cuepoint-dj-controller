@@ -212,10 +212,41 @@ public class DjEditTests
     }
 
     [Fact]
+    public void A_song_that_carries_on_past_its_drums_is_heard_out_before_the_outros_beats()
+    {
+        // The drums stop after bar 34, but the vocals carry on to bar 40: the outro comes in on the phrase line there.
+        var (song, stems, grid) = MakeSong(40, ..34, ..);
+
+        var (edit, why) = DjEdit.Make(song, stems, grid);
+
+        Assert.Null(why);
+        Assert.Equal(edit!.Offset + FIRST_BEAT + 40 * BAR, edit.OutroStart!.Value, 3);
+        Assert.Contains("16 bars after it", edit.Summary);
+        // The song's own ending is as it was, without beats under it.
+        var shift = (long)Math.Round(edit.Offset * RATE);
+        for (var frame = (long)((FIRST_BEAT + 34 * BAR + 0.1) * RATE); frame < (long)((FIRST_BEAT + 40 * BAR - 0.1) * RATE); frame += 101)
+            Assert.Equal(song.Samples[frame * CHANNELS], edit.Audio.Samples[(frame + shift) * CHANNELS]);
+    }
+
+    [Fact]
+    public void A_quiet_lead_in_comes_before_the_first_downbeat()
+    {
+        // A soft bar of something before the song proper: its phrases are counted from the bar after.
+        var (song, stems, grid) = MakeSong(40, 1.., 1.., extra: t => t >= FIRST_BEAT && t < FIRST_BEAT + BAR ? 0.05f * MathF.Sin((float)(2 * Math.PI * 660 * t)) : 0);
+
+        var (edit, why) = DjEdit.Make(song, stems, grid);
+
+        Assert.Null(why);
+        Assert.Equal(16 * BAR - (FIRST_BEAT + BAR), edit!.Offset, 3);
+        Assert.Contains("gap for its pickup", edit.Summary);
+    }
+
+    [Fact]
     public void Beats_that_stop_partway_through_a_phrase_carry_on_to_the_end_of_the_next()
     {
-        // The drums stop after bar 37: the outro runs from there to bar 56, nineteen bars.
-        var (song, stems, grid) = MakeSong(40, ..37, ..);
+        // The drums and vocals stop after bar 37, leaving the pads to die away: the outro runs from there to bar 56,
+        // nineteen bars.
+        var (song, stems, grid) = MakeSong(40, ..37, ..37, bass: false);
 
         var (edit, _) = DjEdit.Make(song, stems, grid);
 
