@@ -3122,6 +3122,8 @@ static int Run(ScreenshotTool.Request? capture)
     // again takes the old one's place. The original notes that it has one.
     void TakeInDjEdit(DjEditDone done)
     {
+        if (done.Separated)
+            OfferToDeleteStems(done.Song);
         if (done.Edit is not { } edit || done.EditPath is not { } path)
         {
             screen.Log($"No DJ edit of {done.Song.Title}: {done.Why}");
@@ -3183,6 +3185,32 @@ static int Run(ScreenshotTool.Request? capture)
             TakeInLibraryChanges();
         browser.Reload();
         screen.Log($"{(replaced ? "Made again" : "Made")} {Path.GetFileName(path)}: {edit.Summary}");
+    }
+
+    // A song separated just to make its DJ edit has its stems taking up room on disk, which it's offered back, unless
+    // a deck has the song loaded, so it's likely they're wanted.
+    void OfferToDeleteStems(Song song)
+    {
+        if (separator.StemsSize(song.Path) is not { } bytes || decks.Any(deck => string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase)))
+            return;
+        confirmation.Show(
+            $"Delete the stems of {song.Title}?",
+            $"It was separated into its stems to make its DJ edit, and they take {bytes / (1024.0 * 1024):0} MB. Keep them if you'll play it in STEMS mode; "
+                + "otherwise they can go, and it's separated again if they're ever wanted.",
+            "Delete",
+            () =>
+            {
+                try
+                {
+                    separator.DeleteStems(song.Path);
+                    screen.Log($"Deleted the stems of {song.Title}, freeing {bytes / (1024.0 * 1024):0} MB");
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    screen.Log($"Couldn't delete the stems of {song.Title}: {e.Message}");
+                }
+            }
+        );
     }
 
     browser.AnalyseAllCancelled += left => screen.Log($"Stopped analysing all; {left} {(left == 1 ? "song was" : "songs were")} left unanalysed");

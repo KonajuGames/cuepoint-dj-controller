@@ -6,9 +6,9 @@ namespace Cuepoint.Music;
 
 /// <summary>
 /// A DJ edit finished, or given up on: the song it's of, and the edit's file, title and what was made, or why there's
-/// none.
+/// none; and whether the song was separated into its stems for it, rather than having them on disk already.
 /// </summary>
-sealed record DjEditDone(Song Song, string? EditPath, string Title, DjEditResult? Edit, string? Why);
+sealed record DjEditDone(Song Song, string? EditPath, string Title, DjEditResult? Edit, string? Why, bool Separated = false);
 
 /// <summary>
 /// Makes DJ edits of songs (see <see cref="DjEdit"/>), one at a time in the background: decoding the song, finding its
@@ -29,6 +29,7 @@ sealed class DjEdits(StemSeparator separator)
         public string EditPath { get; } = DjEdit.EditPath(song.Path);
         public Task<PcmAudio>? Decoding;
         public StemJob? Stems;
+        public bool HadStems;
         public Task<(DjEditResult? Edit, string? Why)>? Making;
     }
 
@@ -99,7 +100,7 @@ sealed class DjEdits(StemSeparator separator)
             {
                 _job = null;
                 var (edit, why) = making.GetAwaiter().GetResult();
-                return new DjEditDone(job.Song, edit is null ? null : job.EditPath, job.Title, edit, why);
+                return new DjEditDone(job.Song, edit is null ? null : job.EditPath, job.Title, edit, why, Separated(job));
             }
             if (job.Making is not null)
                 return null;
@@ -119,16 +120,22 @@ sealed class DjEdits(StemSeparator separator)
                 return null;
 
             if (job.Decoding is { IsCompleted: true } decoding)
+            {
+                job.HadStems = separator.HasStems(job.Song.Path);
                 job.Stems = separator.Request(job.Song.Path, decoding.GetAwaiter().GetResult(), separate: true);
+            }
             return null;
         }
         catch (Exception e)
         {
             _job = null;
             ErrorLog.Write($"making a DJ edit of {job.Song.Path}", e);
-            return new DjEditDone(job.Song, null, job.Title, null, e.GetBaseException().Message);
+            return new DjEditDone(job.Song, null, job.Title, null, e.GetBaseException().Message, Separated(job));
         }
     }
+
+    // Whether the job separated the song itself, its stems being on disk now when they weren't before.
+    bool Separated(Job job) => job.Stems is not null && !job.HadStems && separator.HasStems(job.Song.Path);
 
     static (DjEditResult? Edit, string? Why) Make(Job job, PcmAudio audio, SongStems stems)
     {

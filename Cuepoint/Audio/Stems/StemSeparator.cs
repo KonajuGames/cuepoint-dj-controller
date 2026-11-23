@@ -49,6 +49,26 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
     public bool HasStems(string path) => cache.Has(path);
 
     /// <summary>
+    /// How many bytes the stems kept on disk for the song at <paramref name="path"/> take; null if there are none.
+    /// </summary>
+    public long? StemsSize(string path) => cache.SizeOf(path);
+
+    /// <summary>
+    /// Deletes the stems kept on disk for the song at <paramref name="path"/>, and forgets any found for it, so it's
+    /// separated again if they're wanted. Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/>
+    /// if they can't be deleted.
+    /// </summary>
+    public void DeleteStems(string path)
+    {
+        lock (_lock)
+        {
+            if (_jobs.TryGetValue(path, out var job) && job.Done)
+                _jobs.Remove(path);
+        }
+        cache.Delete(path);
+    }
+
+    /// <summary>
     /// Whether something's playing (a deck, or a preview), when separating keeps off the graphics card, which the
     /// screen needs, and to half the processor's cores. Set it once a frame.
     /// </summary>

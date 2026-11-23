@@ -57,6 +57,21 @@ sealed class StemCache(string folder)
     /// </summary>
     public bool Has(string songPath) => FileFor(songPath) is { } path && File.Exists(path);
 
+    /// <summary>
+    /// How many bytes the stems kept for the song at <paramref name="songPath"/> take; null if there are none.
+    /// </summary>
+    public long? SizeOf(string songPath) => FileFor(songPath) is { } path && new FileInfo(path) is { Exists: true } file ? file.Length : null;
+
+    /// <summary>
+    /// Deletes the stems kept for the song at <paramref name="songPath"/>, if there are any. Throws
+    /// <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> if they can't be.
+    /// </summary>
+    public void Delete(string songPath)
+    {
+        if (FileFor(songPath) is { } path)
+            File.Delete(path);
+    }
+
     public void Save(string songPath, SongStems stems)
     {
         if (FileFor(songPath) is not { } path)

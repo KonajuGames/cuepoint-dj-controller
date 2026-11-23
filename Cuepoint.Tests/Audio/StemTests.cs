@@ -126,4 +126,46 @@ public class StemTests
 
         Assert.Null(cache.Load(songPath));
     }
+
+    [Fact]
+    public void Stems_kept_on_disk_say_how_much_room_they_take_and_can_be_deleted()
+    {
+        using var folder = new TempFolder();
+        var songPath = folder.File("song.mp3");
+        var (_, stems, _) = MakeSong(1);
+        var cache = new StemCache(folder["stems"]);
+        Assert.Null(cache.SizeOf(songPath));
+        cache.Save(songPath, stems);
+
+        // Three stems of 16-bit samples, and a little to say what they are.
+        Assert.InRange(cache.SizeOf(songPath)!.Value, 3L * stems.Vocals.Length * 2, 3L * stems.Vocals.Length * 2 + 64);
+
+        cache.Delete(songPath);
+
+        Assert.False(cache.Has(songPath));
+        Assert.Null(cache.SizeOf(songPath));
+        Assert.Null(cache.Load(songPath));
+    }
+
+    [Fact]
+    public async Task Stems_deleted_are_found_again_only_by_separating()
+    {
+        using var folder = new TempFolder();
+        var songPath = folder.File("song.mp3");
+        var (song, stems, _) = MakeSong(1);
+        var cache = new StemCache(folder["stems"]);
+        cache.Save(songPath, stems);
+        using var separator = new StemSeparator(cache, folder["no model.onnx"]);
+        var found = separator.Request(songPath, song, separate: false);
+        await found.Task;
+        Assert.NotNull(found.Stems);
+
+        separator.DeleteStems(songPath);
+
+        var again = separator.Request(songPath, song, separate: false);
+        await again.Task;
+        Assert.NotSame(found, again);
+        Assert.Null(again.Stems);
+        Assert.False(separator.HasStems(songPath));
+    }
 }
