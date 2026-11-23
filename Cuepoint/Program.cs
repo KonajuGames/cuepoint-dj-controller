@@ -2895,18 +2895,24 @@ static int Run(ScreenshotTool.Request? capture)
             return;
         }
         var where = string.Join(", ", others.Take(3).Select(path => Path.GetDirectoryName(path))) + (others.Count > 3 ? $" and {others.Count - 3} more" : "");
+        var recycling = others.ToDictionary(path => path, FileDeletion.WouldRecycle, StringComparer.OrdinalIgnoreCase);
+        var forGood = recycling.Count(pair => !pair.Value);
+        var going =
+            forGood == 0 ? $"{(others.Count == 1 ? "goes" : "go")} to the Recycle Bin"
+            : forGood == others.Count ? $"{(others.Count == 1 ? "is" : "are")} deleted for good, as there's no Recycle Bin for {(others.Count == 1 ? "it" : "them")}"
+            : $"{(others.Count - forGood == 1 ? "goes" : "go")} to the Recycle Bin but for {forGood}, deleted for good as there's no Recycle Bin for {(forGood == 1 ? "it" : "them")}";
         confirmation.Show(
             $"Keep the copy in {Path.GetFileName(Path.GetDirectoryName(kept.Path))}?",
-            $"This one, {kept.Path}, is kept. {(others.Count == 1 ? "The other copy, in" : $"The {others.Count} other copies, in")} {where}, {(others.Count == 1 ? "goes" : "go")} to the Recycle Bin. "
-                + $"Their hot cues, notes and places in virtual folders come onto this one, where it hasn't its own.{(onDecks.Count > 0 ? " A copy on a deck is left." : "")}",
-            "Recycle",
+            $"This one, {kept.Path}, is kept. {(others.Count == 1 ? "The other copy, in" : $"The {others.Count} other copies, in")} {where}, {going}. "
+                + $"Their hot cues, notes and places in virtual folders come onto this one, where it hasn't its own.{(forGood > 0 ? " That can't be undone." : "")}{(onDecks.Count > 0 ? " A copy on a deck is left." : "")}",
+            forGood == 0 ? "Recycle" : "Delete",
             () =>
             {
                 var recycled = new List<string>();
                 string? problem = null;
                 foreach (var other in others)
                 {
-                    if (WindowsShell.MoveToRecycleBin(other) is { } error)
+                    if (FileDeletion.Delete(other, recycling[other]) is { } error)
                         problem ??= $"{Path.GetFileName(other)}: {error}";
                     else
                         recycled.Add(other);
@@ -2921,8 +2927,8 @@ static int Run(ScreenshotTool.Request? capture)
                 duplicates = duplicates.Where(song => left.Contains(song.Path)).ToList();
                 browser.Reload();
                 screen.Log(
-                    (recycled.Count == 1 ? $"Kept {kept.Title}; recycled its other copy" : $"Kept {kept.Title}; recycled {recycled.Count} other copies")
-                        + (problem is not null ? $"; couldn't recycle {problem}" : "")
+                    (recycled.Count == 1 ? $"Kept {kept.Title}; deleted its other copy" : $"Kept {kept.Title}; deleted {recycled.Count} other copies")
+                        + (problem is not null ? $"; couldn't delete {problem}" : "")
                         + (saving is not null ? $"; couldn't save a virtual folder: {saving}" : "")
                 );
             }
@@ -2989,7 +2995,7 @@ static int Run(ScreenshotTool.Request? capture)
             at,
             [
                 .. browser.Source is { Name: "Duplicates" } && songs.Count == 1 && OtherCopies(songs[0]).Count > 0
-                    ? [new MenuItem("Keep this copy, recycle the others...", () => KeepCopy(songs[0]), Enabled: OperatingSystem.IsWindows())]
+                    ? [new MenuItem("Keep this copy, delete the others...", () => KeepCopy(songs[0]))]
                     : Array.Empty<MenuItem>(),
                 new MenuItem(songs.Count > 1 ? $"Add {songs.Count} songs to Up next" : "Add to Up next", () => AddToUpNext(songs), Enabled: songs.Count > 0),
                 new MenuItem(
@@ -3083,9 +3089,66 @@ static int Run(ScreenshotTool.Request? capture)
                     },
                     Enabled: played.Count > 0
                 ),
+                new MenuItem(
+                    songs.Count > 1 ? $"Delete {songs.Count} songs..." : "Delete...",
+                    () => DeleteSongs(songs),
+                    Enabled: songs.Count > 0
+                ),
             ]
         );
     };
+
+    // Songs' files deleted, once it's agreed, and taken out of the virtual folders: to the Recycle Bin where their
+    // drive has one, for good where it hasn't. A song on a deck is left.
+    void DeleteSongs(IReadOnlyList<Song> songs)
+    {
+        var onDecks = songs.Where(song => decks.Any(deck => string.Equals(deck.FilePath, song.Path, StringComparison.OrdinalIgnoreCase))).ToList();
+        var deleting = songs.Except(onDecks).ToList();
+        if (deleting.Count == 0)
+        {
+            screen.Log(songs.Count == 1 ? $"{songs[0].Title} is on a deck, so it can't be deleted" : "Those are on decks, so they can't be deleted");
+            return;
+        }
+        var recycling = deleting.ToDictionary(song => song, song => FileDeletion.WouldRecycle(song.Path));
+        var forGood = recycling.Count(pair => !pair.Value);
+        var where =
+            deleting.Count == 1 ? (forGood == 0 ? $"{deleting[0].Path} goes to the Recycle Bin" : $"{deleting[0].Path} is deleted for good, as there's no Recycle Bin for it")
+            : forGood == 0 ? "Their files go to the Recycle Bin"
+            : forGood == deleting.Count ? "Their files are deleted for good, as there's no Recycle Bin for them"
+            : $"{deleting.Count - forGood} of their files go to the Recycle Bin, and {forGood} {(forGood == 1 ? "is" : "are")} deleted for good, as there's no Recycle Bin for {(forGood == 1 ? "it" : "them")}";
+        confirmation.Show(
+            deleting.Count == 1 ? $"Delete {deleting[0].Title}?" : $"Delete {deleting.Count} songs?",
+            $"{where}, and {(deleting.Count == 1 ? "it comes out of any virtual folders it's in" : "they come out of any virtual folders they're in")}."
+                + (forGood > 0 ? " That can't be undone." : "")
+                + (onDecks.Count > 0 ? $" {(onDecks.Count == 1 ? "The one" : $"The {onDecks.Count}")} on a deck {(onDecks.Count == 1 ? "is" : "are")} left." : ""),
+            "Delete",
+            () =>
+            {
+                var deleted = new List<Song>();
+                string? problem = null;
+                foreach (var song in deleting)
+                {
+                    if (preview.Song == song)
+                        preview.Stop();
+                    if (FileDeletion.Delete(song.Path, recycling[song]) is { } error)
+                        problem ??= $"{Path.GetFileName(song.Path)}: {error}";
+                    else
+                        deleted.Add(song);
+                }
+                string? saving = null;
+                foreach (var folder in virtualFolders.All)
+                    saving ??= virtualFolders.Remove(folder, deleted);
+                browser.Reload();
+                screen.Log(
+                    (deleted.Count == 0 ? "Nothing was deleted"
+                    : deleted.Count == 1 ? $"Deleted {deleted[0].Title}"
+                    : $"Deleted {deleted.Count} songs")
+                        + (problem is not null ? $"; couldn't delete {problem}" : "")
+                        + (saving is not null ? $"; couldn't save a virtual folder: {saving}" : "")
+                );
+            }
+        );
+    }
 
     // A DJ edit made before is only made again once it's agreed to replace it.
     void MakeDjEdit(Song song)
