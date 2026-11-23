@@ -1079,6 +1079,14 @@ static int Run(ScreenshotTool.Request? capture)
         // A missing or unsupported file leaves the deck as it was rather than stopping the app.
         deck.LoadFailed += (failed, path, e) =>
             screen.Log($"Deck {failed.Name}: couldn't load {Path.GetFileName(path)}: {e.Message}");
+
+        // Unloaded, its cover's given back.
+        deck.Unloaded += unloaded =>
+        {
+            if (covers.Remove(unloaded, out var shown))
+                renderer.RemoveImage(shown.Texture);
+            screen.ShowCover(unloaded, null);
+        };
     }
 
     // A song analysed while it's on a deck takes its gain then. Most finish before the deck has decoded.
@@ -1105,6 +1113,9 @@ static int Run(ScreenshotTool.Request? capture)
 
     // Shift + 1 or 2: the first song still to come in Up next, onto that deck. Set once Auto-Mix is made.
     Action<Deck>? loadNextUp = null;
+
+    // Ctrl + 1 or 2, a deck's eject button or a controller's: the deck left empty. Set once Auto-Mix is made.
+    Action<Deck>? unload = null;
 
     // Returns whether it's loading, as a playing deck can be protected.
     bool Load(Song song, Deck deck, bool byHand = true)
@@ -1949,6 +1960,12 @@ static int Run(ScreenshotTool.Request? capture)
                 else if (controllerDialog?.Escape() != true)
                     screen.Options.Close();
                 break;
+            case GlfwKey.Number1 when pressed && (mods & GlfwModifier.Control) != 0:
+                unload?.Invoke(deckA);
+                break;
+            case GlfwKey.Number2 when pressed && (mods & GlfwModifier.Control) != 0:
+                unload?.Invoke(deckB);
+                break;
             case GlfwKey.Number1 when pressed && (mods & GlfwModifier.Shift) != 0:
                 loadNextUp?.Invoke(deckA);
                 break;
@@ -2323,6 +2340,34 @@ static int Run(ScreenshotTool.Request? capture)
         else
             screen.Log(autoMix.Songs.Count == 0 ? "Up next is empty: right-click songs and choose Add to Up next" : "Nothing's waiting in Up next");
     };
+    unload = deck =>
+    {
+        if (!deck.IsLoaded && !deck.IsLoading)
+            return;
+        // As with loading, one stray press mustn't stop the music.
+        if (settings.ProtectPlayingDecks && deck.IsAudible)
+        {
+            screen.Log($"Deck {deck.Name} is playing, so it wasn't unloaded: pause it or turn it down first");
+            return;
+        }
+        // Auto-Mix counts on what's on its decks.
+        if (autoMix.IsRunning)
+        {
+            screen.Log($"Auto-Mix is using the decks, so deck {deck.Name} wasn't unloaded: stop it first");
+            return;
+        }
+        var what = deck.IsLoaded ? (deck.Artist.Length > 0 ? $"{deck.Artist} - {deck.Title}" : deck.Title) : null;
+        var cancelled = deck.LoadingName;
+        restoring.Remove(deck);
+        shiftOnLoad.Remove(deck);
+        deck.Unload();
+        screen.Log(
+            what is not null ? $"Deck {deck.Name}: unloaded {what}{(cancelled is not null ? $", and stopped loading {cancelled}" : "")}"
+            : $"Deck {deck.Name}: stopped loading {cancelled}"
+        );
+    };
+    screen.UnloadRequested += deck => unload?.Invoke(deck);
+    controllers?.UnloadRequested += deck => unload?.Invoke(deck);
     autoMix.Log += screen.Log;
     screen.AutoMix.Mix = autoMix;
     screen.AutoMix.PlayPressed += () =>

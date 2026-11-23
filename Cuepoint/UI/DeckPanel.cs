@@ -46,6 +46,7 @@ sealed class DeckPanel : Panel
     readonly Label _gain;
     readonly Label _cuePoint;
     readonly Label _loading;
+    readonly EjectButton _eject;
     readonly WaveformBar _overview;
     readonly Button _cue;
     readonly Button _playPause;
@@ -213,6 +214,11 @@ sealed class DeckPanel : Panel
     public event Action<DeckPanel, Song>? SongDropped;
 
     /// <summary>
+    /// The eject button was pressed, to take the song off the deck (or stop one loading).
+    /// </summary>
+    public event Action<DeckPanel>? UnloadRequested;
+
+    /// <summary>
     /// A set hotcue's pad was right-clicked, at the point given: for a menu to name it, colour it, make it a hot loop
     /// or clear it.
     /// </summary>
@@ -271,6 +277,10 @@ sealed class DeckPanel : Panel
         _gain = Add(new Label(body) { Color = Theme.Muted });
         _cuePoint = Add(new Label(body) { Color = Theme.Muted });
         _loading = Add(new Label(body) { Color = Theme.Muted });
+
+        // Under the deck's letter: takes the song off, leaving the deck empty.
+        _eject = Add(new EjectButton { Tooltip = $"Unload the song, leaving deck {deck.Name} empty (Ctrl + {(deck.Name == "B" ? 2 : 1)})" });
+        _eject.Clicked += _ => UnloadRequested?.Invoke(this);
 
         // The song's waveform, coloured as it plays, with a thin playhead and a mark at the cue point; click or drag
         // to seek.
@@ -781,6 +791,9 @@ sealed class DeckPanel : Panel
         _fxOn.HoverBackground = fx.On ? Theme.Mix(Theme.PanelRaised, Theme.Accent, 0.75f) : Theme.ControlHover;
         _fxOn.TextColor = fx.On ? Theme.Text : Theme.Muted;
         _loading.Text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : _stems is { Active: true, Status: { } status } ? status : "";
+        // In the deck's colour while a song's on its way, so it's seen even with another still playing.
+        _loading.Color = _deck.IsLoading ? _color : Theme.Muted;
+        _eject.Visible = _deck.IsLoaded || _deck.IsLoading;
 
         if (!_deck.IsLoaded)
         {
@@ -797,6 +810,9 @@ sealed class DeckPanel : Panel
             _playPause.Enabled = false;
             _playPause.Text = "PLAY";
             _sync.Enabled = false;
+            // Unlit, as an unloaded deck's would otherwise stay as they were with its song.
+            (_playPause.Background, _playPause.HoverBackground) = (Theme.Control, Theme.ControlHover);
+            (_sync.Background, _sync.HoverBackground) = (Theme.Control, Theme.ControlHover);
             _overview.Enabled = false;
             _overview.Max = 1;
             _overview.Value = 0;
@@ -1163,6 +1179,7 @@ sealed class DeckPanel : Panel
         void Place(Element child, float x, float y) => child.Arrange(new float2(MathF.Round(x), MathF.Round(y)));
 
         Place(_badge, Outer(0, _badge), top + 2);
+        Place(_eject, Outer(0, _eject), top + 2 + _badge.Size.Y + 3);
         _coverAt = new float2(Mirrored ? contentRight - 40 - COVER_SIZE : contentLeft + 40, top);
         Place(_title, Outer(TitleOffset, _title), top);
         Place(_artist, Outer(TitleOffset, _artist), top + _title.Size.Y + 1);
@@ -1270,6 +1287,7 @@ sealed class DeckPanel : Panel
         batch.AddRect(ScreenPosition, new float2(Size.X, 2), _color);
         DrawCover(batch);
         DrawChildren(batch);
+        DrawLoading(batch);
 
         // A song dragged over the deck: tint it and say what letting go will do.
         if (IsDropTarget)
@@ -1286,6 +1304,30 @@ sealed class DeckPanel : Panel
             batch.AddRect(at, chip, _color);
             batch.AddText(_bold, text, at + new float2(12, 6), Colors.White);
         }
+    }
+
+    /// <summary>
+    /// How long the loading sweep takes to cross the overview, in seconds.
+    /// </summary>
+    const double LOADING_SWEEP_SECONDS = 1.2;
+
+    /// <summary>
+    /// While a song's loading, a band of the deck's colour sweeping across the overview, over whatever's there.
+    /// </summary>
+    void DrawLoading(Batch batch)
+    {
+        if (!_deck.IsLoading)
+            return;
+        var at = _overview.ScreenPosition;
+        var size = _overview.Size;
+        batch.AddRect(at, size, Theme.Fade(Theme.Panel, 0.55f));
+        var band = MathF.Round(size.X / 4);
+        var travel = (float)(Clock.Seconds() % LOADING_SWEEP_SECONDS / LOADING_SWEEP_SECONDS);
+        var left = at.X - band + travel * (size.X + band);
+        var from = MathF.Max(left, at.X);
+        var to = MathF.Min(left + band, at.X + size.X);
+        if (to > from)
+            batch.AddRect(new float2(MathF.Round(from), at.Y), new float2(MathF.Round(to - from), size.Y), Theme.Fade(_color, 0.45f));
     }
 
     /// <summary>
@@ -1359,4 +1401,28 @@ sealed class DeckPanel : Panel
 
     static string Format(TimeSpan time) =>
         time < TimeSpan.Zero ? "0:00" : $"{(int)time.TotalMinutes}:{time.Seconds:00}";
+}
+
+/// <summary>
+/// A small flat button with the eject sign, a triangle over a bar, faint until it's pointed at.
+/// </summary>
+sealed class EjectButton : Element
+{
+    public override bool IsInteractive => true;
+
+    public override float2 Measure() => Size = new float2(30, 16);
+
+    public override void Draw(Batch batch)
+    {
+        if (IsHovered || IsPressed)
+            batch.AddRect(ScreenPosition, Size, IsPressed && IsHovered ? Theme.ControlPressed : Theme.ControlHover);
+        var color = IsHovered ? Theme.Text : Theme.Muted;
+
+        // An 11 pixel wide triangle, a row at a time on whole pixels, then the bar under it.
+        var x = MathF.Round(ScreenPosition.X + Size.X / 2 - 5.5f);
+        var y = MathF.Round(ScreenPosition.Y + Size.Y / 2 - 5);
+        for (var row = 0; row < 6; row++)
+            batch.AddRect(new float2(x + 5 - row, y + row), new float2(1 + 2 * row, 1), color);
+        batch.AddRect(new float2(x, y + 8), new float2(11, 2), color);
+    }
 }

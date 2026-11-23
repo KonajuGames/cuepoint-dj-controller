@@ -124,6 +124,11 @@ sealed class MainScreen : Panel
     public event Action<Deck, Song>? SongDropped;
 
     /// <summary>
+    /// A deck's eject button was pressed, to take its song off.
+    /// </summary>
+    public event Action<Deck>? UnloadRequested;
+
+    /// <summary>
     /// A set hotcue's pad was right-clicked: the deck, the hotcue and where, for its menu.
     /// </summary>
     public event Action<Deck, int, float2>? HotcueMenuRequested;
@@ -189,6 +194,7 @@ sealed class MainScreen : Panel
                 Add(_mixer);
             _decks.Add(Add(deckPanels[i]));
             deckPanels[i].SongDropped += (panel, song) => SongDropped?.Invoke(panel.Deck, song);
+            deckPanels[i].UnloadRequested += panel => UnloadRequested?.Invoke(panel.Deck);
             deckPanels[i].HotcueMenuRequested += (panel, index, at) => HotcueMenuRequested?.Invoke(panel.Deck, index, at);
             deckPanels[i].FxMenuRequested += (panel, at) => FxMenuRequested?.Invoke(panel.Deck, at);
             deckPanels[i].SamplerPadMenuRequested += (slot, at) => SamplerPadMenuRequested?.Invoke(slot, at);

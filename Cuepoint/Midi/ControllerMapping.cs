@@ -61,6 +61,7 @@ static class ControlCatalog
                     new($"{deck}.censor", $"Deck {deck} censor (plays backwards while held, then drops back in where the song would be)", ControlKind.Button),
                     new($"{deck}.sync", $"Deck {deck} sync (lit while it follows the other deck)", ControlKind.Button, HasLight: true),
                     new($"{deck}.load", $"Load deck {deck}", ControlKind.Button),
+                    new($"{deck}.unload", $"Unload deck {deck}, leaving it empty", ControlKind.Button),
                     new($"{deck}.pfl", $"Deck {deck} headphones", ControlKind.Button, HasLight: true),
                     new($"{deck}.keylock", $"Deck {deck} key lock", ControlKind.Button, HasLight: true),
                     new($"{deck}.slip", $"Deck {deck} slip (scratches, held hotcues and loops drop back in where the song would be)", ControlKind.Button, HasLight: true),

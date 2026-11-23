@@ -286,9 +286,18 @@ sealed class ScrollingWaveform : Element
         batch.AddRect(at - new float2(2, 2), badge + new float2(4, 4), Background);
         batch.AddRect(at, badge, _deck.IsLoaded ? Color : Theme.Fade(Color, 0.4f));
         batch.AddText(_letterFont, _deck.Name, new float2(MathF.Round(at.X + (badge.X - letter.X) / 2), at.Y + 2), Theme.TitleBar);
-        if (!_deck.IsLoaded)
+        // A song on its way is said here even over one that's playing, in the deck's colour so it's seen.
+        if (_deck.LoadingName is { } loading)
         {
-            var text = _deck.LoadingName is { } loading ? $"Loading {loading}…" : "No track loaded";
+            var text = $"Loading {loading}…";
+            var size = _font.Measure(text);
+            var textAt = new float2(at.X + badge.X + 8, MathF.Round(at.Y + (badge.Y - size.Y) / 2));
+            batch.AddRect(textAt - new float2(4, 1), size + new float2(8, 2), Background);
+            batch.AddText(_font, text, textAt, Color);
+        }
+        else if (!_deck.IsLoaded)
+        {
+            const string text = "No track loaded";
             batch.AddText(_font, text, new float2(at.X + badge.X + 8, MathF.Round(at.Y + (badge.Y - _font.Measure(text).Y) / 2)), Theme.Faint);
         }
         else if (_deck.Analysis?.Grid is { } grid)

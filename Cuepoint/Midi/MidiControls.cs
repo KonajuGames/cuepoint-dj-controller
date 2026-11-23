@@ -81,6 +81,11 @@ sealed class MidiControls : IDisposable
     public event Action<Deck>? LoadRequested;
 
     /// <summary>
+    /// A deck's unload button, to take its song off.
+    /// </summary>
+    public event Action<Deck>? UnloadRequested;
+
+    /// <summary>
     /// The browse knob turned, by this many steps (down the list for positive), and with Shift for folders.
     /// </summary>
     public event Action<int>? Browse;
@@ -434,6 +439,9 @@ sealed class MidiControls : IDisposable
                 break;
             case "load":
                 LoadRequested?.Invoke(deck);
+                break;
+            case "unload":
+                UnloadRequested?.Invoke(deck);
                 break;
             case "pfl":
                 deck.Headphones = !deck.Headphones;

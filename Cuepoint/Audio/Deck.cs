@@ -108,6 +108,11 @@ sealed partial class Deck : IDisposable
     /// </summary>
     public event Action<Deck, string, Exception>? LoadFailed;
 
+    /// <summary>
+    /// The song was taken off the deck by <see cref="Unload"/>, leaving it empty.
+    /// </summary>
+    public event Action<Deck>? Unloaded;
+
     readonly AudioEngine _engine;
     readonly MixTrack _track;
     MixAudio _audio;
@@ -1031,13 +1036,7 @@ sealed partial class Deck : IDisposable
     /// </summary>
     void Apply(DecodedSong song)
     {
-        _rolls.Clear();
-        DetachStems();
-        Effects.Silence();
-        _slipCauses = SlipCause.None;
-        KeyShift = 0;
-        (_platterMode, _touched) = ((int)PlatterMode.Off, false);
-        _track.Stop(0);
+        StopForChange();
         _track.SetAudio(song.Audio);
         _audio.Dispose();
         _loopAudio.Dispose();
@@ -1057,6 +1056,62 @@ sealed partial class Deck : IDisposable
         // Started then paused, so the track has its input and play/pause is just resume/pause from here on.
         _track.Play(0);
         _track.Pause();
+        ForgetCues();
+    }
+
+    /// <summary>
+    /// Takes the song off the deck, leaving it empty as it started, and drops any song still loading onto it. What's
+    /// set on the channel stays as it is: the faders, EQ, trim, effect and tempo. Its sync lock lets go, as there's
+    /// nothing left to follow with.
+    /// </summary>
+    public void Unload()
+    {
+        if (_pending is { } pending)
+        {
+            DiscardWhenDone(pending.Task);
+            _pending = null;
+        }
+        if (!IsLoaded)
+            return;
+
+        SyncLocked = false;
+        StopForChange();
+        _track.SetAudio(default);
+        _audio.Dispose();
+        _audio = default;
+        _loopAudio.Dispose();
+        _loopAudio = default;
+        _pcm = null;
+
+        FilePath = null;
+        (Title, Artist) = ("", "");
+        Duration = TimeSpan.Zero;
+        (Waveform, Detail, Cover) = (null, null, null);
+        Analysis = null;
+        ForgetCues();
+        Unloaded?.Invoke(this);
+    }
+
+    /// <summary>
+    /// Stops the song on the deck, and what's playing with it, for it to go: rolls, stems, effects ringing on, slip,
+    /// the key shift and the platter.
+    /// </summary>
+    void StopForChange()
+    {
+        _rolls.Clear();
+        DetachStems();
+        Effects.Silence();
+        _slipCauses = SlipCause.None;
+        KeyShift = 0;
+        (_platterMode, _touched) = ((int)PlatterMode.Off, false);
+        _track.Stop(0);
+    }
+
+    /// <summary>
+    /// Forgets the last song's cue point, hotcues, memory cues and loops.
+    /// </summary>
+    void ForgetCues()
+    {
         _cueFrames = 0;
         _previewing = false;
         Array.Clear(_hotcues);
