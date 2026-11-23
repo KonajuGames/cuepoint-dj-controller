@@ -246,8 +246,8 @@ sealed class SongBrowser : Panel
             }
         );
         _columns.Add(_titleColumn);
-        _columns.Add(new ListColumn<Song>("Artist", 220, song => song.Artist) { SortKey = song => Text(song.Artist) });
-        _columns.Add(new ListColumn<Song>("Album", 200, song => song.Album) { Color = _ => Theme.Muted, SortKey = song => Text(song.Album) });
+        _columns.Add(new ListColumn<Song>("Artist", 150, song => song.Artist) { SortKey = song => Text(song.Artist) });
+        _columns.Add(new ListColumn<Song>("Album", 136, song => song.Album) { Color = _ => Theme.Muted, SortKey = song => Text(song.Album) });
         // Wide enough for the large list text, too.
         _columns.Add(new ListColumn<Song>("Key", 112, FormatKey) { Color = KeyColor, SortKey = KeyOrder });
         _columns.Add(new ListColumn<Song>("Length", 80, song => Format(song.Duration)) { AlignRight = true, SortKey = song => song.Duration });
