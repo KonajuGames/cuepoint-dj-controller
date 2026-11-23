@@ -10,6 +10,57 @@ namespace Cuepoint.Audio;
 sealed record CoverPicture(int Width, int Height, byte[] Rgba);
 
 /// <summary>
+/// A song's cover as it's kept in its tags: a JPEG or PNG file, its MIME type, and its size and bits per pixel as its
+/// header says.
+/// </summary>
+sealed record CoverImage(byte[] Data, string MimeType, int Width, int Height, int Depth)
+{
+    /// <summary>
+    /// The picture in <paramref name="data"/>, if it's a JPEG or a PNG whose size can be read from its header.
+    /// </summary>
+    public static CoverImage? From(byte[] data)
+    {
+        if (data.Length > 24 && data.AsSpan(0, 8).SequenceEqual((ReadOnlySpan<byte>)[0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A]))
+        {
+            // IHDR comes first: width, height, bits per channel and colour type.
+            var (width, height) = (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(16)), System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(20)));
+            var channels = data[25] switch
+            {
+                2 => 3,
+                4 => 2,
+                6 => 4,
+                _ => 1,
+            };
+            return width > 0 && height > 0 ? new CoverImage(data, "image/png", width, height, data[24] * channels) : null;
+        }
+        if (data.Length > 4 && data[0] == 0xFF && data[1] == 0xD8)
+        {
+            // The frame header (SOF0 to SOF15, but for DHT, JPG and DAC) has the precision, height, width and how
+            // many components there are.
+            for (var at = 2; at + 9 < data.Length;)
+            {
+                if (data[at] != 0xFF)
+                    return null;
+                var marker = data[at + 1];
+                if (marker == 0xFF)
+                {
+                    at++;
+                    continue;
+                }
+                var length = data[at + 2] << 8 | data[at + 3];
+                if (marker is >= 0xC0 and <= 0xCF and not (0xC4 or 0xC8 or 0xCC))
+                {
+                    var (height, width) = (data[at + 5] << 8 | data[at + 6], data[at + 7] << 8 | data[at + 8]);
+                    return width > 0 && height > 0 ? new CoverImage(data, "image/jpeg", width, height, data[at + 4] * data[at + 9]) : null;
+                }
+                at += 2 + length;
+            }
+        }
+        return null;
+    }
+}
+
+/// <summary>
 /// Reads the cover picture embedded in a song's tags (an MP3's or M4A's, and a FLAC's where Windows reads FLAC tags)
 /// from the Windows property system, as File Explorer does, and decodes it with the Windows Imaging Component. The
 /// covers are nearly always JPEGs, which the app can't decode itself. Explorer's thumbnails can't stand in: they make
@@ -213,6 +264,74 @@ static unsafe class CoverArt
             Marshal.FreeCoTaskMem(value);
             Marshal.ReleaseComObject(store);
         }
+    }
+
+    /// <summary>
+    /// The cover embedded in the song at <paramref name="path"/> as it's kept: the picture file itself, to put in
+    /// another song's tags as it is. Null if it hasn't one, it can't be read, or it isn't a JPEG or a PNG.
+    /// </summary>
+    public static CoverImage? ReadImage(string path)
+    {
+        if (SHGetPropertyStoreFromParsingName(Path.GetFullPath(path), IntPtr.Zero, GPS_DEFAULT, typeof(IPropertyStore).GUID, out var store) < 0)
+            return null;
+
+        var value = Marshal.AllocCoTaskMem(PROPVARIANT_SIZE);
+        try
+        {
+            new Span<byte>((void*)value, PROPVARIANT_SIZE).Clear();
+            if (store.GetValue(ThumbnailStream, value) < 0)
+                return null;
+            try
+            {
+                var pointer = Marshal.ReadIntPtr(value, 8);
+                if ((ushort)Marshal.ReadInt16(value) != VT_STREAM || pointer == IntPtr.Zero)
+                    return null;
+                var stream = (System.Runtime.InteropServices.ComTypes.IStream)Marshal.GetObjectForIUnknown(pointer);
+                try
+                {
+                    return CoverImage.From(ReadAll(stream));
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(stream);
+                }
+            }
+            finally
+            {
+                PropVariantClear(value);
+            }
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(value);
+            Marshal.ReleaseComObject(store);
+        }
+    }
+
+    // Everything in a stream, from its start; none past what a picture could sensibly be.
+    static byte[] ReadAll(System.Runtime.InteropServices.ComTypes.IStream stream)
+    {
+        const int MAX_BYTES = 16 << 20;
+        stream.Seek(0, 0, IntPtr.Zero);
+        using var all = new MemoryStream();
+        var buffer = new byte[64 * 1024];
+        var read = Marshal.AllocCoTaskMem(sizeof(int));
+        try
+        {
+            while (all.Length < MAX_BYTES)
+            {
+                stream.Read(buffer, buffer.Length, read);
+                var count = Marshal.ReadInt32(read);
+                if (count <= 0)
+                    break;
+                all.Write(buffer, 0, count);
+            }
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(read);
+        }
+        return all.ToArray();
     }
 
     /// <summary>

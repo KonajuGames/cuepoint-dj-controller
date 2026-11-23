@@ -6,7 +6,7 @@ namespace Cuepoint.Audio;
 
 /// <summary>
 /// Writes a song as a 16-bit FLAC: losslessly compressed, about half the size of a WAV or less, with its title,
-/// artist, album and genre as Vorbis comments, which Windows and DJ software read. Each block of samples is predicted
+/// artist, album and genre as Vorbis comments, and its cover as a picture, which Windows and DJ software read. Each block of samples is predicted
 /// by the best of FLAC's fixed polynomial predictors, its stereo as left and right or as mid and side, whichever is
 /// smallest, and what the prediction misses is Rice-coded in partitions, each with its own parameter.
 /// </summary>
@@ -21,10 +21,11 @@ static class FlacFile
     /// <summary>
     /// Writes <paramref name="audio"/> to <paramref name="path"/>, rounded to 16 bits and clipped at full scale, by
     /// way of a file beside it, so a half-written one is never left under its name; a file there already is only
-    /// replaced with <paramref name="replace"/>, and then only once the new one's whole. Throws
-    /// <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/> if it can't.
+    /// replaced with <paramref name="replace"/>, and then only once the new one's whole. <paramref name="cover"/> is
+    /// its front cover, if it has one. Throws <see cref="IOException"/> or <see cref="UnauthorizedAccessException"/>
+    /// if it can't.
     /// </summary>
-    public static void Write(string path, PcmAudio audio, SongTags tags, bool replace = false)
+    public static void Write(string path, PcmAudio audio, SongTags tags, bool replace = false, CoverImage? cover = null)
     {
         if (!replace && File.Exists(path))
             throw new IOException($"There's a file at {path} already");
@@ -41,7 +42,12 @@ static class FlacFile
             {
                 stream.Write("fLaC"u8);
                 WriteStreamInfo(stream, audio.Channels, audio.SampleRate, samples);
-                WriteComments(stream, tags);
+                // A picture's length has to fit in a block's 24 bits; one bigger is left out.
+                if (cover is not null && 32 + cover.MimeType.Length + cover.Data.Length >= 1 << 24)
+                    cover = null;
+                WriteComments(stream, tags, last: cover is null);
+                if (cover is not null)
+                    WritePicture(stream, cover);
 
                 var writer = new BitWriter();
                 var channels = audio.Channels;
@@ -116,7 +122,7 @@ static class FlacFile
     }
 
     // VORBIS_COMMENT, the last metadata block: who made it, then TITLE, ARTIST, ALBUM and GENRE, all little-endian.
-    static void WriteComments(Stream stream, SongTags tags)
+    static void WriteComments(Stream stream, SongTags tags, bool last)
     {
         using var body = new MemoryStream();
         void Text(string text)
@@ -139,8 +145,30 @@ static class FlacFile
         foreach (var comment in comments)
             Text(comment);
 
-        WriteBlockHeader(stream, last: true, type: 4, (int)body.Length);
+        WriteBlockHeader(stream, last, type: 4, (int)body.Length);
         body.WriteTo(stream);
+    }
+
+    // PICTURE, the last metadata block when there's a cover: its type (3, the front cover), its MIME type, no
+    // description, its size and bits per pixel, no palette, and the picture file, all big-endian.
+    static void WritePicture(Stream stream, CoverImage cover)
+    {
+        var mime = Encoding.ASCII.GetBytes(cover.MimeType);
+        var block = new byte[32 + mime.Length + cover.Data.Length];
+        var span = block.AsSpan();
+        BinaryPrimitives.WriteInt32BigEndian(span, 3);
+        BinaryPrimitives.WriteInt32BigEndian(span[4..], mime.Length);
+        mime.CopyTo(span[8..]);
+        var at = 8 + mime.Length;
+        BinaryPrimitives.WriteInt32BigEndian(span[at..], 0);
+        BinaryPrimitives.WriteInt32BigEndian(span[(at + 4)..], cover.Width);
+        BinaryPrimitives.WriteInt32BigEndian(span[(at + 8)..], cover.Height);
+        BinaryPrimitives.WriteInt32BigEndian(span[(at + 12)..], cover.Depth);
+        BinaryPrimitives.WriteInt32BigEndian(span[(at + 16)..], 0);
+        BinaryPrimitives.WriteInt32BigEndian(span[(at + 20)..], cover.Data.Length);
+        cover.Data.CopyTo(span[(at + 24)..]);
+        WriteBlockHeader(stream, last: true, type: 6, block.Length);
+        stream.Write(block);
     }
 
     // One frame: its header, a subframe for each channel (stereo as whichever of left and right, left and side, side

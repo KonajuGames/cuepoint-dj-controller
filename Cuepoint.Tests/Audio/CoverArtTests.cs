@@ -84,4 +84,59 @@ public class CoverArtTests
         }
         return file.ToArray();
     }
+
+    static byte[] Logo()
+    {
+        var logo = new MemoryStream();
+        using (var resource = typeof(Deck).Assembly.GetManifestResourceStream("logo-32.png")!)
+            resource.CopyTo(logo);
+        return logo.ToArray();
+    }
+
+    [Fact]
+    public void A_song_s_cover_can_be_had_as_the_picture_file_it_s_kept_as()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        using var folder = new TempFolder();
+        var song = folder["cover.mp3"];
+        File.WriteAllBytes(song, Mp3(Logo()));
+
+        var image = CoverArt.ReadImage(song);
+
+        Assert.NotNull(image);
+        Assert.Equal(Logo(), image.Data);
+        Assert.Equal(("image/png", 32, 32), (image.MimeType, image.Width, image.Height));
+        Assert.Null(CoverArt.ReadImage(folder["not there.mp3"]));
+    }
+
+    [Fact]
+    public void A_cover_written_into_a_flac_is_its_cover()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        using var folder = new TempFolder();
+        var song = folder["edit.flac"];
+        var cover = CoverImage.From(Logo())!;
+
+        FlacFile.Write(song, new PcmAudio(new float[44100 * 2], 2, 44100), new SongTags("Song", "Artist", null, null), cover: cover);
+
+        Assert.Equal(Logo(), CoverArt.ReadImage(song)!.Data);
+        Assert.Equal((16, 16), CoverArt.Read(song, 16) is { } shown ? (shown.Width, shown.Height) : default);
+        Assert.Equal("Song", WavFile.ReadAnyTags(song).Title);
+        Assert.Equal(88200, AudioDecoder.Decode(song).Audio.Samples.Length);
+    }
+
+    [Fact]
+    public void A_jpeg_s_size_is_read_from_its_frame_header()
+    {
+        // Start of image, a JFIF header, then a baseline frame header: 8 bits, 256 high, 512 wide, 3 components.
+        byte[] jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, (byte)'J', (byte)'F', (byte)'I', (byte)'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xFF, 0xC0, 0x00, 0x11, 8, 0x01, 0x00, 0x02, 0x00, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1, 0xFF, 0xD9];
+
+        var image = CoverImage.From(jpeg);
+
+        Assert.NotNull(image);
+        Assert.Equal(("image/jpeg", 512, 256, 24), (image.MimeType, image.Width, image.Height, image.Depth));
+        Assert.Null(CoverImage.From([1, 2, 3, 4, 5, 6]));
+    }
 }

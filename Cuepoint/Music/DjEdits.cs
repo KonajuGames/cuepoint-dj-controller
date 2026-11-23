@@ -142,7 +142,11 @@ sealed class DjEdits(StemSeparator separator)
     {
         var (edit, why) = DjEdit.Make(audio, stems, job.Grid);
         if (edit is not null)
-            FlacFile.Write(job.EditPath, edit.Audio, new SongTags(job.Title, job.Artist, job.Album, null, job.Genre), job.Replace);
+        {
+            // The original's cover, as it is, so the edit looks like the song it's of.
+            var cover = OperatingSystem.IsWindows() ? CoverArt.ReadImage(job.Song.Path) : null;
+            FlacFile.Write(job.EditPath, edit.Audio, new SongTags(job.Title, job.Artist, job.Album, null, job.Genre), job.Replace, cover);
+        }
         // The samples are big, and done with, so they don't wait on the result being taken in.
         return (edit is null ? null : edit with { Audio = new PcmAudio([], edit.Audio.Channels, edit.Audio.SampleRate) }, why);
     }
