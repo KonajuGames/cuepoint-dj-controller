@@ -27,6 +27,12 @@ sealed class HotcuePad(Font font, int number) : Element
     public Image? Icon { get; set; }
 
     public bool IconAfter { get; set; }
+
+    /// <summary>
+    /// Whether <see cref="Text"/> goes in the pad's own font, as the number does, rather than the small one: for a
+    /// symbol, such as a beat jump's &lt; or &gt;.
+    /// </summary>
+    public bool LargeText { get; set; }
     public float4 Color { get; set; } = Colors.White;
     public bool Enabled { get; set; } = true;
     public float2 FixedSize { get; set; } = new(34, 30);
@@ -99,7 +105,7 @@ sealed class HotcuePad(Font font, int number) : Element
 
         // A word in place of the number goes in the small font, leaving the corner for the key.
         var text = Text ?? Number.ToString();
-        var textFont = Text is not null && HintFont is { } small ? small : font;
+        var textFont = Text is not null && !LargeText && HintFont is { } small ? small : font;
         var extent = textFont.Measure(text);
         var textColor = Faded(IsSet ? Theme.TitleBar : Text is not null ? Theme.Text : Theme.Muted);
 

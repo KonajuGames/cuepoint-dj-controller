@@ -115,7 +115,7 @@ static class ControlCatalog
                 controls.Add(
                     new(
                         $"{deck}.jump{i}",
-                        $"Deck {deck} beat jump {JumpPads.Label(i - 1)} {(JumpPads.Direction(i - 1) < 0 ? "back" : "on")}",
+                        $"Deck {deck} beat jump {JumpPads.Label(i - 1)} {(JumpPads.Bars(i - 1) == 1 ? "bar" : "bars")} {(JumpPads.Direction(i - 1) < 0 ? "back" : "on")}",
                         ControlKind.Button,
                         HasLight: true
                     )
