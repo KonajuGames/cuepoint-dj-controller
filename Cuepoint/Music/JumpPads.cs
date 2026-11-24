@@ -43,7 +43,7 @@ sealed class JumpPads(Deck deck, GridEditor? grid = null, RollPads? roll = null)
     }
 
     /// <summary>
-    /// How many bars pad <paramref name="index"/> jumps, shown once for its pair, on the border between them.
+    /// What pad <paramref name="index"/> says: how many bars it jumps, its direction shown by an arrow beside.
     /// </summary>
     public static string Label(int index) => $"{Bars(index):0}";
 

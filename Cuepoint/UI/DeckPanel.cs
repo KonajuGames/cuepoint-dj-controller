@@ -29,7 +29,6 @@ sealed class DeckPanel : Panel
     readonly Deck _deck;
     readonly float4 _color;
     readonly Font _bold;
-    readonly Font _small;
     readonly Badge _badge;
     readonly Label _title;
     readonly Label _artist;
@@ -264,7 +263,6 @@ sealed class DeckPanel : Panel
         _deck = deck;
         _color = AppTheme.DeckColor(deck.Name);
         _bold = bold;
-        _small = small;
         Background = Theme.Panel;
         BorderColor = Theme.PanelBorder;
         BorderWidth = 1;
@@ -898,7 +896,6 @@ sealed class DeckPanel : Panel
         var stemsMode = _stems is { Active: true };
         for (var i = 0; i < _pads.Count; i++)
         {
-            _pads[i].LargeText = jumpMode && !stemsMode;
             if (stemsMode)
             {
                 var stem = i % StemPads.Labels.Count;
@@ -924,12 +921,11 @@ sealed class DeckPanel : Panel
             }
             var hotcue = _deck.Hotcues[i];
             (_pads[i].Enabled, _pads[i].IsSet) = (true, rollMode ? _roll!.IsRolling(i) : hotcue is not null && !gridMode && !jumpMode);
-            // In JUMP mode each pad is just its way, < or >, its pair's bars on the border between them.
-            _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : rollMode ? RollPads.Label(i) : jumpMode ? (JumpPads.Direction(i) < 0 ? "<" : ">") : null;
+            _pads[i].Text = gridMode ? GridEditor.Label(GridEditor.Pads[i]) : rollMode ? RollPads.Label(i) : jumpMode ? JumpPads.Label(i) : null;
             var detail = gridMode || rollMode || jumpMode ? null : _deck.DetailOf(i);
             if (detail?.Name is { } name)
                 _pads[i].Text = name;
-            var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : 0;
+            var direction = gridMode ? GridEditor.Direction(GridEditor.Pads[i]) : jumpMode ? JumpPads.Direction(i) : 0;
             _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
             _pads[i].IconAfter = direction > 0;
             _pads[i].Color = gridMode ? Theme.Accent : rollMode ? AppTheme.Loop : jumpMode ? Theme.Focus : detail?.Color is { } color ? Colors.Hex(color) : AppTheme.HotcueColor(i);
@@ -1291,7 +1287,6 @@ sealed class DeckPanel : Panel
         batch.AddRect(ScreenPosition, new float2(Size.X, 2), _color);
         DrawCover(batch);
         DrawChildren(batch);
-        DrawJumpBars(batch);
         DrawLoading(batch);
 
         // A song dragged over the deck: tint it and say what letting go will do.
@@ -1308,25 +1303,6 @@ sealed class DeckPanel : Panel
             var at = ScreenPosition + new float2((Size.X - chip.X) / 2, 14);
             batch.AddRect(at, chip, _color);
             batch.AddText(_bold, text, at + new float2(12, 6), Colors.White);
-        }
-    }
-
-    /// <summary>
-    /// In JUMP mode, how many bars each pair of pads jumps, in bold white over the border between them, the &lt; pad
-    /// back and the &gt; pad on.
-    /// </summary>
-    void DrawJumpBars(Batch batch)
-    {
-        if (_jump is not { Active: true } || _grid is { Active: true } || _roll is { Active: true } || _stems is { Active: true } || !_deck.IsLoaded)
-            return;
-        for (var i = 0; i + 1 < _pads.Count && i + 1 < JumpPads.Sizes.Count; i += 2)
-        {
-            var (back, on) = (_pads[i], _pads[i + 1]);
-            var text = JumpPads.Label(i);
-            var extent = _bold.Measure(text);
-            var middle = (back.ScreenPosition.X + back.Size.X + on.ScreenPosition.X) / 2;
-            var at = new float2(MathF.Round(middle - extent.X / 2), MathF.Round(back.ScreenPosition.Y + (back.Size.Y - extent.Y) / 2));
-            batch.AddText(_bold, text, at, Colors.White);
         }
     }
 
