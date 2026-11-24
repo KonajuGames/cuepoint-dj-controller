@@ -1182,6 +1182,23 @@ sealed partial class Deck : IDisposable
     public TimeSpan CuePoint => IsLoaded ? TimeSpan.FromMilliseconds(_track.FramesToMS(_cueFrames)) : TimeSpan.Zero;
 
     /// <summary>
+    /// Paused at the cue point, as Cue or loading a song leaves it, to within <see cref="CUE_POINT_NEAR"/>. CUE's
+    /// light is steady then, and flashes paused anywhere else, as a CDJ's does.
+    /// </summary>
+    public bool IsAtCuePoint
+    {
+        get
+        {
+            if (!IsLoaded || IsPlaying)
+                return false;
+            var here = IsPlatterActive ? Volatile.Read(ref _platterHead) : SongFrame;
+            return Math.Abs(here - _cueFrames) <= CUE_POINT_NEAR * SampleRate;
+        }
+    }
+
+    const double CUE_POINT_NEAR = 0.01;
+
+    /// <summary>
     /// The cue point was moved by <see cref="CueDown"/>, so whoever keeps it for the song can save it. Not raised by
     /// <see cref="SetMemoryCues"/>.
     /// </summary>

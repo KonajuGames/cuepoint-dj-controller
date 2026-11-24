@@ -5,8 +5,8 @@ namespace Cuepoint.UI;
 
 /// <summary>
 /// The app's pictures, packed into the atlas with the fonts: the logo, and small white icons for tinting, among them
-/// the triangles drawn for arrows, the options button's cog, the headphones button, the search box's cross and the
-/// folder list's icons, the last two again larger for the folder list's large text; and the mixer's knob caps, in
+/// the triangles drawn for arrows, the options button's cog, the headphones button, the search box's cross, the decks'
+/// play and pause, and the folder list's icons, the last two again larger for the folder list's large text; and the mixer's knob caps, in
 /// colour, with the dot their arcs and pointers are drawn with. Each is a PNG built into the app (see
 /// Assets\draw_assets.py).
 /// </summary>
@@ -27,7 +27,9 @@ sealed record Images(
     Image Knob,
     Image LargeKnob,
     Image Dot,
-    Image Pause
+    Image Pause,
+    Image Play16,
+    Image Pause16
 )
 {
     /// <summary>
@@ -51,7 +53,9 @@ sealed record Images(
             Knob: atlas.AddImage(Read("knob-18.png")),
             LargeKnob: atlas.AddImage(Read("knob-32.png")),
             Dot: atlas.AddImage(Read("dot-8.png")),
-            Pause: atlas.AddImage(Read("pause-14.png"))
+            Pause: atlas.AddImage(Read("pause-14.png")),
+            Play16: atlas.AddImage(Read("play-16.png")),
+            Pause16: atlas.AddImage(Read("pause-16.png"))
         );
 
     /// <summary>

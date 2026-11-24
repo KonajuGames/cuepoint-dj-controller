@@ -699,9 +699,20 @@ sealed class MidiControls : IDisposable
     double _now;
 
     /// <summary>
+    /// How long CUE's light takes to flash once, paused away from the cue point: twice as fast as Play's, as a CDJ's.
+    /// </summary>
+    public const double CUE_FLASH_SECONDS = FLASH_SECONDS / 2;
+
+    /// <summary>
+    /// Whether a light flashing once every <paramref name="seconds"/> is in the on half of its flash at
+    /// <paramref name="now"/>, in seconds.
+    /// </summary>
+    public static bool Flashing(double now, double seconds) => now % seconds < seconds / 2;
+
+    /// <summary>
     /// Whether a flashing light is in the on half of its flash now.
     /// </summary>
-    bool FlashOn => _now % FLASH_SECONDS < FLASH_SECONDS / 2;
+    bool FlashOn => Flashing(_now, FLASH_SECONDS);
 
     /// <summary>
     /// Whether a control's light should be on now.
@@ -722,7 +733,8 @@ sealed class MidiControls : IDisposable
         {
             // Steady while playing; flashing while a song's loaded and paused, ready to go.
             "play" => deck.IsPlaying || deck.IsLoaded && FlashOn,
-            "cue" => deck.IsLoaded && !deck.IsPlaying,
+            // Steady paused at the cue point; flashing, twice as fast as play, paused anywhere else.
+            "cue" => deck.IsLoaded && !deck.IsPlaying && (deck.IsAtCuePoint || Flashing(_now, CUE_FLASH_SECONDS)),
             "sync" => deck.SyncLocked,
             "pfl" => deck.Headphones,
             "keylock" => deck.KeyLocked,

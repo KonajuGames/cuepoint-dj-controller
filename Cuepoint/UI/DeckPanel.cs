@@ -307,6 +307,7 @@ sealed class DeckPanel : Panel
             new Button(bold, "CUE")
             {
                 MinSize = new float2(64, 30),
+                BorderWidth = 2,
                 FocusColor = Theme.Focus,
                 Tooltip = "Playing, back to the cue point. Paused, sets it here, playing from it while held",
             }
@@ -314,7 +315,17 @@ sealed class DeckPanel : Panel
         _cue.PressStarted += _ => _deck.CueDown();
         _cue.PressEnded += _ => _deck.CueUp();
 
-        _playPause = Add(new Button(bold, "PLAY") { MinSize = new float2(84, 30), FocusColor = Theme.Focus, Tooltip = "Play or pause" });
+        // A play or pause symbol rather than a word, where there are pictures.
+        _playPause = Add(
+            new Button(bold, images is null ? "PLAY" : "")
+            {
+                Icon = images?.Play16,
+                MinSize = new float2(64, 30),
+                BorderWidth = 2,
+                FocusColor = Theme.Focus,
+                Tooltip = "Play or pause",
+            }
+        );
         _playPause.Clicked += _ => _deck.TogglePlay();
 
         // Sync matches the other deck's tempo, and its beats if both are playing; it stays lit while they match.
@@ -808,10 +819,9 @@ sealed class DeckPanel : Panel
             _cuePoint.Text = "";
             _cue.Enabled = false;
             _playPause.Enabled = false;
-            _playPause.Text = "PLAY";
+            LightTransport(loaded: false, playing: false, lit: false);
             _sync.Enabled = false;
-            // Unlit, as an unloaded deck's would otherwise stay as they were with its song.
-            (_playPause.Background, _playPause.HoverBackground) = (Theme.Control, Theme.ControlHover);
+            // Unlit, as an unloaded deck's would otherwise stay as it was with its song.
             (_sync.Background, _sync.HoverBackground) = (Theme.Control, Theme.ControlHover);
             _overview.Enabled = false;
             _overview.Max = 1;
@@ -949,9 +959,7 @@ sealed class DeckPanel : Panel
         _playPause.Enabled = true;
         // A cue preview is playing, but Play would latch it rather than pause, so it still offers Play.
         var playing = _deck.IsPlaying && !_deck.IsCuePreviewing;
-        _playPause.Text = playing ? "PAUSE" : "PLAY";
-        _playPause.Background = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.55f) : Theme.Control;
-        _playPause.HoverBackground = playing ? Theme.Mix(Theme.PanelRaised, _color, 0.7f) : Theme.ControlHover;
+        LightTransport(loaded: true, playing, lit: _deck.IsPlaying);
 
         // Lit while locked, and faintly while the tempos only happen to match.
         _sync.Enabled = _deck.CanSync || _deck.SyncLocked;
@@ -960,6 +968,39 @@ sealed class DeckPanel : Panel
         var syncLit = locked ? 0.55f : inSync ? 0.25f : 0f;
         _sync.Background = syncLit > 0 ? Theme.Mix(Theme.PanelRaised, _color, syncLit) : Theme.Control;
         _sync.HoverBackground = syncLit > 0 ? Theme.Mix(Theme.PanelRaised, _color, syncLit + 0.15f) : Theme.ControlHover;
+    }
+
+    /// <summary>
+    /// CUE and play stand out from the other buttons as a CDJ's do: outlined in amber and green, and lit as the
+    /// controller's lights are (see <see cref="Cuepoint.Midi.MidiControls"/>), at the same rate. Play is lit while the
+    /// deck plays (<paramref name="lit"/>), and flashes while a song's loaded and paused, ready to go; it shows a pause
+    /// symbol while <paramref name="playing"/>, a play symbol otherwise. CUE is lit paused at the cue point, and flashes
+    /// twice as fast as play paused anywhere else.
+    /// Faded with no song loaded.
+    /// </summary>
+    void LightTransport(bool loaded, bool playing, bool lit)
+    {
+        var now = Clock.Seconds();
+        var playLit = lit || loaded && Cuepoint.Midi.MidiControls.Flashing(now, Cuepoint.Midi.MidiControls.FLASH_SECONDS);
+        var cueLit = loaded && !lit && (_deck.IsAtCuePoint || Cuepoint.Midi.MidiControls.Flashing(now, Cuepoint.Midi.MidiControls.CUE_FLASH_SECONDS));
+        var fade = loaded ? 1f : 0.4f;
+
+        Light(_cue, AppTheme.OnPage(AppTheme.Cue), cueLit, fade);
+        Light(_playPause, AppTheme.OnPage(AppTheme.Play), playLit, fade);
+        if (_images is { } images)
+            _playPause.Icon = playing ? images.Pause16 : images.Play16;
+        else
+            _playPause.Text = playing ? "PAUSE" : "PLAY";
+
+        // Lit, filled with its colour and labelled dark on it; unlit, outlined in it on a faint tint of it.
+        static void Light(Button button, float4 color, bool on, float fade)
+        {
+            button.BorderColor = Theme.Fade(color, fade);
+            button.TextColor = on ? Theme.OnColour : color;
+            button.HintColor = on ? Theme.Fade(Theme.OnColour, 0.55f) : Theme.Tint(0.3f);
+            button.Background = on ? color : Theme.Mix(Theme.Control, color, 0.12f);
+            button.HoverBackground = on ? Theme.Mix(color, Colors.White, 0.15f) : Theme.Mix(Theme.ControlHover, color, 0.22f);
+        }
     }
 
     /// <summary>
@@ -1121,7 +1162,7 @@ sealed class DeckPanel : Panel
         foreach (var (button, hint) in _hints)
             button.KeyHint = compact ? null : hint;
         _cue.MinSize = new float2(compact ? 48 : 64, 30);
-        _playPause.MinSize = new float2(compact ? 56 : 84, 30);
+        _playPause.MinSize = new float2(compact ? 48 : 64, 30);
         _sync.MinSize = new float2(compact ? 52 : 64, 30);
         _loop.MinSize = new float2(compact ? 44 : 84, 30);
         if (_padMode is not null)

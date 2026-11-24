@@ -19,6 +19,16 @@ static class AppTheme
     public static readonly float4 Loop = Colors.Hex(0x48D17A);
 
     /// <summary>
+    /// The decks' CUE button, outlined and labelled in it, amber as a CDJ's is.
+    /// </summary>
+    public static readonly float4 Cue = Colors.Hex(0xF2A33A);
+
+    /// <summary>
+    /// The decks' play button, outlined in it, and filled with it while playing, green as a CDJ's is.
+    /// </summary>
+    public static readonly float4 Play = Colors.Hex(0x3CCF6E);
+
+    /// <summary>
     /// The pads in SAMPLER mode.
     /// </summary>
     public static readonly float4 Sampler = Colors.Hex(0xB57BE0);

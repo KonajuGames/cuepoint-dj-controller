@@ -67,6 +67,22 @@ public sealed class AutoCueTests : IDisposable
     }
 
     [Fact]
+    public void It_s_at_its_cue_point_until_it_s_moved_or_played()
+    {
+        Load();
+        Assert.True(_deck.IsAtCuePoint);
+
+        _deck.Seek(TimeSpan.FromSeconds(4));
+        Assert.False(_deck.IsAtCuePoint);
+
+        _deck.Seek(TimeSpan.FromSeconds(2));
+        Assert.True(_deck.IsAtCuePoint);
+
+        _deck.TogglePlay();
+        Assert.False(_deck.IsAtCuePoint);
+    }
+
+    [Fact]
     public void Without_a_grid_it_s_the_first_sound()
     {
         Load(grid: false);

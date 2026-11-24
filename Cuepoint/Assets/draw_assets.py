@@ -296,7 +296,7 @@ KNOB = [
 DOT = [(circle(4, 4, 3.7), hex_colour(WHITE))]
 
 
-# Auto-Mix's pause button: two bars.
+# Auto-Mix's and the decks' pause buttons: two bars.
 PAUSE = [(union(polygon([(2, 1.2), (4.2, 1.2), (4.2, 8.8), (2, 8.8)]), polygon([(5.8, 1.2), (8, 1.2), (8, 8.8), (5.8, 8.8)])), hex_colour(WHITE))]
 
 # The search box's clear button: a cross.
@@ -399,6 +399,9 @@ def main():
         # The folder list's arrows and icons again, larger, for its large text.
         ("triangle-right-14.png", TRIANGLE_RIGHT, 14, 10),
         ("pause-14.png", PAUSE, 14, 10),
+        # The decks' play button: play, and pause while playing.
+        ("play-16.png", TRIANGLE_RIGHT, 16, 10),
+        ("pause-16.png", PAUSE, 16, 10),
         ("triangle-down-14.png", TRIANGLE_DOWN, 14, 10),
         ("icon-library-20.png", NOTE, 20, 14),
         ("icon-drive-20.png", DRIVE, 20, 14),
