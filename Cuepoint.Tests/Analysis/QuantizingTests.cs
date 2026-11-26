@@ -88,7 +88,7 @@ public class QuantizingTests
     }
 
     [Fact]
-    public void Jump_pads_go_back_then_on_in_pairs_of_1_4_16_and_32_bars()
+    public void Jump_pads_go_back_then_on_in_pairs_of_4_8_16_and_32_beats()
     {
         Assert.Equal(8, JumpPads.Sizes.Count);
         for (var pair = 0; pair < 4; pair++)
@@ -97,8 +97,7 @@ public class QuantizingTests
             Assert.Equal(1, JumpPads.Direction(2 * pair + 1));
             Assert.Equal(-JumpPads.Sizes[2 * pair], JumpPads.Sizes[2 * pair + 1]);
         }
-        Assert.Equal([1, 1, 4, 4, 16, 16, 32, 32], Enumerable.Range(0, 8).Select(JumpPads.Bars));
-        Assert.Equal(128, JumpPads.Sizes.Max());
+        Assert.Equal([4, 4, 8, 8, 16, 16, 32, 32], JumpPads.Sizes.Select(Math.Abs));
         Assert.Equal("16", JumpPads.Label(4));
     }
 

@@ -383,7 +383,7 @@ static int Run(ScreenshotTool.Request? capture)
     var rollPads = gridEditors.Select(editor => new RollPads(editor.Deck, editor)).ToArray();
     RollPads? RollPadsFor(Deck deck) => rollPads.FirstOrDefault(roll => roll.Deck == deck);
 
-    // Or beat jumps, with them in JUMP mode.
+    // Or beat jumps, with them in BEAT JUMP mode.
     var jumpPads = gridEditors.Select((editor, i) => new JumpPads(editor.Deck, editor, rollPads[i])).ToArray();
     JumpPads? JumpPadsFor(Deck deck) => jumpPads.FirstOrDefault(jump => jump.Deck == deck);
 
@@ -1760,7 +1760,7 @@ static int Run(ScreenshotTool.Request? capture)
         };
         controllers.IsRollMode = deck => RollPadsFor(deck)?.Active == true;
 
-        // Shift + HOT CUE puts the controller's pads in its beat jump mode, and the deck's in JUMP mode to match.
+        // Shift + HOT CUE puts the controller's pads in its beat jump mode, and the deck's in BEAT JUMP mode to match.
         controllers.JumpModePressed += deck =>
         {
             if (JumpPadsFor(deck) is { } jump)
@@ -1905,7 +1905,8 @@ static int Run(ScreenshotTool.Request? capture)
         }
 
         // Each deck's hotcue keys act as its pads do: set or jump, or with Shift, clear; or in GRID mode, its tools,
-        // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held; or in JUMP mode, beat jumps.
+        // Shift making a nudge a fine one; or in ROLL mode, loop rolls while they're held; or in BEAT JUMP mode, beat
+        // jumps.
         if (HotcueKeys.For(key) is { } hotcue)
         {
             // A roll lasts while its key's held, whatever mode the pads are in by the time it's let go, as does a hotcue

@@ -20,8 +20,8 @@ static class ControllerPresets
     /// Pioneer's DDJ layout, as on the DDJ-SB3: each deck's controls on its own channel (deck 1 on 1, deck 2 on 2),
     /// its pads on another (8 and 9), and the shared mixer and browser on 7. Shift + FX FADE puts the pads in ROLL
     /// mode, and HOT CUE back to hotcues; the pads send the same notes either way. Shift + HOT CUE puts them in BEAT
-    /// JUMP mode, where they send notes of their own (0x40 up, Shift 8 higher still), back on the top row and on along
-    /// the bottom.
+    /// JUMP mode, where they send notes of their own (0x40 up, Shift 8 higher still), in pairs, back then on, by 4
+    /// and 8 beats along the top row and 16 and 32 along the bottom.
     ///
     /// FX FADE's pads (notes 16 to 23) play transition effects by working other controls over time, which is mostly
     /// all there is to map for them: the filter swept, the channel fader faded, and loops set (notes 0x4A and 0x4C, 4

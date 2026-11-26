@@ -628,7 +628,8 @@ sealed class DeckPanel : Panel
                         (PadMode.Hotcues, false) => "HOT CUE",
                         (PadMode.Hotcues, true) => "CUES",
                         (PadMode.Roll, _) => "ROLL",
-                        (PadMode.Jump, _) => "JUMP",
+                        (PadMode.Jump, false) => "BEAT JUMP",
+                        (PadMode.Jump, true) => "JUMP",
                         (PadMode.Sampler, false) => "SAMPLER",
                         (PadMode.Sampler, true) => "SAMPLE",
                         (PadMode.SamplerB, false) => "SAMPLER 2",
@@ -637,7 +638,7 @@ sealed class DeckPanel : Panel
                         (PadMode.Stems, true) => "STEM",
                         _ => "GRID",
                     },
-                    Width = 96,
+                    Width = 112,
                     Tooltip = "What the pads do: hotcues, loop rolls held as long as each pad is, beat jumps back and on staying in time, samples played into the mix, the song's vocals, drums, bass and instruments on and off, or tools for fixing the beat grid by hand",
                 }
             );
@@ -939,11 +940,11 @@ sealed class DeckPanel : Panel
             _pads[i].Icon = direction < 0 ? _images?.TriangleLeft : direction > 0 ? _images?.TriangleRight : null;
             _pads[i].IconAfter = direction > 0;
             _pads[i].Color = gridMode ? Theme.Accent : rollMode ? AppTheme.Loop : jumpMode ? Theme.Focus : detail?.Color is { } color ? Colors.Hex(color) : AppTheme.HotcueColor(i);
-            var jumpBars = JumpPads.Bars(i);
+            var jumpBeats = Math.Abs(JumpPads.Sizes[i]);
             _pads[i].Tooltip =
                 gridMode ? GridTooltip(GridEditor.Pads[i])
                 : rollMode ? $"Loops {RollPads.Label(i)} {(RollPads.Sizes[i] > 1 ? "beats" : "beat")} while held, then carries on from where the song would have got to"
-                : jumpMode ? $"Jump {jumpBars:0} {(jumpBars == 1 ? "bar" : "bars")} {(JumpPads.Sizes[i] < 0 ? "back" : "on")}, staying in time; a loop goes with it"
+                : jumpMode ? $"Jump {jumpBeats:0} beats {(JumpPads.Sizes[i] < 0 ? "back" : "on")}, staying in time; a loop goes with it"
                 : detail?.LoopEnd is not null ? $"Hot loop {i + 1}{(detail.Name is { } loopName ? $", {loopName}" : "")}: jump to it and loop. Shift-click to clear it, or right-click to name it, colour it or change its loop"
                 : hotcue is not null ? $"Hotcue {i + 1}{(detail?.Name is { } cueName ? $", {cueName}" : "")}: jump to it. Shift-click to clear it, or right-click to name it, colour it or make it a hot loop"
                 : $"Hotcue {i + 1}: set it here";
@@ -1166,7 +1167,7 @@ sealed class DeckPanel : Panel
         _sync.MinSize = new float2(compact ? 52 : 64, 30);
         _loop.MinSize = new float2(compact ? 44 : 84, 30);
         if (_padMode is not null)
-            _padMode.Width = compact ? 70 : 96;
+            _padMode.Width = compact ? 70 : 112;
         RefreshLoop();
         foreach (var element in new Element?[] { _cue, _playPause, _sync, _loop, _halveLoop, _doubleLoop, _quantize, _loopIn, _loopOut, _padMode })
             element?.Measure();

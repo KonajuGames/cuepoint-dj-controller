@@ -126,8 +126,8 @@ sealed class MidiControls : IDisposable
     public Func<Deck, bool>? IsRollMode { get; set; }
 
     /// <summary>
-    /// A deck's beat jump mode button was pressed, to put the pads in JUMP mode; and whether that deck's in it, for
-    /// its light.
+    /// A deck's beat jump mode button was pressed, to put the pads in BEAT JUMP mode; and whether that deck's in it,
+    /// for its light.
     /// </summary>
     public event Action<Deck>? JumpModePressed;
 

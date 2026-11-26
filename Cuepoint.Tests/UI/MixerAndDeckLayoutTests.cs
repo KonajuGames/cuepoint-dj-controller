@@ -243,8 +243,8 @@ public sealed class MixerAndDeckLayoutTests : IDisposable
         panel.Refresh();
         ((Element)dropdown).RaiseClicked();
         Assert.True(menu.Visible);
-        Assert.Contains("JUMP", menu.ItemTexts);
-        menu.Choose("JUMP");
+        Assert.Contains("BEAT JUMP", menu.ItemTexts);
+        menu.Choose("BEAT JUMP");
 
         Assert.True(jump.Active);
         Assert.False(roll.Active);

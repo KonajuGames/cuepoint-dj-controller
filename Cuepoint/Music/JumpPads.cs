@@ -1,11 +1,10 @@
 using Cuepoint.Audio;
-using Cuepoint.Audio.Analysis;
 
 namespace Cuepoint.Music;
 
 /// <summary>
-/// A deck's pads in JUMP mode: in pairs, back and on through the song by 1, 4, 16 and 32 bars, staying in time (see
-/// <see cref="Deck.BeatJump"/>). A bar puts a drop back in place, 16 bars skips an intro, and 32 bars a whole section.
+/// A deck's pads in BEAT JUMP mode: in pairs, back and on through the song by 4, 8, 16 and 32 beats, staying in time
+/// (see <see cref="Deck.BeatJump"/>). Four beats is a bar, and 32 eight bars, a phrase.
 /// </summary>
 sealed class JumpPads(Deck deck, GridEditor? grid = null, RollPads? roll = null)
 {
@@ -14,7 +13,7 @@ sealed class JumpPads(Deck deck, GridEditor? grid = null, RollPads? roll = null)
     /// <summary>
     /// Each pad's jump, in beats: back for negative. Each pair of pads, back then on, jumps the same way.
     /// </summary>
-    public static readonly IReadOnlyList<double> Sizes = [-4, 4, -16, 16, -64, 64, -128, 128];
+    public static readonly IReadOnlyList<double> Sizes = [-4, 4, -8, 8, -16, 16, -32, 32];
 
     public Deck Deck { get; } = deck;
 
@@ -43,14 +42,9 @@ sealed class JumpPads(Deck deck, GridEditor? grid = null, RollPads? roll = null)
     }
 
     /// <summary>
-    /// What pad <paramref name="index"/> says: how many bars it jumps, its direction shown by an arrow beside.
+    /// What pad <paramref name="index"/> says: how many beats it jumps, its direction shown by an arrow beside.
     /// </summary>
-    public static string Label(int index) => $"{Bars(index):0}";
-
-    /// <summary>
-    /// How many bars pad <paramref name="index"/> jumps, either way.
-    /// </summary>
-    public static double Bars(int index) => Math.Abs(Sizes[index]) / BeatGrid.BEATS_PER_BAR;
+    public static string Label(int index) => $"{Math.Abs(Sizes[index]):0}";
 
     /// <summary>
     /// Which way pad <paramref name="index"/> jumps: -1 back, 1 on.

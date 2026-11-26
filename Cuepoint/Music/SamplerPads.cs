@@ -15,8 +15,8 @@ sealed class SamplerPads(Deck deck, Sampler sampler, GridEditor? grid = null, Ro
     public Sampler Sampler { get; } = sampler;
 
     /// <summary>
-    /// Whether the deck's pads play samples rather than working hotcues. Turning it on turns GRID, ROLL and JUMP mode
-    /// off, and any of them turned on turns it off.
+    /// Whether the deck's pads play samples rather than working hotcues. Turning it on turns GRID, ROLL and BEAT JUMP
+    /// mode off, and any of them turned on turns it off.
     /// </summary>
     public bool Active
     {
