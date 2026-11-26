@@ -1562,11 +1562,17 @@ static int Run(ScreenshotTool.Request? capture)
                 new MenuItem(
                     "Colour",
                     [
-                        new MenuItem("Its pad's own", () => ChangeHotcue(deck, index, name, null, loopEnd), Checked: color is null),
-                        MenuItem.Separator,
+                        // A three by three grid of the colours, and under it, the pad's own back again.
                         .. AppTheme.HotcuePalette.Select(colour =>
-                            new MenuItem(colour.Name, () => ChangeHotcue(deck, index, name, colour.Hex, loopEnd), Checked: color == colour.Hex)
+                            new MenuItem(
+                                colour.Name,
+                                () => ChangeHotcue(deck, index, name, colour.Hex, loopEnd),
+                                Checked: color == colour.Hex,
+                                Swatch: Colors.Hex(colour.Hex)
+                            )
                         ),
+                        MenuItem.Separator,
+                        new MenuItem("Default", () => ChangeHotcue(deck, index, name, null, loopEnd), Checked: color is null),
                     ]
                 ),
                 new MenuItem(

@@ -75,7 +75,8 @@ static class AppTheme
     public static float4 DeckColor(string name) => name == "B" ? DeckB : DeckA;
 
     /// <summary>
-    /// The hotcue pads' colours, in order round the rainbow, with what to call each, to give one a hot cue.
+    /// The hotcue pads' colours, in order round the rainbow, with what to call each, to give one a hot cue; and white
+    /// last, which no pad has of its own, to make nine for the Colour menu's three by three.
     /// </summary>
     public static readonly IReadOnlyList<(string Name, uint Hex)> HotcuePalette =
     [
@@ -87,9 +88,11 @@ static class AppTheme
         ("Blue", 0x3D8BF2),
         ("Purple", 0x8E5CF0),
         ("Pink", 0xE858B8),
+        ("White", 0xE6E8EE),
     ];
 
-    static readonly float4[] Hotcues = [.. HotcuePalette.Select(colour => Colors.Hex(colour.Hex))];
+    // The pads' own colours: the rainbow, without the white.
+    static readonly float4[] Hotcues = [.. HotcuePalette.Take(8).Select(colour => Colors.Hex(colour.Hex))];
 
     /// <summary>
     /// Hotcue <paramref name="index"/>'s colour, from 0: round the rainbow, so neighbouring pads are told apart.
