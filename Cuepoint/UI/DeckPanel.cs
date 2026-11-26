@@ -998,7 +998,6 @@ sealed class DeckPanel : Panel
         {
             button.BorderColor = Theme.Fade(color, fade);
             button.TextColor = on ? Theme.OnColour : color;
-            button.HintColor = on ? Theme.Fade(Theme.OnColour, 0.55f) : Theme.Tint(0.3f);
             button.Background = on ? color : Theme.Mix(Theme.Control, color, 0.12f);
             button.HoverBackground = on ? Theme.Mix(color, Colors.White, 0.15f) : Theme.Mix(Theme.ControlHover, color, 0.22f);
         }
