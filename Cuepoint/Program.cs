@@ -1679,10 +1679,16 @@ static int Run(ScreenshotTool.Request? capture)
     // DJ controllers, found as they're plugged in. The load buttons take the selected song; the browse knob works
     // the list (and with Shift, the folders) as the arrow keys do.
     // Not for the screenshot tool, which leaves the user's controllers alone.
-    using var midiDevices = OperatingSystem.IsWindows() && capture is null ? new MidiDevices(new WinMidi()) : null;
+    // Windows' own MIDI, or a Mac's CoreMIDI (made here, on the window's thread, so it hears of controllers coming
+    // and going).
+    IMidiPorts? midiPorts = capture is not null ? null
+        : OperatingSystem.IsWindows() ? new WinMidi()
+        : OperatingSystem.IsMacOS() ? new MacMidi()
+        : null;
+    using var midiDevices = midiPorts is not null ? new MidiDevices(midiPorts) : null;
     ControllerDialog? controllerDialog = null;
     // The tempo sent out as MIDI clock, on the output chosen in the options.
-    using var midiClock = OperatingSystem.IsWindows() && capture is null ? new MidiClockPort(new WinMidi(), midiDevices) : null;
+    using var midiClock = midiPorts is not null ? new MidiClockPort(midiPorts, midiDevices) : null;
     if (midiClock is not null)
     {
         if (settings.MidiClockOutput is { } clockOut && !midiClock.Use(clockOut))
