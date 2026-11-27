@@ -105,7 +105,7 @@ sealed class DriveExport
     /// </summary>
     public static string SafeName(string name)
     {
-        var safe = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '-' : c)).Trim().TrimEnd('.', ' ');
+        var safe = string.Concat(name.Select(c => StorageDrives.InvalidNameChars.Contains(c) ? '-' : c)).Trim().TrimEnd('.', ' ');
         return safe.Length > 0 ? safe : "Export";
     }
 

@@ -119,7 +119,7 @@ sealed class LibraryFile
         {
             if (Root is not null && Path.IsPathRooted(path) && path.StartsWith(Root, StringComparison.OrdinalIgnoreCase))
                 Dirty = true;
-            whole[Root is null || Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(Root, path))] = record;
+            whole[Root is null || Path.IsPathRooted(path) ? path : Path.GetFullPath(Path.Combine(Root, StorageDrives.FromKept(path)))] = record;
         }
         return whole;
     }
@@ -133,7 +133,7 @@ sealed class LibraryFile
             return whole;
         var kept = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
         foreach (var (path, record) in whole)
-            kept[path.StartsWith(Root, StringComparison.OrdinalIgnoreCase) ? path[Root.Length..] : path] = record;
+            kept[path.StartsWith(Root, StringComparison.OrdinalIgnoreCase) ? StorageDrives.ToKept(path[Root.Length..]) : path] = record;
         return kept;
     }
 

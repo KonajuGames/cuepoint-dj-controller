@@ -31,11 +31,13 @@ public class FileDeletionTests : IDisposable
     }
 
     [Fact]
-    public void Away_from_windows_nothing_is_recycled()
+    public void A_Mac_s_own_drive_has_a_Trash_and_elsewhere_nothing_is_recycled()
     {
         var path = _folder.File("Music", "a.mp3");
 
-        if (!OperatingSystem.IsWindows())
+        if (OperatingSystem.IsMacOS())
+            Assert.True(FileDeletion.WouldRecycle(path));
+        else if (!OperatingSystem.IsWindows())
             Assert.False(FileDeletion.WouldRecycle(path));
         else
             FileDeletion.WouldRecycle(path); // Whatever this computer's set to, it answers without throwing.

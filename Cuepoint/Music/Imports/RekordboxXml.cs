@@ -271,9 +271,13 @@ static class RekordboxXml
     }
 
     /// <summary>
-    /// A file's path from Rekordbox's URL for it, "file://localhost/C:/Music/A%20Song.mp3"; null for anything else.
+    /// A file's path from Rekordbox's URL for it, "file://localhost/C:/Music/A%20Song.mp3" on Windows or
+    /// "file://localhost/Users/dj/Music/A%20Song.mp3" on a Mac; null for anything else, or one for the other kind of
+    /// computer.
     /// </summary>
-    internal static string? ToPath(string? location)
+    internal static string? ToPath(string? location) => ToPath(location, OperatingSystem.IsWindows());
+
+    internal static string? ToPath(string? location, bool windows)
     {
         if (location is null)
             return null;
@@ -281,9 +285,12 @@ static class RekordboxXml
         {
             if (location.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
-                var path = Uri.UnescapeDataString(location[prefix.Length..]).Replace('/', Path.DirectorySeparatorChar);
-                // A Mac's path, "/Users/...", isn't one this computer has.
-                return path.Length >= 3 && path[1] == ':' ? path : null;
+                var path = Uri.UnescapeDataString(location[prefix.Length..]);
+                var hasLetter = path.Length >= 3 && path[1] == ':';
+                // A Windows path on Windows, with a drive letter; anywhere else, one from the root, "/Users/...".
+                if (windows)
+                    return hasLetter ? path.Replace('/', '\\') : null;
+                return hasLetter || path.Length == 0 ? null : "/" + path.TrimStart('/');
             }
         }
         return null;

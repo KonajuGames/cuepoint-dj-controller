@@ -18,6 +18,33 @@ public class StorageDrivesTests
         Assert.Equal([("/", "Macintosh HD")], StorageDrives.MacDrives([]));
     }
 
+    [Fact]
+    public void A_drive_s_files_keep_paths_with_Windows_separators_so_either_computer_reads_them()
+    {
+        Assert.Equal(@"Music\Set\a.mp3", StorageDrives.ToKept("Music/Set/a.mp3", windows: false));
+        Assert.Equal("Music/Set/a.mp3", StorageDrives.FromKept(@"Music\Set\a.mp3", windows: false));
+        Assert.Equal(@"Music\Set\a.mp3", StorageDrives.FromKept(@"Music\Set\a.mp3", windows: true));
+        Assert.Equal(@"Music\Set\a.mp3", StorageDrives.ToKept(@"Music\Set\a.mp3", windows: true));
+    }
+
+    [Fact]
+    public void Names_leave_out_what_Windows_won_t_have_wherever_they_re_made()
+    {
+        foreach (var c in "<>:\"/\\|?*\0\t")
+            Assert.Contains(c, StorageDrives.InvalidNameChars);
+        Assert.DoesNotContain('-', StorageDrives.InvalidNameChars);
+        Assert.Equal("Friday- late-night", DriveExport.SafeName("Friday: late/night"));
+    }
+
+    [Theory]
+    [InlineData("file://localhost/Users/dj/Music/A%20Song%20%26%20B.mp3", "/Users/dj/Music/A Song & B.mp3")]
+    [InlineData("file:///Volumes/USB/Set/x.mp3", "/Volumes/USB/Set/x.mp3")]
+    [InlineData("file://localhost/C:/Music/x.mp3", null)]
+    public void A_Mac_s_Rekordbox_locations_are_paths_from_the_root(string location, string? path)
+    {
+        Assert.Equal(path, Cuepoint.Music.Imports.RekordboxXml.ToPath(location, windows: false));
+    }
+
     [Theory]
     [InlineData("/Users/dj/Music/song.mp3", "/")]
     [InlineData("/Volumes/USB Stick/Music/song.mp3", "/Volumes/USB Stick/")]

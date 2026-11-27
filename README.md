@@ -261,13 +261,14 @@ What's different on a Mac:
 
 - **Cmd** does what Ctrl does on Windows (Cmd + Z, Cmd + F, and the rest), and the shortcuts say so. Ctrl works too.
 - The window has the Mac's own title bar and buttons, with Cuepoint's bar under them.
-- The drives in the folder list are the startup disk and each drive in `/Volumes`.
+- The drives in the folder list are the startup disk and each drive in `/Volumes`. A drive's library and playlists work on either computer, so a USB stick prepared on one plays on the other.
 - Deleted files go to the Trash, the streaming password is kept in the Keychain, and settings and analyses are in `~/Library/Application Support/Cuepoint`.
 - MIDI controllers and MIDI clock go through CoreMIDI. Controllers are found by the names the Mac gives them, so a mapping learned on Windows may need learning again.
 
 Not on a Mac yet:
 
 - Songs in AAC, M4A or ALAC can't be played; MP3, FLAC, WAV, AIFF and OGG can.
+- The song list's titles, artists and albums come from the songs' file and folder names until each is loaded, rather than from their tags.
 - Editing songs' details, and their cover art, are Windows-only.
 - Stems are separated on the processor, which takes several times as long as on Windows' graphics card.
 

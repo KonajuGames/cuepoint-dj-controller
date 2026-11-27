@@ -99,7 +99,7 @@ public class FlacFileTests
         }
     }
 
-    [Fact]
+    [WindowsFact]
     public void Its_tags_are_read_back_with_its_length()
     {
         var path = TempPath();

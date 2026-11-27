@@ -76,7 +76,7 @@ public class MendRecordingTests
         Assert.Equal(120u, Sizes(folder["Mix 2026-11-22 21-00-00 (2).wav"]).Data);
     }
 
-    [Fact]
+    [WindowsFact]
     public void When_a_recording_started_comes_from_its_name_or_its_first_file_s()
     {
         Assert.Equal(new DateTime(2026, 11, 22, 21, 0, 5), MixRecorder.StartedFrom(@"C:\R\Mix 2026-11-22 21-00-05.wav"));

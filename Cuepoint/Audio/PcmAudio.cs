@@ -123,6 +123,24 @@ static unsafe class SdlPcmDecoder
     // chunks from 16 KB to 1 MB all run at about the same speed.
     const int DECODE_CHUNK_BYTES = 64 * 1024;
 
+    static readonly Lock MixerLock = new();
+    static bool _mixerStarted;
+
+    // SDL_mixer decodes only once it's started. The audio engine starts it, but a decode mustn't depend on the engine
+    // having come first, so the first decode starts it too, for good. Starting it counts up, so the engine's own
+    // start and stop are unaffected.
+    static void EnsureMixer()
+    {
+        lock (MixerLock)
+        {
+            if (_mixerStarted)
+                return;
+            Sdl.Init.Initialize(SdlInitFlags.Audio);
+            SdlMixer.Init();
+            _mixerStarted = true;
+        }
+    }
+
     /// <summary>
     /// Decodes all of <paramref name="path"/> at its own channel count and sample rate into <paramref name="sink"/>,
     /// returning any title and artist it's tagged with. Throws <see cref="SdlException"/> if SDL_mixer has no
@@ -130,6 +148,7 @@ static unsafe class SdlPcmDecoder
     /// </summary>
     public static (string? Title, string? Artist) Stream(string path, IPcmSink sink)
     {
+        EnsureMixer();
         // Through our own stream, because MIX_CreateAudioDecoder leaves the file open when it fails, which locks it
         // until the app quits. Once the decoder exists it owns the stream and closes it.
         var io = Sdl.PInvoke.IOFromFile(path, "rb");

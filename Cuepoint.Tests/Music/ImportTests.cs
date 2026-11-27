@@ -53,7 +53,7 @@ public class RekordboxXmlTests
         return RekordboxXml.Load(folder["rekordbox.xml"])!;
     }
 
-    [Fact]
+    [WindowsFact]
     public void Hot_cues_A_to_H_come_from_cue_marks_numbered_0_to_7()
     {
         using var folder = new TempFolder();
@@ -69,7 +69,7 @@ public class RekordboxXmlTests
         Assert.Equal(new[] { 0, 1, 3 }, cues.Select((cue, i) => (cue, i)).Where(pair => pair.cue is not null).Select(pair => pair.i));
     }
 
-    [Fact]
+    [WindowsFact]
     public void Memory_cues_and_memory_loops_come_in_order_as_memory_cues()
     {
         using var folder = new TempFolder();
@@ -79,7 +79,7 @@ public class RekordboxXmlTests
         Assert.Single(collection.MemoryCues);
     }
 
-    [Fact]
+    [WindowsFact]
     public void A_steady_beat_grid_comes_from_its_one_tempo()
     {
         using var folder = new TempFolder();
@@ -90,7 +90,7 @@ public class RekordboxXmlTests
         Assert.True(grid.IsBarStart(0));
     }
 
-    [Fact]
+    [WindowsFact]
     public void A_changing_beat_grid_keeps_its_tempos_in_order_and_where_its_bars_start()
     {
         using var folder = new TempFolder();
@@ -104,7 +104,7 @@ public class RekordboxXmlTests
         Assert.True(grid.IsBarStart(2));
     }
 
-    [Fact]
+    [WindowsFact]
     public void Its_songs_are_those_with_hot_cues_memory_cues_or_a_beat_grid()
     {
         using var folder = new TempFolder();
@@ -112,7 +112,7 @@ public class RekordboxXmlTests
         Assert.Equal(new[] { @"C:\Music\A Song.mp3", @"D:\Sets\Two.flac" }, Load(folder).Songs.Order());
     }
 
-    [Fact]
+    [WindowsFact]
     public void Hot_cue_names_colours_and_hot_loops_come_too()
     {
         using var folder = new TempFolder();
@@ -123,7 +123,7 @@ public class RekordboxXmlTests
         Assert.Null(details[3]);
     }
 
-    [Fact]
+    [WindowsFact]
     public void Memory_loops_come_with_their_ends()
     {
         using var folder = new TempFolder();
@@ -140,7 +140,7 @@ public class RekordboxXmlTests
         Assert.Single(collection.Hotcues);
     }
 
-    [Fact]
+    [WindowsFact]
     public void Playlists_keep_their_folders_and_order_by_ID_or_location()
     {
         using var folder = new TempFolder();
@@ -169,7 +169,7 @@ public class RekordboxXmlTests
         Assert.Null(RekordboxXml.Load(folder["broken.xml"]));
     }
 
-    [Theory]
+    [WindowsTheory]
     [InlineData("file://localhost/C:/Music/A%20Song%20%26%20B.mp3", @"C:\Music\A Song & B.mp3")]
     [InlineData("file:///D:/x.mp3", @"D:\x.mp3")]
     [InlineData("file://localhost/Users/dj/x.mp3", null)]
@@ -201,7 +201,7 @@ public class SeratoTests
             .. paths.SelectMany(path => Tag("otrk", Tag("ptrk", Encoding.BigEndianUnicode.GetBytes(path)))),
         ];
 
-    [Fact]
+    [WindowsFact]
     public void A_crates_songs_are_its_paths_from_the_drive_root_in_order()
     {
         var paths = SeratoCrates.Read(Crate("Users/dj/Music/b.mp3", "Users/dj/Music/a.mp3"), @"C:\");
@@ -209,7 +209,7 @@ public class SeratoTests
         Assert.Equal(new[] { @"C:\Users\dj\Music\b.mp3", @"C:\Users\dj\Music\a.mp3" }, paths);
     }
 
-    [Fact]
+    [WindowsFact]
     public void A_crate_cut_short_keeps_the_songs_before_the_cut()
     {
         var crate = Crate("Music/a.mp3", "Music/b.mp3");
@@ -219,7 +219,7 @@ public class SeratoTests
         Assert.Equal(new[] { @"E:\Music\a.mp3" }, paths);
     }
 
-    [Fact]
+    [WindowsFact]
     public void Crates_are_found_in_the_music_folder_and_at_drive_roots_named_by_nesting()
     {
         using var folder = new TempFolder();

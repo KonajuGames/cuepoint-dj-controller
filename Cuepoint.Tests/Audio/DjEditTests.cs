@@ -393,7 +393,7 @@ public class DjEditTests
     [InlineData("Song (Acoustic Version)", "Song (Acoustic Version) (Cuepoint DJ Edit)")]
     public void An_edit_is_named_for_the_song_in_place_of_its_radio_edit(string title, string edit) => Assert.Equal(edit, DjEdit.EditTitle(title));
 
-    [Fact]
+    [WindowsFact]
     public void An_edits_file_is_named_as_its_title_is()
     {
         Assert.Equal(@"C:\Music\01 Artist - Song (Cuepoint DJ Edit).flac", DjEdit.EditPath(@"C:\Music\01 Artist - Song (Radio Edit).mp3"));

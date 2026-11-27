@@ -27,7 +27,8 @@ public sealed class DriveExportTests : IDisposable
 
     Song Song(string relative, int bytes = 4096, string? root = null)
     {
-        var path = Path.Combine(root ?? System, relative);
+        // Written as on Windows, @"Music\a.mp3", and made this computer's.
+        var path = Path.Combine(root ?? System, relative.Replace('\\', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllBytes(path, Enumerable.Range(0, bytes).Select(i => (byte)(i * 7)).ToArray());
         var info = new FileInfo(path);

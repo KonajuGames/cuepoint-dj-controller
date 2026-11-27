@@ -20,7 +20,7 @@ public class PlayHistoryTests
         : path.Contains("Faded") ? new Song(path, 1, default, "Faded", "Alan Walker", "Faded") { Duration = TimeSpan.FromSeconds(212) }
         : null;
 
-    [Fact]
+    [WindowsFact]
     public void A_playlist_has_each_song_its_length_and_name_then_its_file_in_order()
     {
         var m3u = PlayHistory.Write(History, HistoryFormat.M3u, SongAt);
@@ -34,7 +34,7 @@ public class PlayHistoryTests
         );
     }
 
-    [Fact]
+    [WindowsFact]
     public void A_set_list_has_each_song_with_when_it_started_under_its_day()
     {
         var text = PlayHistory.Write(History, HistoryFormat.Text, SongAt);
@@ -103,7 +103,7 @@ public class PlayHistoryTests
         Assert.Equal(expected, PlayHistory.CueTime(TimeSpan.FromSeconds(seconds)));
     }
 
-    [Fact]
+    [WindowsFact]
     public void A_cue_sheet_names_the_file_and_each_track_with_where_it_starts()
     {
         var tracks = new (TimeSpan, string)[] { (TimeSpan.Zero, History[0].Item2), (TimeSpan.FromSeconds(242.4), History[1].Item2) };

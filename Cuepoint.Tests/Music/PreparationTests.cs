@@ -230,7 +230,7 @@ public sealed class PreparationTests : IDisposable
     [Fact]
     public void A_song_moved_to_another_drive_goes_into_that_drive_s_file()
     {
-        var (c, d) = (_folder["C"] + "\\", _folder["D"] + "\\");
+        var (c, d) = (_folder["C"] + Path.DirectorySeparatorChar, _folder["D"] + Path.DirectorySeparatorChar);
         Directory.CreateDirectory(c);
         Directory.CreateDirectory(d);
         string? RootOf(string path) => path.StartsWith(d, StringComparison.OrdinalIgnoreCase) ? d : c;

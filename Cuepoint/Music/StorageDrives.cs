@@ -10,6 +10,29 @@ static class StorageDrives
     const string VOLUMES = "/Volumes/";
 
     /// <summary>
+    /// What a file or folder name mustn't have, wherever the app runs: what Windows forbids, which is more than a Mac
+    /// does, since a drive (a FAT or exFAT stick, say) can be written on one and read on the other.
+    /// </summary>
+    public static IReadOnlySet<char> InvalidNameChars { get; } =
+        Path.GetInvalidFileNameChars().Concat("<>:\"/\\|?*").Concat(Enumerable.Range(0, 32).Select(i => (char)i)).ToHashSet();
+
+    /// <summary>
+    /// A path relative to a drive, as a drive's own files keep it, made one for this computer. They're kept with
+    /// Windows' separators wherever they're written, so a drive's library and playlists work on Windows and a Mac
+    /// alike.
+    /// </summary>
+    public static string FromKept(string relative) => FromKept(relative, OperatingSystem.IsWindows());
+
+    internal static string FromKept(string relative, bool windows) => windows ? relative : relative.Replace('\\', '/');
+
+    /// <summary>
+    /// A path relative to a drive, made as the drive's own files keep it: with Windows' separators.
+    /// </summary>
+    public static string ToKept(string relative) => ToKept(relative, OperatingSystem.IsWindows());
+
+    internal static string ToKept(string relative, bool windows) => windows ? relative : relative.Replace('/', '\\');
+
+    /// <summary>
     /// The drive the system's on: C:\ (or whichever Windows is on), or / on a Mac.
     /// </summary>
     public static string SystemRoot { get; } =

@@ -227,7 +227,7 @@ sealed class VirtualFolders
                 var line = raw.Trim().TrimStart('﻿');
                 if (line.Length == 0 || line.StartsWith('#'))
                     continue;
-                var path = Path.GetFullPath(Path.IsPathRooted(line) ? line : Path.Combine(folder, line));
+                var path = Path.GetFullPath(Path.IsPathRooted(line) ? line : Path.Combine(folder, StorageDrives.FromKept(line)));
                 if (!paths.Contains(path, StringComparer.OrdinalIgnoreCase))
                     paths.Add(path);
             }
@@ -252,7 +252,7 @@ sealed class VirtualFolders
             foreach (var path in folder.Paths)
             {
                 var onDrive = folder.Drive is { } drive && path.StartsWith(drive, StringComparison.OrdinalIgnoreCase);
-                text.Append(onDrive ? Path.GetRelativePath(directory, path) : path).Append('\n');
+                text.Append(onDrive ? StorageDrives.ToKept(Path.GetRelativePath(directory, path)) : path).Append('\n');
             }
             var temporary = folder.FilePath + ".tmp";
             File.WriteAllText(temporary, text.ToString(), new UTF8Encoding(false));
@@ -308,7 +308,7 @@ sealed class VirtualFolders
         var trimmed = name.Trim();
         if (trimmed.Length == 0)
             return "Give it a name";
-        if (trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || trimmed.EndsWith('.'))
+        if (trimmed.Any(StorageDrives.InvalidNameChars.Contains) || trimmed.EndsWith('.'))
             return "A name can't have \\ / : * ? \" < > | in it, or end with a full stop";
         return NameTaken(trimmed, except, except?.Drive);
     }
