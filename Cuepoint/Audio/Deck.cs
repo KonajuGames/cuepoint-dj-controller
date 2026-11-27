@@ -1251,6 +1251,45 @@ sealed partial class Deck : IDisposable
     }
 
     /// <summary>
+    /// Sets the cue point where the deck is (on the nearest beat, with <see cref="Quantize"/>), playing or paused,
+    /// without moving it or previewing: a CDJ's CUE pressed with the deck held, or Mixxx's cue_set.
+    /// </summary>
+    public void SetCuePoint()
+    {
+        if (!IsLoaded || _pcm is not { } pcm)
+            return;
+        var frames = IsPlatterActive ? (long)Volatile.Read(ref _platterHead) : SongFrame;
+        if (QuantizeGrid is { } grid)
+            frames = ToFrames(TimeSpan.FromSeconds(Quantizing.Snap(grid, ToTime(frames).TotalSeconds)));
+        frames = Math.Clamp(frames, 0, pcm.Frames - 1);
+        if (frames == _cueFrames)
+            return;
+        _cueFrames = frames;
+        CuePointChanged?.Invoke(this);
+    }
+
+    /// <summary>
+    /// Back to the cue point and playing from there, whether it was playing or not, so pressed again and again it
+    /// stutters from the cue (Mixxx's play_stutter). It leaves a loop, a scratch and slip, as Cue does.
+    /// </summary>
+    public void Stutter()
+    {
+        if (!IsLoaded)
+            return;
+        _slipCauses = SlipCause.None;
+        ReleasePlatter();
+        LeaveLoop();
+        _previewing = false;
+        if (IsPlaying)
+        {
+            _track.SetPlaybackPosition(_cueFrames);
+            return;
+        }
+        PauseAt(_cueFrames);
+        Play();
+    }
+
+    /// <summary>
     /// The Cue button came up: a preview ends back at the cue point, paused. Does nothing if Play took over.
     /// </summary>
     public void CueUp()

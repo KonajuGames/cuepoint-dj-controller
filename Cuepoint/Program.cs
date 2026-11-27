@@ -1726,6 +1726,17 @@ static int Run(ScreenshotTool.Request? capture)
     {
         controllers.Log += screen.Log;
         controllers.Sampler = sampler;
+        controllers.SetBeatPressed += deck => GridEditorFor(deck)?.Apply(GridTool.SetBeat);
+        controllers.SamplerLoadRequested += slot =>
+        {
+            if (browser.SelectedSong is { } song)
+            {
+                sampler.Load(slot, song.Path, song.Title);
+                screen.Log($"{song.Title} is on sampler pad {Sampler.SlotName(slot)}");
+            }
+            else
+                screen.Log("Pick a song in the list to put on the sampler pad");
+        };
         controllers.LoadRequested += deck =>
         {
             if (browser.SelectedSong is { } song)

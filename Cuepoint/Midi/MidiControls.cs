@@ -21,6 +21,11 @@ sealed class MidiControls : IDisposable
     public const double SEARCH_PER_STEP = 0.25;
 
     /// <summary>
+    /// How fast a search button held moves through the song, in seconds of song a second.
+    /// </summary>
+    public const double SEARCH_BUTTON_SPEED = 8;
+
+    /// <summary>
     /// How much a jog wheel step bends a playing deck's speed, and how quickly the bend fades once the wheel stops,
     /// as a time constant in seconds.
     /// </summary>
@@ -64,6 +69,9 @@ sealed class MidiControls : IDisposable
 
     // Decks with a pitch bend button held, and which way.
     readonly Dictionary<Deck, int> _bendButtons = [];
+
+    // Decks with a search button held, and which way.
+    readonly Dictionary<Deck, int> _searchButtons = [];
 
     // Where each killed band was before its kill button, to go back to on the next press.
     readonly Dictionary<(Deck, string), float> _killedFrom = [];
@@ -181,6 +189,16 @@ sealed class MidiControls : IDisposable
     /// </summary>
     public Sampler? Sampler { get; set; }
 
+    /// <summary>
+    /// A deck's beat here button, to pin its beat grid to the playhead (the grid editor's SET BEAT).
+    /// </summary>
+    public event Action<Deck>? SetBeatPressed;
+
+    /// <summary>
+    /// A sampler pad's load button, from 0, to put the song picked in the list on it.
+    /// </summary>
+    public event Action<int>? SamplerLoadRequested;
+
     void OnConnected(MidiDevice device)
     {
         // What was changed by hand, over the built-in mapping if there is one, so controls added to it since still come.
@@ -271,6 +289,8 @@ sealed class MidiControls : IDisposable
         // A pitch bend button held keeps its bend, over the jog wheel's.
         foreach (var (deck, way) in _bendButtons)
             deck.Bend = way * BEND_BUTTON;
+        foreach (var (deck, way) in _searchButtons)
+            deck.SeekBy(TimeSpan.FromSeconds(way * SEARCH_BUTTON_SPEED * Math.Max(0, seconds)));
 
         _now = now;
         UpdateLights();
@@ -435,6 +455,8 @@ sealed class MidiControls : IDisposable
                 Sampler?.Trigger(slot);
             if (pressed && action == "sampler.stop")
                 Sampler?.StopAll();
+            if (pressed && SamplerLoadSlot(action) is { } loadSlot)
+                SamplerLoadRequested?.Invoke(loadSlot);
             if (action == "panic" && pressed)
                 PanicPressed?.Invoke();
             return;
@@ -454,6 +476,34 @@ sealed class MidiControls : IDisposable
             deck.Censor(pressed);
             return;
         }
+
+        if (action is "search.back" or "search.forward")
+        {
+            var way = action == "search.forward" ? 1 : -1;
+            if (pressed)
+                _searchButtons[deck] = way;
+            else if (_searchButtons.TryGetValue(deck, out var held) && held == way)
+                _searchButtons.Remove(deck);
+            return;
+        }
+
+        if (pressed)
+        {
+            switch (action)
+            {
+                case "cue.set":
+                    deck.SetCuePoint();
+                    return;
+                case "stutter":
+                    deck.Stutter();
+                    return;
+                case "grid.beat":
+                    SetBeatPressed?.Invoke(deck);
+                    return;
+            }
+        }
+        else if (action is "cue.set" or "stutter" or "grid.beat")
+            return;
 
         if (action == "reverse")
         {
@@ -691,6 +741,11 @@ sealed class MidiControls : IDisposable
     /// </summary>
     static int? SamplerSlot(string action) =>
         action.StartsWith("sampler") && int.TryParse(action["sampler".Length..], out var number) && number >= 1 && number <= Sampler.SLOTS ? number - 1 : null;
+
+    /// <summary>
+    /// The sampler slot, from 0, an action like "sampler3.load" is for.
+    /// </summary>
+    static int? SamplerLoadSlot(string action) => action.EndsWith(".load") ? SamplerSlot(action[..^".load".Length]) : null;
 
     /// <summary>
     /// Kills a band ("low", "mid" or "high"), or puts a killed one back where it was before.

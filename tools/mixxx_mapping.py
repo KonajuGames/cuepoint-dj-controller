@@ -74,6 +74,11 @@ DECK_CONTROLS = {
     "loop_move_4_forward": "loop.onbar",
     "jog": "jog",
     "reverse": "reverse",
+    "cue_set": "cue.set",
+    "play_stutter": "stutter",
+    "back": "search.back",
+    "fwd": "search.forward",
+    "beats_translate_curpos": "grid.beat",
     "rate_temp_up": "bend.up",
     "rate_temp_down": "bend.down",
     "quantize": "quantize",
@@ -238,7 +243,7 @@ def control_for(group, key, script):
         if key == "stop":
             return "sampler.stop", "guess", "stops every sample, not just this one"
         if key == "LoadSelectedTrack":
-            return None, "none", "put songs on sampler pads with Put on sampler pad"
+            return f"sampler{slot}.load", "exact", ""
     if m := re.fullmatch(r"group_(\[Channel\d\])_enable", key):
         if group.startswith("[EffectRack1_EffectUnit") and (target := DECKS.get(m.group(1))):
             return f"{target}.fx.on", "guess", "an effect unit switched on for this deck"

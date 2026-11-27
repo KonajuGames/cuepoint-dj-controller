@@ -60,6 +60,11 @@ static class ControlCatalog
                     new($"{deck}.play", $"Deck {deck} play", ControlKind.Button, HasLight: true),
                     new($"{deck}.cue", $"Deck {deck} cue", ControlKind.Button, HasLight: true),
                     new($"{deck}.censor", $"Deck {deck} censor (plays backwards while held, then drops back in where the song would be)", ControlKind.Button),
+                    new($"{deck}.cue.set", $"Deck {deck} set the cue point here (playing or paused)", ControlKind.Button),
+                    new($"{deck}.stutter", $"Deck {deck} stutter (back to the cue point, playing)", ControlKind.Button),
+                    new($"{deck}.search.back", $"Deck {deck} search back (while held)", ControlKind.Button),
+                    new($"{deck}.search.forward", $"Deck {deck} search forward (while held)", ControlKind.Button),
+                    new($"{deck}.grid.beat", $"Deck {deck} beat here (pins the beat grid to the playhead)", ControlKind.Button),
                     new($"{deck}.reverse", $"Deck {deck} reverse (plays backwards while held, then on from where it got to)", ControlKind.Button),
                     new($"{deck}.bend.down", $"Deck {deck} pitch bend down (slower while held)", ControlKind.Button),
                     new($"{deck}.bend.up", $"Deck {deck} pitch bend up (faster while held)", ControlKind.Button),
@@ -177,6 +182,8 @@ static class ControlCatalog
         );
         for (var slot = 0; slot < Sampler.SLOTS; slot++)
             controls.Add(new($"sampler{slot + 1}", $"Sampler pad {Sampler.SlotName(slot)} (plays it from the start, whatever the pads are doing)", ControlKind.Button, HasLight: true));
+        for (var slot = 0; slot < Sampler.SLOTS; slot++)
+            controls.Add(new($"sampler{slot + 1}.load", $"Put the song picked in the list on sampler pad {Sampler.SlotName(slot)}", ControlKind.Button));
         return controls;
     }
 }
