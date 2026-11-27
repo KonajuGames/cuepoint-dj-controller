@@ -25,6 +25,11 @@ sealed class MidiControls : IDisposable
     /// as a time constant in seconds.
     /// </summary>
     public const double BEND_PER_STEP = 0.004;
+
+    /// <summary>
+    /// How much a pitch bend button held bends the deck's speed, as Mixxx's and most DJ software's do by default.
+    /// </summary>
+    public const double BEND_BUTTON = 0.04;
     const double BEND_FADE_SECONDS = 0.12;
 
     /// <summary>
@@ -56,6 +61,12 @@ sealed class MidiControls : IDisposable
     readonly HashSet<(MidiDevice, MidiKind?, int, int)> _unmapped = [];
 
     readonly Dictionary<Deck, double> _bends = [];
+
+    // Decks with a pitch bend button held, and which way.
+    readonly Dictionary<Deck, int> _bendButtons = [];
+
+    // Where each killed band was before its kill button, to go back to on the next press.
+    readonly Dictionary<(Deck, string), float> _killedFrom = [];
 
     // The devices whose Shift (the control bound to "shift") is held, and for each note held down, whether it was
     // pressed with Shift, so its release goes to the same binding as its press even if Shift's let go first.
@@ -165,6 +176,11 @@ sealed class MidiControls : IDisposable
 
     public ControllerMapping? MappingFor(MidiDevice device) => _mappings.GetValueOrDefault(device);
 
+    /// <summary>
+    /// The sampler, for the sampler pad controls; they do nothing without one.
+    /// </summary>
+    public Sampler? Sampler { get; set; }
+
     void OnConnected(MidiDevice device)
     {
         // What was changed by hand, over the built-in mapping if there is one, so controls added to it since still come.
@@ -252,6 +268,9 @@ sealed class MidiControls : IDisposable
             if (bend == 0)
                 _bends.Remove(deck);
         }
+        // A pitch bend button held keeps its bend, over the jog wheel's.
+        foreach (var (deck, way) in _bendButtons)
+            deck.Bend = way * BEND_BUTTON;
 
         _now = now;
         UpdateLights();
@@ -412,6 +431,10 @@ sealed class MidiControls : IDisposable
                 BrowseFolders?.Invoke(action == "browse.folders.next" ? 1 : -1);
             if (action == "browse.press" && pressed)
                 BrowsePressed?.Invoke();
+            if (pressed && SamplerSlot(action) is { } slot)
+                Sampler?.Trigger(slot);
+            if (pressed && action == "sampler.stop")
+                Sampler?.StopAll();
             if (action == "panic" && pressed)
                 PanicPressed?.Invoke();
             return;
@@ -429,6 +452,40 @@ sealed class MidiControls : IDisposable
         if (action == "censor")
         {
             deck.Censor(pressed);
+            return;
+        }
+
+        if (action == "reverse")
+        {
+            deck.Reverse(pressed);
+            return;
+        }
+
+        // A pitch bend button bends while it's held; let go, the bend fades as the jog wheel's does.
+        if (action is "bend.up" or "bend.down")
+        {
+            var way = action == "bend.up" ? 1 : -1;
+            if (pressed)
+                _bendButtons[deck] = way;
+            else if (_bendButtons.TryGetValue(deck, out var held) && held == way)
+            {
+                _bendButtons.Remove(deck);
+                _bends[deck] = deck.Bend;
+            }
+            return;
+        }
+
+        if (action == "quantize")
+        {
+            if (pressed)
+                deck.Quantize = !deck.Quantize;
+            return;
+        }
+
+        if (action is "eq.low.kill" or "eq.mid.kill" or "eq.high.kill")
+        {
+            if (pressed)
+                ToggleKill(deck, action[3..^5]);
             return;
         }
 
@@ -630,6 +687,41 @@ sealed class MidiControls : IDisposable
     }
 
     /// <summary>
+    /// The sampler slot, from 0, an action like "sampler3" is for.
+    /// </summary>
+    static int? SamplerSlot(string action) =>
+        action.StartsWith("sampler") && int.TryParse(action["sampler".Length..], out var number) && number >= 1 && number <= Sampler.SLOTS ? number - 1 : null;
+
+    /// <summary>
+    /// Kills a band ("low", "mid" or "high"), or puts a killed one back where it was before.
+    /// </summary>
+    void ToggleKill(Deck deck, string band)
+    {
+        var eq = deck.Equalizer;
+        var value = band switch { "low" => eq.Low, "mid" => eq.Mid, _ => eq.High };
+        float next;
+        if (value <= -1)
+            next = _killedFrom.Remove((deck, band), out var before) ? before : 0;
+        else
+        {
+            _killedFrom[(deck, band)] = value;
+            next = -1;
+        }
+        switch (band)
+        {
+            case "low":
+                eq.Low = next;
+                break;
+            case "mid":
+                eq.Mid = next;
+                break;
+            default:
+                eq.High = next;
+                break;
+        }
+    }
+
+    /// <summary>
     /// The loop roll pad, from 0, an action like "roll3" is for.
     /// </summary>
     static int? Roll(string action) =>
@@ -660,6 +752,17 @@ sealed class MidiControls : IDisposable
                 _engine.Crossfader = position;
             else if (action == "master")
                 _engine.MasterVolume = position;
+            else if (action == "headphones.mix")
+                _engine.CueMix = position;
+            else if (action == "headphones.volume")
+                _engine.HeadphoneVolume = position;
+            return;
+        }
+
+        if (action == "position")
+        {
+            if (deck.IsLoaded)
+                deck.Seek(deck.Duration * Math.Clamp(position, 0, 1));
             return;
         }
 
@@ -765,6 +868,7 @@ sealed class MidiControls : IDisposable
                 "mic.on" => _engine.MicrophoneOn,
                 "fx.on" when _fxSelected == "master" => _engine.MasterEffects.On,
                 "fx.on" => FxDecks().Any(fx => fx.Effects.On),
+                _ when SamplerSlot(action) is { } slot => Sampler?.IsPlaying(slot) == true,
                 _ => false,
             };
         return action switch
@@ -777,6 +881,10 @@ sealed class MidiControls : IDisposable
             "pfl" => deck.Headphones,
             "keylock" => deck.KeyLocked,
             "slip" => deck.Slip,
+            "quantize" => deck.Quantize,
+            "eq.low.kill" => deck.Equalizer.Low <= -1,
+            "eq.mid.kill" => deck.Equalizer.Mid <= -1,
+            "eq.high.kill" => deck.Equalizer.High <= -1,
             "fx.on" => deck.Effects.On,
             "vocals" => deck.VocalCut.On,
             _ when action.StartsWith("beatloop") && int.TryParse(action["beatloop".Length..], out var loopPad) && loopPad >= 1 && loopPad <= ControlCatalog.BeatLoopSizes.Count

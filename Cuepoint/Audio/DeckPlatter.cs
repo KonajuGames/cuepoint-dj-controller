@@ -129,6 +129,26 @@ sealed partial class Deck
     }
 
     /// <summary>
+    /// Reverse, held down or let go: while it's held, the song plays backwards at the deck's speed; let go, it plays
+    /// on forwards from where it got to (or, under <see cref="Slip"/>, from where the song would have got to). Only
+    /// while the deck's playing, and not over a scratch, backspin or censor.
+    /// </summary>
+    public void Reverse(bool held)
+    {
+        if (held)
+        {
+            if (IsPlaying && !IsPlatterActive)
+                TakePlatter(PlatterMode.Reverse, -Volatile.Read(ref _speed));
+            return;
+        }
+        if (Platter != PlatterMode.Reverse || IsCensoring)
+            return;
+        // Forwards again at once, which the platter takes as settled, handing the sound back to the track.
+        Volatile.Write(ref _platterVelocity, _motor ? Volatile.Read(ref _speed) : 0);
+        Volatile.Write(ref _platterMode, (int)PlatterMode.Free);
+    }
+
+    /// <summary>
     /// Whether censor's held, playing the song backwards.
     /// </summary>
     public bool IsCensoring => _slipCauses.HasFlag(SlipCause.Censor);

@@ -1725,6 +1725,7 @@ static int Run(ScreenshotTool.Request? capture)
     if (controllers is not null)
     {
         controllers.Log += screen.Log;
+        controllers.Sampler = sampler;
         controllers.LoadRequested += deck =>
         {
             if (browser.SelectedSong is { } song)

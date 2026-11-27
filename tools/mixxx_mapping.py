@@ -34,6 +34,7 @@ BEAT_LOOP_SIZES = [0.25, 0.5, 1, 2, 4, 8, 16, 32]
 ROLL_SIZES = [1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8]
 JUMP_SIZES = [-4, 4, -8, 8, -16, 16, -32, 32]
 HOTCUES = 8
+SAMPLER_SLOTS = 16
 
 DECKS = {"[Channel1]": "A", "[Channel2]": "B"}
 
@@ -72,6 +73,14 @@ DECK_CONTROLS = {
     "loop_move_4_backward": "loop.backbar",
     "loop_move_4_forward": "loop.onbar",
     "jog": "jog",
+    "reverse": "reverse",
+    "rate_temp_up": "bend.up",
+    "rate_temp_down": "bend.down",
+    "quantize": "quantize",
+    "playposition": "position",
+    "filterLowKill": "eq.low.kill",
+    "filterMidKill": "eq.mid.kill",
+    "filterHighKill": "eq.high.kill",
 }
 
 # Mixxx's deck controls with no exact match, and the nearest Cuepoint control.
@@ -85,7 +94,12 @@ GLOBAL_CONTROLS = {
     ("[Master]", "crossfader"): "crossfader",
     ("[Mixer]", "crossfader"): "crossfader",
     ("[Master]", "gain"): "master",
+    ("[Master]", "headGain"): "headphones.volume",
     ("[Master]", "volume"): "master",
+    ("[Master]", "headMix"): "headphones.mix",
+    ("[Master]", "headVolume"): "headphones.volume",
+    ("[Mixer]", "headMix"): "headphones.mix",
+    ("[Mixer]", "headVolume"): "headphones.volume",
     ("[Playlist]", "SelectTrackKnob"): "browse",
     ("[Library]", "MoveVertical"): "browse",
     ("[Playlist]", "SelectPlaylist"): "browse.folders",
@@ -135,7 +149,7 @@ SCRIPT_GUESSES = [
     (("vinyl",), None),
 ]
 
-GLOBAL = {"shift", "crossfader", "master", "master.fx.on", "browse", "browse.folders", "browse.press"}
+GLOBAL = {"shift", "crossfader", "master", "master.fx.on", "browse", "browse.folders", "browse.press", "headphones.mix", "headphones.volume", "sampler.stop"}
 
 # Mixxx's effect units' controls, and the nearest Cuepoint deck control: Cuepoint has one effect a deck, so unit 1 is
 # taken as deck A's and unit 2 as deck B's.
@@ -197,13 +211,34 @@ def control_for(group, key, script):
     deck = DECKS.get(group)
     if m := re.fullmatch(r"\[EqualizerRack1_(\[Channel\d\])_Effect1\]", group):
         deck = DECKS.get(m.group(1))
-        part = {"parameter1": "eq.low", "parameter2": "eq.mid", "parameter3": "eq.high"}.get(key)
+        part = {
+            "parameter1": "eq.low",
+            "parameter2": "eq.mid",
+            "parameter3": "eq.high",
+            "button_parameter1": "eq.low.kill",
+            "button_parameter2": "eq.mid.kill",
+            "button_parameter3": "eq.high.kill",
+        }.get(key)
         if deck and part:
             return f"{deck}.{part}", "exact", ""
     if m := re.fullmatch(r"\[QuickEffectRack1_(\[Channel\d\])\]", group):
         deck = DECKS.get(m.group(1))
         if deck and key == "super1":
             return f"{deck}.filter", "exact", "Mixxx's quick effect, usually its filter"
+    # Mixxx's samplers are small decks of their own; Cuepoint's sampler pads play from the start, as Mixxx's
+    # start_play and cue_gotoandplay do.
+    if m := re.fullmatch(r"\[Sampler(\d+)\]", group):
+        slot = int(m.group(1))
+        if slot > SAMPLER_SLOTS:
+            return None, "none", f"Cuepoint has {SAMPLER_SLOTS} sampler pads"
+        if key in ("start_play", "cue_gotoandplay"):
+            return f"sampler{slot}", "exact", ""
+        if key == "start_stop":
+            return f"sampler{slot}", "guess", "plays, or stops if it's playing: Cuepoint's pad plays it again"
+        if key == "stop":
+            return "sampler.stop", "guess", "stops every sample, not just this one"
+        if key == "LoadSelectedTrack":
+            return None, "none", "put songs on sampler pads with Put on sampler pad"
     if m := re.fullmatch(r"group_(\[Channel\d\])_enable", key):
         if group.startswith("[EffectRack1_EffectUnit") and (target := DECKS.get(m.group(1))):
             return f"{target}.fx.on", "guess", "an effect unit switched on for this deck"

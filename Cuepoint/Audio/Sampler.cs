@@ -105,6 +105,15 @@ sealed class Sampler : IDisposable
     }
 
     /// <summary>
+    /// Stops slot <paramref name="slot"/>'s sample, if it's playing.
+    /// </summary>
+    public void Stop(int slot)
+    {
+        if (InRange(slot))
+            _slots[slot].Pause();
+    }
+
+    /// <summary>
     /// Stops every sample playing.
     /// </summary>
     public void StopAll()

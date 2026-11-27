@@ -1,3 +1,4 @@
+using Cuepoint.Audio;
 using Cuepoint.Music;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -59,6 +60,13 @@ static class ControlCatalog
                     new($"{deck}.play", $"Deck {deck} play", ControlKind.Button, HasLight: true),
                     new($"{deck}.cue", $"Deck {deck} cue", ControlKind.Button, HasLight: true),
                     new($"{deck}.censor", $"Deck {deck} censor (plays backwards while held, then drops back in where the song would be)", ControlKind.Button),
+                    new($"{deck}.reverse", $"Deck {deck} reverse (plays backwards while held, then on from where it got to)", ControlKind.Button),
+                    new($"{deck}.bend.down", $"Deck {deck} pitch bend down (slower while held)", ControlKind.Button),
+                    new($"{deck}.bend.up", $"Deck {deck} pitch bend up (faster while held)", ControlKind.Button),
+                    new($"{deck}.quantize", $"Deck {deck} quantize (hotcues and cues on the beat)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.eq.low.kill", $"Deck {deck} low kill (pressed again, back where it was)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.eq.mid.kill", $"Deck {deck} mid kill (pressed again, back where it was)", ControlKind.Button, HasLight: true),
+                    new($"{deck}.eq.high.kill", $"Deck {deck} high kill (pressed again, back where it was)", ControlKind.Button, HasLight: true),
                     new($"{deck}.sync", $"Deck {deck} sync (lit while it follows the other deck)", ControlKind.Button, HasLight: true),
                     new($"{deck}.load", $"Load deck {deck}", ControlKind.Button),
                     new($"{deck}.unload", $"Unload deck {deck}, leaving it empty", ControlKind.Button),
@@ -128,6 +136,7 @@ static class ControlCatalog
                 [
                     new($"{deck}.tempo", $"Deck {deck} tempo", ControlKind.Fader),
                     new($"{deck}.tempo.reset", $"Deck {deck} reset tempo", ControlKind.Button),
+                    new($"{deck}.position", $"Deck {deck} position in the song (a needle strip)", ControlKind.Fader),
                     new($"{deck}.volume", $"Deck {deck} volume", ControlKind.Fader),
                     new($"{deck}.trim", $"Deck {deck} trim", ControlKind.Knob),
                     new($"{deck}.eq.high", $"Deck {deck} high", ControlKind.Knob),
@@ -152,6 +161,9 @@ static class ControlCatalog
                 new("master.fx.on", "Master effect on or off, on the whole mix", ControlKind.Button, HasLight: true),
                 new("mic.on", "Microphone in the mix or out of it", ControlKind.Button, HasLight: true),
                 new("master", "Master volume", ControlKind.Knob),
+                new("headphones.mix", "Headphones mix (the decks sent to them, to the main mix)", ControlKind.Knob),
+                new("headphones.volume", "Headphones volume", ControlKind.Fader),
+                new("sampler.stop", "Stop every sample playing", ControlKind.Button),
                 new("shift", "Shift (held, the controls bound with Shift do that instead)", ControlKind.Button),
                 new("panic", "Panic: every deck's EQ, trim, key, effect and loop, and the master effect, back to neutral", ControlKind.Button),
                 new("browse", "Browse songs", ControlKind.Encoder),
@@ -163,6 +175,8 @@ static class ControlCatalog
                 new("browse.folders.prev", "Previous folder", ControlKind.Button),
             ]
         );
+        for (var slot = 0; slot < Sampler.SLOTS; slot++)
+            controls.Add(new($"sampler{slot + 1}", $"Sampler pad {Sampler.SlotName(slot)} (plays it from the start, whatever the pads are doing)", ControlKind.Button, HasLight: true));
         return controls;
     }
 }
