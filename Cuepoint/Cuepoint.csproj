@@ -13,7 +13,7 @@
   <PropertyGroup>
     <!-- What the app is, for its file's Properties in Explorer, the version switch, and the release package's name. Raise the
          version for each release; the build adds the commit it was made from to the informational version. -->
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <AssemblyTitle>Cuepoint DJ Controller</AssemblyTitle>
     <Description>Two-deck DJ software for Windows: beat-synced decks, stems, hot cues, MIDI controllers, recording and live streaming.</Description>
     <Authors>Steve 'Sly' Williams</Authors>
