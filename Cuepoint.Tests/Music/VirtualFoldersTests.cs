@@ -104,7 +104,8 @@ public class VirtualFoldersTests : IDisposable
         Assert.Equal(file, made.FilePath);
         Assert.False(File.Exists(Path.Combine(AppFolder, "Gig.m3u8")));
         var lines = File.ReadAllLines(file);
-        Assert.Contains(Path.Combine("..", "..", "Music", "a.mp3"), lines);
+        // With Windows' separators on any computer, so the drive's playlists work on both.
+        Assert.Contains(@"..\..\Music\a.mp3", lines);
         Assert.Contains(_folder["C", "Music", "d.mp3"], lines);
 
         // The drive comes back as G.
