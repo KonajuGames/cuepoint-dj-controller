@@ -90,8 +90,10 @@ PLIST
 
 # Apple Silicon runs only signed code; ad hoc signing (no developer certificate) is enough to run it. macOS counts
 # everything beside the executable as code, and .NET keeps all its files there (its .dll and .json files, and the
-# shaders), so each one is signed, and the libraries in Frameworks, then the app around them.
-find "$app/Contents/MacOS" "$app/Contents/Frameworks" -type f -print0 | xargs -0 codesign --force --sign - --timestamp=none
+# shaders), so each one is signed, and the libraries in Frameworks, then the app around them. The executable itself is
+# left to the app's signing: signing it alone signs the whole app, before the rest are.
+find "$app/Contents/MacOS" "$app/Contents/Frameworks" -type f ! -path "$app/Contents/MacOS/Cuepoint" -print0 |
+    xargs -0 codesign --force --sign - --timestamp=none
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --deep --strict "$app"
 
