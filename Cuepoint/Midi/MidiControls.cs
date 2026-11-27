@@ -57,6 +57,11 @@ sealed class MidiControls : IDisposable
 
     readonly Dictionary<Deck, double> _bends = [];
 
+    // The devices whose Shift (the control bound to "shift") is held, and for each note held down, whether it was
+    // pressed with Shift, so its release goes to the same binding as its press even if Shift's let go first.
+    readonly HashSet<MidiDevice> _shiftHeld = [];
+    readonly Dictionary<(MidiDevice, int Channel, int Number), bool> _pressedShifted = [];
+
     public MidiControls(MidiDevices devices, IReadOnlyList<Deck> decks, AudioEngine engine, string mappingFolder)
     {
         _devices = devices;
@@ -178,6 +183,9 @@ sealed class MidiControls : IDisposable
         _mappings.Remove(device);
         foreach (var key in _lights.Keys.Where(key => key.Item1 == device).ToList())
             _lights.Remove(key);
+        _shiftHeld.Remove(device);
+        foreach (var key in _pressedShifted.Keys.Where(key => key.Item1 == device).ToList())
+            _pressedShifted.Remove(key);
         Log?.Invoke($"Controller {device.Name} disconnected");
     }
 
@@ -256,7 +264,9 @@ sealed class MidiControls : IDisposable
         if (!_mappings.TryGetValue(device, out var mapping))
             return;
 
-        if (Learning is { } learning && _controls.TryGetValue(learning, out var learnedControl))
+        // Shift still works while learning, so a control can be learned with Shift held, unless it's Shift being learned.
+        var isShift = mapping.Bindings.Any(binding => binding.Control == "shift" && binding.Matches(message));
+        if (Learning is { } learning && _controls.TryGetValue(learning, out var learnedControl) && !(isShift && learning != "shift"))
         {
             // A release isn't what to learn from: the press before it was.
             if (message.Kind == MidiKind.Note && !message.IsPressed)
@@ -265,10 +275,23 @@ sealed class MidiControls : IDisposable
             return;
         }
 
+        // A note's release goes to the layer its press went to.
+        var shifted = _shiftHeld.Contains(device);
+        if (message.Kind == MidiKind.Note)
+        {
+            var key = (device, message.Channel, message.Number);
+            if (message.IsPressed)
+                _pressedShifted[key] = shifted;
+            else if (_pressedShifted.Remove(key, out var pressedShifted))
+                shifted = pressedShifted;
+        }
+        // With Shift held, a message with a shifted binding works that; one without works its unshifted binding.
+        var layer = shifted && !isShift && mapping.Bindings.Any(binding => binding.Shifted && binding.Matches(message));
+
         var bound = false;
         foreach (var binding in mapping.Bindings)
         {
-            if (!binding.Matches(message) || !_controls.TryGetValue(binding.Control, out var control))
+            if (binding.Shifted != layer || !binding.Matches(message) || !_controls.TryGetValue(binding.Control, out var control))
                 continue;
             bound = true;
             Act(device, binding, control, message);
@@ -291,6 +314,8 @@ sealed class MidiControls : IDisposable
             Fine = message.Kind == MidiKind.ControlChange && control.Kind is ControlKind.Fader or ControlKind.Knob && message.Number < 32 ? message.Number + 32 : null,
             // A first step of 1 to 15 forward or back reads as two's complement; anything around 64 as offset.
             Steps = message.Value is (>= 1 and <= 15) or (>= 113 and <= 127) ? StepEncoding.TwosComplement : StepEncoding.Offset64,
+            // Learned with the controller's Shift held, it works only with Shift held.
+            Shifted = control.Id != "shift" && _shiftHeld.Contains(device),
         };
         mapping.Bind(binding);
         SaveMapping(device, mapping);
@@ -307,6 +332,14 @@ sealed class MidiControls : IDisposable
         {
             case ControlKind.Button:
                 var pressed = message.Kind == MidiKind.Note ? message.IsPressed : message.Value > 0;
+                if (control.Id == "shift")
+                {
+                    if (pressed)
+                        _shiftHeld.Add(device);
+                    else
+                        _shiftHeld.Remove(device);
+                    break;
+                }
                 Press(deck, action, pressed);
                 break;
 
@@ -767,15 +800,31 @@ sealed class MidiControls : IDisposable
             ? MidiMessage.Note(binding.Channel, binding.Number, on ? 127 : 0)
             : MidiMessage.Control(binding.Channel, binding.Number, on ? 127 : 0);
 
+    /// <summary>
+    /// Whether a binding's light is the one its button shows now: a shifted binding's while Shift's held, and an
+    /// unshifted one's unless Shift's held and the button has a shifted binding too.
+    /// </summary>
+    public static bool LightShown(MidiBinding binding, bool shiftHeld, ISet<(MidiKind, int, int)> shiftedMessages) =>
+        binding.Shifted ? shiftHeld : !(shiftHeld && shiftedMessages.Contains((binding.Kind, binding.Channel, binding.Number)));
+
     void UpdateLights()
     {
         foreach (var (device, mapping) in _mappings)
         {
             if (!device.CanSend)
                 continue;
+            var shiftHeld = _shiftHeld.Contains(device);
+            var shiftedMessages = mapping.Bindings.Where(binding => binding.Shifted).Select(binding => (binding.Kind, binding.Channel, binding.Number)).ToHashSet();
+            // The lights of the layer not shown go out first and are forgotten, so the layer shown puts its own back
+            // on the same button, and does again when Shift changes.
+            foreach (var binding in mapping.Bindings.Where(binding => !LightShown(binding, shiftHeld, shiftedMessages)))
+            {
+                if (_lights.Remove((device, binding), out var was) && was)
+                    device.Send(LightMessage(binding, false));
+            }
             foreach (var binding in mapping.Bindings)
             {
-                if (!_controls.TryGetValue(binding.Control, out var control) || !control.HasLight)
+                if (!_controls.TryGetValue(binding.Control, out var control) || !control.HasLight || !LightShown(binding, shiftHeld, shiftedMessages))
                     continue;
                 var on = LightOn(control.Id);
                 var key = (device, binding);

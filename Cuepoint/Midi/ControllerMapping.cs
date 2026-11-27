@@ -152,6 +152,7 @@ static class ControlCatalog
                 new("master.fx.on", "Master effect on or off, on the whole mix", ControlKind.Button, HasLight: true),
                 new("mic.on", "Microphone in the mix or out of it", ControlKind.Button, HasLight: true),
                 new("master", "Master volume", ControlKind.Knob),
+                new("shift", "Shift (held, the controls bound with Shift do that instead)", ControlKind.Button),
                 new("panic", "Panic: every deck's EQ, trim, key, effect and loop, and the master effect, back to neutral", ControlKind.Button),
                 new("browse", "Browse songs", ControlKind.Encoder),
                 new("browse.folders", "Browse folders", ControlKind.Encoder),
@@ -198,11 +199,29 @@ sealed record MidiBinding
 
     public StepEncoding Steps { get; init; }
 
+    /// <summary>
+    /// Whether this binding works only while the controller's Shift (the control bound to "shift") is held, for
+    /// controllers that send the same message with Shift held as without and leave Shift to the app. While Shift's
+    /// held, a message with a shifted binding works that; one without still works its unshifted binding, so faders
+    /// and buttons with nothing else to do with Shift keep working.
+    /// </summary>
+    public bool Shifted { get; init; }
+
     public bool Matches(MidiMessage message) =>
         message.Kind == Kind && message.Channel == Channel && (message.Number == Number || (Kind == MidiKind.ControlChange && message.Number == Fine));
 
+    /// <summary>
+    /// Whether the two bindings are for the same message (either half of a fourteen-bit control), in the same layer.
+    /// </summary>
+    public bool SharesMessage(MidiBinding other) =>
+        other.Kind == Kind
+        && other.Channel == Channel
+        && other.Shifted == Shifted
+        && (other.Number == Number || other.Fine == Number || (Fine is { } fine && (other.Number == fine || other.Fine == fine)));
+
     public override string ToString() =>
-        Kind == MidiKind.Note ? $"Note {Number}, ch {Channel + 1}" : $"CC {Number}{(Fine is { } fine ? $"/{fine}" : "")}, ch {Channel + 1}";
+        (Shifted ? "Shift + " : "")
+        + (Kind == MidiKind.Note ? $"Note {Number}, ch {Channel + 1}" : $"CC {Number}{(Fine is { } fine ? $"/{fine}" : "")}, ch {Channel + 1}");
 }
 
 /// <summary>
@@ -234,13 +253,13 @@ sealed class ControllerMapping
 
     /// <summary>
     /// Binds <paramref name="binding"/>'s control to its message alone: whatever else the control had, and whatever
-    /// else had the message, goes.
+    /// else had the message in the same layer (with Shift or without), goes.
     /// </summary>
     public void Bind(MidiBinding binding)
     {
         var displaced = Bindings.Where(other =>
             other.Control == binding.Control
-            || (other.Kind == binding.Kind && other.Channel == binding.Channel && (other.Number == binding.Number || other.Fine == binding.Number))
+            || (other.Kind == binding.Kind && other.Channel == binding.Channel && other.Shifted == binding.Shifted && (other.Number == binding.Number || other.Fine == binding.Number))
         ).ToList();
         Bindings.RemoveAll(displaced.Contains);
         Bindings.Add(binding);
@@ -266,19 +285,14 @@ sealed class ControllerMapping
     /// <summary>
     /// <paramref name="preset"/> with <paramref name="saved"/>'s own bindings in place of its: each control
     /// <paramref name="saved"/> binds, or that was changed by hand, as <paramref name="saved"/> has it, and the rest
-    /// as the preset has them, unless their message is taken. A mapping saved before the changes were kept counts the
+    /// as the preset has them, unless their message is taken (in the same layer, with Shift or without). A mapping saved before the changes were kept counts the
     /// controls it binds as changed (a control unbound by hand back then comes back from the preset). The other
     /// controls' preset bindings come first, then the saved ones.
     /// </summary>
     public static ControllerMapping Over(ControllerMapping preset, ControllerMapping saved)
     {
         var changed = saved.Changed ?? saved.Bindings.Select(binding => binding.Control).Distinct().ToList();
-        bool Taken(MidiBinding binding) =>
-            saved.Bindings.Any(other =>
-                other.Kind == binding.Kind
-                && other.Channel == binding.Channel
-                && (other.Number == binding.Number || other.Fine == binding.Number || (binding.Fine is { } fine && (other.Number == fine || other.Fine == fine)))
-            );
+        bool Taken(MidiBinding binding) => saved.Bindings.Any(binding.SharesMessage);
         var fromPreset = preset.Bindings
             .Where(binding => !changed.Contains(binding.Control) && saved.Bindings.All(other => other.Control != binding.Control) && !Taken(binding))
             .ToList();
