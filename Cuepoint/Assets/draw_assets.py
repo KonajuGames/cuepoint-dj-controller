@@ -1,7 +1,8 @@
 """Draws Cuepoint's images as PNGs: the logo (title bar and window icon), the list's small icons, the triangles
 used for arrows (the folder list's, the loop buttons', the nudge pads'), the options button's cog, the headphones
 button, the mixer's knob caps and the dots drawn over them, the search box's clearing cross, and the folder list's
-icons. The logo's sizes are also gathered into logo.ico, the executable's icon in Explorer and the taskbar.
+icons. The logo's sizes are also gathered into logo.ico, the executable's icon in Explorer and the taskbar, and
+drawn larger into logo.icns, the Mac app's icon.
 
 Run with any Python 3; it needs nothing installed. Shapes are distance fields, sampled 8x8 times per pixel so edges
 come out smooth at every size, and written with zlib as straight-alpha RGBA. Small icons are white, for the app to
@@ -38,7 +39,15 @@ def write_ico(path, pngs):
         f.write(out)
 
 
-def write_png(path, width, height, pixels):
+def write_icns(path, pngs):
+    """A Mac icon file holding PNG images: pngs is (type, PNG bytes) pairs, the type its four-letter code for its
+    size, as ic07 for 128 pixels."""
+    body = b"".join(kind + struct.pack(">I", 8 + len(data)) + data for kind, data in pngs)
+    with open(path, "wb") as f:
+        f.write(b"icns" + struct.pack(">I", 8 + len(body)) + body)
+
+
+def png_bytes(width, height, pixels):
     """pixels: rows of (r, g, b, a) floats from 0 to 1, straight alpha, sRGB."""
     raw = bytearray()
     for row in pixels:
@@ -49,11 +58,17 @@ def write_png(path, width, height, pixels):
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def write_png(path, width, height, pixels):
     with open(path, "wb") as f:
-        f.write(b"\x89PNG\r\n\x1a\n")
-        f.write(chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)))
-        f.write(chunk(b"IDAT", zlib.compress(bytes(raw), 9)))
-        f.write(chunk(b"IEND", b""))
+        f.write(png_bytes(width, height, pixels))
 
 
 def hex_colour(value, alpha=1.0):
@@ -435,6 +450,11 @@ def main():
     ico = os.path.join(HERE, "logo.ico")
     write_ico(ico, [(size, os.path.join(HERE, "logo-%d.png" % size)) for size in (16, 32, 48, 256)])
     print("wrote", ico)
+    # The Mac's, larger: drawn here rather than kept as PNGs, which the app would carry for nothing.
+    icns = os.path.join(HERE, "logo.icns")
+    kinds = [(b"ic11", 32), (b"ic12", 64), (b"ic07", 128), (b"ic08", 256), (b"ic09", 512), (b"ic10", 1024)]
+    write_icns(icns, [(kind, png_bytes(size, size, render(LOGO, size, 32))) for kind, size in kinds])
+    print("wrote", icns)
     if preview:
         for name, layers, size, units in previews:
             path = os.path.join(PREVIEWS, name)

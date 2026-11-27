@@ -1,0 +1,81 @@
+# Builds Cuepoint for Apple Silicon Macs on GitHub's Mac runners, as tools/package-mac.sh does, and checks the app
+# starts. For a version tag (v1.2.0), the zip goes on that tag's release, beside the Windows one; run by hand, it's
+# kept as the run's artifact to download.
+name: Mac release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - name: Check out Cuepoint
+        uses: actions/checkout@v4
+        with:
+          path: cuepoint-dj-controller
+
+      # The window, rendering and UI code Cuepoint shares, checked out beside it as the project expects.
+      - name: Check out cue-framework
+        uses: actions/checkout@v4
+        with:
+          repository: KonajuGames/cue-framework
+          path: cue-framework
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install MoltenVK and the Vulkan loader
+        run: brew install molten-vk vulkan-loader
+
+      - name: Test
+        working-directory: cuepoint-dj-controller
+        run: dotnet test Cuepoint.Tests -c Release
+
+      - name: Package
+        working-directory: cuepoint-dj-controller
+        run: tools/package-mac.sh
+
+      - name: Check the app starts
+        working-directory: cuepoint-dj-controller
+        run: |
+          app="$(ls -d artifacts/Cuepoint-*-macos-arm64/Cuepoint.app)"
+          "$app/Contents/MacOS/Cuepoint" --version
+
+      # The runner may give Vulkan no graphics card to draw with, so this is for its log, not a gate.
+      - name: Self-test
+        working-directory: cuepoint-dj-controller
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          app="$(ls -d artifacts/Cuepoint-*-macos-arm64/Cuepoint.app)"
+          mkdir -p "$RUNNER_TEMP/self-test"
+          "$app/Contents/MacOS/Cuepoint" --self-test "$RUNNER_TEMP/self-test"; status=$?
+          cat "$RUNNER_TEMP/self-test/self-test.txt" || true
+          cat "$HOME/Library/Application Support/Cuepoint/errors.log" 2>/dev/null || true
+          exit $status
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cuepoint-macos-arm64
+          path: cuepoint-dj-controller/artifacts/Cuepoint-*-macos-arm64.zip
+
+      # Onto the tag's release if there is one; otherwise a draft is made with it, to be written up and published.
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        working-directory: cuepoint-dj-controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip="$(ls artifacts/Cuepoint-*-macos-arm64.zip)"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$zip" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$zip" --draft --title "Cuepoint ${GITHUB_REF_NAME#v}" --notes "Mac build; notes to come."
+          fi

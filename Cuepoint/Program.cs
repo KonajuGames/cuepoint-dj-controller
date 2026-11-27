@@ -38,6 +38,16 @@ AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         ErrorLog.Write("working in the background", e);
 };
 
+// A Mac has no Vulkan of its own: the app carries MoltenVK, which runs Vulkan on Metal, and tells the Vulkan loader
+// where its description is, inside the app, unless something else is chosen.
+if (OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable("VK_DRIVER_FILES") is null && Environment.GetEnvironmentVariable("VK_ICD_FILENAMES") is null)
+{
+    var moltenVk = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "Resources", "vulkan", "icd.d", "MoltenVK_icd.json"));
+    // Set in the process's own environment, which the loader reads; .NET's SetEnvironmentVariable keeps its own copy.
+    if (File.Exists(moltenVk))
+        MacEnvironment.Set("VK_DRIVER_FILES", moltenVk);
+}
+
 var exitCode = 0;
 try
 {
