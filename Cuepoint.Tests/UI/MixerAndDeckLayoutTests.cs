@@ -207,6 +207,37 @@ public sealed class MixerAndDeckLayoutTests : IDisposable
         Assert.Equal(DeckPanel.HEIGHT, panel.Height);
     }
 
+    [Theory]
+    [InlineData(900)]
+    [InlineData(600)]
+    [InlineData(420)]
+    public void The_deck_s_buttons_keep_a_gap_below_its_waveform(float width)
+    {
+        // In the app's sizes, laid out, so text and pictures measure as they do in the app.
+        var system = FontAtlas.FindSystemFont() ?? throw new InvalidOperationException("No system font");
+        var bold = FontAtlas.FindSystemFont(bold: true) ?? system;
+        var (small, body, heavy, big) = (_atlas.Add(system, 12), _atlas.Add(system, 14), _atlas.Add(bold, 14), _atlas.Add(bold, 26));
+        _atlas.Build();
+        var keys = new DeckKeyHints("Z", "X", "C", "3", "V", "4", "G", "T");
+        var panel = new DeckPanel(_deck, small, body, heavy, big, big, keys: keys, images: _images, roll: new RollPads(_deck));
+        panel.Width = width;
+        panel.Measure();
+        panel.Arrange(new float2(0, 0));
+        var overview = panel.Children.OfType<WaveformBar>().Single();
+        var bottom = overview.ScreenPosition.Y + overview.Size.Y;
+
+        // Everything under the waveform, across its width, starts a row's gap below it.
+        var below = panel.Children.Where(child =>
+            child.Visible
+            && child != overview
+            && child.ScreenPosition.Y > overview.ScreenPosition.Y
+            && child.ScreenPosition.X < overview.ScreenPosition.X + overview.Size.X
+            && child.ScreenPosition.X + child.Size.X > overview.ScreenPosition.X
+        );
+
+        Assert.All(below, child => Assert.True(child.ScreenPosition.Y >= bottom + 6, $"{(child as Button)?.Text ?? child.GetType().Name} at {child.ScreenPosition.Y} ({child.Size.Y} tall), the waveform ends at {bottom}, the deck {panel.Height} tall"));
+    }
+
     [Fact]
     public void A_narrower_deck_shortens_its_buttons_then_puts_them_in_two_rows()
     {

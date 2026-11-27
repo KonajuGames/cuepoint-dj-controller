@@ -23,7 +23,8 @@ namespace Cuepoint.UI;
 /// </summary>
 sealed class DeckPanel : Panel
 {
-    public const float HEIGHT = 184;
+    // Room for the song's details, the times, the waveform, a row's gap, the transport and the pads.
+    public const float HEIGHT = 190;
     const float PAD = 10;
 
     readonly Deck _deck;
@@ -170,9 +171,10 @@ sealed class DeckPanel : Panel
     }
 
     /// <summary>
-    /// What a second row of buttons adds to the deck's height.
+    /// What a second row of buttons adds to the deck's height: a row as tall as CUE with its key hint, and the gap
+    /// between rows.
     /// </summary>
-    const float EXTRA_ROW = 36;
+    const float EXTRA_ROW = 35 + ROW_GAP;
 
     /// <summary>
     /// Whether the buttons are shorter, and in two rows, for testing.
