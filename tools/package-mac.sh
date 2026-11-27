@@ -88,9 +88,10 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Apple Silicon runs only signed code; ad hoc signing (no developer certificate) is enough to run it. Each library
-# first, then the app around them.
-find "$app/Contents" -type f \( -name "*.dylib" -o -perm -u+x \) -print0 | xargs -0 codesign --force --sign - --timestamp=none
+# Apple Silicon runs only signed code; ad hoc signing (no developer certificate) is enough to run it. macOS counts
+# everything beside the executable as code, and .NET keeps all its files there (its .dll and .json files, and the
+# shaders), so each one is signed, and the libraries in Frameworks, then the app around them.
+find "$app/Contents/MacOS" "$app/Contents/Frameworks" -type f -print0 | xargs -0 codesign --force --sign - --timestamp=none
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --deep --strict "$app"
 
