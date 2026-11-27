@@ -234,6 +234,16 @@ python docs/tour/annotate.py tour --ffmpeg path	ofmpeg.exe
 
 All three run on a scratch app folder in `%TEMP%\cuepoint-capture`, with a dozen songs made up for it (a beat and a chord each, at a tempo and in a key, under made-up names), so nothing of yours is read or changed, and nothing's heard. For the screenshot, once they're analysed, two are loaded and played in step, and the window's own picture is saved as `screenshot.png` (or `screenshot-light.png`, `screenshot-high-contrast.png`), 1920 by 1050.
 
+## Release packages
+
+A release package is a self-contained build for 64-bit Windows, carrying the .NET runtime so it needs nothing else installed, zipped with this README and the licence as `artifacts\Cuepoint-<version>-win-x64.zip`. The tests run first, and nothing's packaged if any fail:
+
+```
+powershell -File tools\package.ps1 [-SkipTests]
+```
+
+The version is `<Version>` in [Cuepoint.csproj](Cuepoint/Cuepoint.csproj); raise it for each release. `Cuepoint.exe --version` says which build it is, with the commit it was built from, so package after committing.
+
 ## Tests
 
 The tests in [Cuepoint.Tests](Cuepoint.Tests) cover what can go wrong without a sound card or a window:

@@ -10,6 +10,29 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- What the app is, for its file's Properties in Explorer, the version switch, and the release package's name. Raise the
+         version for each release; the build adds the commit it was made from to the informational version. -->
+    <Version>1.0.0</Version>
+    <AssemblyTitle>Cuepoint DJ Controller</AssemblyTitle>
+    <Description>Two-deck DJ software for Windows: beat-synced decks, stems, hot cues, MIDI controllers, recording and live streaming.</Description>
+    <Authors>Steve 'Sly' Williams</Authors>
+    <Company>Konaju Games</Company>
+    <Copyright>Copyright (c) 2026 Steve 'Sly' Williams</Copyright>
+    <NeutralLanguage>en</NeutralLanguage>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/KonajuGames/cuepoint-dj-controller</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- The executable's icon in Explorer and the taskbar; Assets\draw_assets.py makes it from the logo. -->
+    <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <!-- A release package (dotnet publish -r win-x64, as tools\package.ps1 does) carries the .NET runtime with it, so
+         it runs on a computer without .NET installed. -->
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Ahwoo.BRUTAL.Logging" Version="2026.10.3" />
     <PackageReference Include="Ahwoo.BRUTAL.Sdl" Version="2026.10.3" />

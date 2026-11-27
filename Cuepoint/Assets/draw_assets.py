@@ -1,7 +1,7 @@
 """Draws Cuepoint's images as PNGs: the logo (title bar and window icon), the list's small icons, the triangles
 used for arrows (the folder list's, the loop buttons', the nudge pads'), the options button's cog, the headphones
 button, the mixer's knob caps and the dots drawn over them, the search box's clearing cross, and the folder list's
-icons.
+icons. The logo's sizes are also gathered into logo.ico, the executable's icon in Explorer and the taskbar.
 
 Run with any Python 3; it needs nothing installed. Shapes are distance fields, sampled 8x8 times per pixel so edges
 come out smooth at every size, and written with zlib as straight-alpha RGBA. Small icons are white, for the app to
@@ -21,6 +21,21 @@ import zlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 PREVIEWS = os.environ.get("PREVIEWS", HERE)
 SAMPLES = 8
+
+
+def write_ico(path, pngs):
+    """An icon file holding PNG images, as Windows Vista and later read them: pngs is (size, path) pairs."""
+    images = [(size, open(png, "rb").read()) for size, png in pngs]
+    out = bytearray(struct.pack("<HHH", 0, 1, len(images)))
+    offset = 6 + 16 * len(images)
+    for size, data in images:
+        # A size of 256 is written as 0.
+        out += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, 1, 32, len(data), offset)
+        offset += len(data)
+    for _, data in images:
+        out += data
+    with open(path, "wb") as f:
+        f.write(out)
 
 
 def write_png(path, width, height, pixels):
@@ -417,6 +432,9 @@ def main():
         path = os.path.join(HERE, name)
         write_png(path, size, size, render(layers, size, units))
         print("wrote", path)
+    ico = os.path.join(HERE, "logo.ico")
+    write_ico(ico, [(size, os.path.join(HERE, "logo-%d.png" % size)) for size in (16, 32, 48, 256)])
+    print("wrote", ico)
     if preview:
         for name, layers, size, units in previews:
             path = os.path.join(PREVIEWS, name)

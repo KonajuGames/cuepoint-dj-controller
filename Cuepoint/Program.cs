@@ -13,6 +13,13 @@ using Cuepoint.UI;
 
 WindowsShell.AttachParentConsole();
 
+// --version says which build this is, from the project's version and the commit it was built from, and exits.
+if (args.Contains("--version"))
+{
+    Console.WriteLine($"Cuepoint {AppVersion.Text}");
+    return 0;
+}
+
 // The screenshot tool (--capture <folder> [--look Light|HighContrast]) and the self-test (--self-test [folder]) run on
 // a scratch app folder and made-up songs, leaving the user's alone.
 var capture = ScreenshotTool.Parse(args);
