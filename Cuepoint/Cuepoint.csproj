@@ -27,6 +27,12 @@
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- For the options' About tab, which reads them back from the assembly. -->
+    <AssemblyMetadata Include="License" Value="$(PackageLicenseExpression)" />
+    <AssemblyMetadata Include="RepositoryUrl" Value="$(RepositoryUrl)" />
+  </ItemGroup>
+
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <!-- A release package (dotnet publish -r win-x64, as tools\package.ps1 does) carries the .NET runtime with it, so
          it runs on a computer without .NET installed. -->

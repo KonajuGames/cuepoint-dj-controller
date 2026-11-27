@@ -16,7 +16,7 @@ WindowsShell.AttachParentConsole();
 // --version says which build this is, from the project's version and the commit it was built from, and exits.
 if (args.Contains("--version"))
 {
-    Console.WriteLine($"Cuepoint {AppVersion.Text}");
+    Console.WriteLine($"Cuepoint {AppInfo.Version}");
     return 0;
 }
 

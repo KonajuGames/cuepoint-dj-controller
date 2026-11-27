@@ -716,6 +716,30 @@ sealed class OptionsDialog : Panel
             }
         );
 
+        // What this is and which build: to say when reporting something, or to check an update took.
+        Page("About");
+        _page.Add(new Label(bold, AppInfo.Title) { Color = Theme.Text });
+        if (AppInfo.Description.Length > 0)
+            _page.Add(new Label(body, AppInfo.Description) { Color = Theme.Muted, MaxWidth = 480, Wrap = true });
+        Row("Version", body).Add(new Label(body, AppInfo.ShortVersion) { Color = Theme.Text });
+        if (AppInfo.Commit.Length > 0)
+            Row("Built from", body).Add(new Label(body, $"commit {AppInfo.Commit}") { Color = Theme.Text });
+        Row("Runs on", body).Add(new Label(body, AppInfo.Runtime) { Color = Theme.Text, MaxWidth = 340 });
+        if (AppInfo.Company.Length > 0)
+            Row("Published by", body).Add(new Label(body, AppInfo.Company) { Color = Theme.Text });
+        if (AppInfo.License.Length > 0)
+            Row("Licence", body).Add(new Label(body, AppInfo.License) { Color = Theme.Text });
+        if (AppInfo.RepositoryUrl.Length > 0)
+        {
+            var websiteRow = Row("Website", body);
+            // Without its https://, which it doesn't need to be read and which would push it past the box.
+            websiteRow.Add(new Label(body, AppInfo.RepositoryUrl.Replace("https://", "")) { Color = Theme.Text, MaxWidth = 340 });
+            var open = websiteRow.Add(new Button(body, "Open") { FocusColor = Theme.Focus, Tooltip = "Opens the website in your browser" });
+            open.Clicked += _ => OpenWebsite();
+        }
+        if (AppInfo.Copyright.Length > 0)
+            _page.Add(new Label(body, AppInfo.Copyright) { Color = Theme.Muted });
+
         var close = _content.Add(new Button(bold, "Close") { MinSize = new float2(90, 0), FocusColor = Theme.Focus });
         close.Clicked += _ => Close();
 
@@ -728,6 +752,16 @@ sealed class OptionsDialog : Panel
     }
 
     bool _pressedInBox;
+
+    // In the browser Windows opens links with; a failure to start one isn't worth more than nothing happening.
+    static void OpenWebsite()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(AppInfo.RepositoryUrl) { UseShellExecute = true })?.Dispose();
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException) { }
+    }
 
     public override void PointerDown(float2 point, Modifiers modifiers) => _pressedInBox = _box.Contains(point);
 

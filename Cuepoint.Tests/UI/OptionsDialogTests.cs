@@ -36,7 +36,7 @@ public class OptionsDialogTests
         using var engine = new AudioEngine();
         var options = new OptionsDialog(engine, @"C:\Music", @"C:\library.json", font, font, font);
 
-        Assert.Equal(["Mixing", "Sound", "Screen", "Controls", "Library"], options.Tabs);
+        Assert.Equal(["Mixing", "Sound", "Screen", "Controls", "Library", "About"], options.Tabs);
         Assert.Equal(0, options.TabOf("Crossfader curve"));
         Assert.Equal(1, options.TabOf("Headphones"));
         Assert.Equal(1, options.TabOf("Buffer size"));
@@ -45,6 +45,8 @@ public class OptionsDialogTests
         Assert.Equal(3, options.TabOf("Keyboard"));
         Assert.Equal(4, options.TabOf("Analyse when idle"));
         Assert.Equal(4, options.TabOf("Settings"));
+        Assert.Equal(5, options.TabOf("Version"));
+        Assert.Equal(5, options.TabOf("Website"));
 
         Assert.Equal(0, options.Tab);
         options.Tab = 2;

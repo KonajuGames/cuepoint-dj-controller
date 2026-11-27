@@ -166,7 +166,13 @@ sealed class MainScreen : Panel
         _images = images;
 
         // The wordmark in the two decks' colours, as the logo is: "Cue" in A's blue, "point" in B's red.
-        TitleBar = Add(new TitleBar(fonts.Body, fonts.Bold, images.Logo, images.Cog, ("Cue", AppTheme.DeckA), ("point", AppTheme.DeckB)));
+        TitleBar = Add(
+            new TitleBar(fonts.Body, fonts.Bold, images.Logo, images.Cog, ("Cue", AppTheme.DeckA), ("point", AppTheme.DeckB))
+            {
+                Version = $"v{AppInfo.ShortVersion}",
+                VersionFont = fonts.Small,
+            }
+        );
         TitleItems = new TitleBarItems(TitleBar, engine, decks, fonts.Small, fonts.Body, fonts.Bold, images);
 
         foreach (var deck in decks)
