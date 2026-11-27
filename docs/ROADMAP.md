@@ -32,8 +32,8 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 ## Needs the hardware
 
-- **Try the DDJ-FLX4 and DDJ-400 mappings on the controllers.** They're from Pioneer's lists of MIDI messages but
-  untried: that Windows names them exactly "DDJ-FLX4" and "DDJ-400", that their lights come on, that the jog wheels
+- **Try the DDJ-FLX4, DDJ-400 and DDJ-SB mappings on the controllers.** They're from Pioneer's lists of MIDI messages but
+  untried: that Windows names them exactly "DDJ-FLX4" and "DDJ-400" (and the SB "DDJ-SB" or "PIONEER DDJ-SB"), that their lights come on, that the jog wheels
   feel right, and that the BEAT LOOP and KEY SHIFT pads and the 400's FX ON do what's expected.
 
 ## Phase 6: Choosing what to play (done)
@@ -110,7 +110,7 @@ the other is the only leader; sync lock made the unlocked deck lead).
 
 | # | Item | Size | Notes |
 |---|---|---|---|
-| 31 | **Trying the DDJ-FLX4 and DDJ-400 mappings** on the controllers | S | See *Needs the hardware*; the self-test (17) first, so anything wrong is the mapping. |
+| 31 | **Trying the DDJ-FLX4, DDJ-400 and DDJ-SB mappings** on the controllers | S | See *Needs the hardware*; the self-test (17) first, so anything wrong is the mapping. |
 | 32 | **MIDI clock out**: the tempo sent to drum machines and lighting desks (done) | M | `MidiClock`: 24 pulses a beat from the deck leading the mix, kept in step with its beat grid on a thread of its own, Start on its next downbeat and Stop when it stops, on a MIDI output chosen in the options. Only tried on Windows' own synth, which ignores clock; still to be tried with a drum machine or loopMIDI. Cuedeck could follow it as well as OS2L. |
 
 ## Order and dependencies
