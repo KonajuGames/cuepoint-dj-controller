@@ -13,7 +13,8 @@ permissions:
 
 jobs:
   mac:
-    runs-on: macos-14
+    # Apple Silicon; the newest macOS GitHub offers, as older ones are retired.
+    runs-on: macos-latest
     steps:
       - name: Check out Cuepoint
         uses: actions/checkout@v4
