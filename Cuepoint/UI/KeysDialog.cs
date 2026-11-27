@@ -69,7 +69,7 @@ sealed class KeysDialog : Panel
         _content.Children.Clear();
         _keys.Clear();
         _content.Add(new Label(_heading, "Keys") { Color = Theme.Text });
-        _content.Add(new Label(_body, "Click a key, then press the one to use instead. Shift, Ctrl and Alt work with whichever's chosen.") { Color = Theme.Muted });
+        _content.Add(new Label(_body, $"Click a key, then press the one to use instead. Shift, {GlfwUiInput.CtrlName} and Alt work with whichever's chosen.") { Color = Theme.Muted });
 
         var bindings = Bindings();
         var decks = _content.Add(new Panel { Spacing = 3 });

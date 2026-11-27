@@ -34,7 +34,7 @@ sealed class KeyMap
     static readonly (string Property, string Name)[] DeckActions =
     [
         ("Cue", "Cue"),
-        ("Play", "Play (Ctrl: censor)"),
+        ("Play", $"Play ({GlfwUiInput.CtrlName}: censor)"),
         ("Sync", "Sync"),
         ("Loop", "Loop (Shift: reloop)"),
         ("HalveLoop", "Halve loop (Shift: loop in)"),

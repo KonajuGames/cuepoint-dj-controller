@@ -281,7 +281,7 @@ sealed class DeckPanel : Panel
         _loading = Add(new Label(body) { Color = Theme.Muted });
 
         // Under the deck's letter: takes the song off, leaving the deck empty.
-        _eject = Add(new EjectButton { Tooltip = $"Unload the song, leaving deck {deck.Name} empty (Ctrl + {(deck.Name == "B" ? 2 : 1)})" });
+        _eject = Add(new EjectButton { Tooltip = $"Unload the song, leaving deck {deck.Name} empty ({GlfwUiInput.CtrlName} + {(deck.Name == "B" ? 2 : 1)})" });
         _eject.Clicked += _ => UnloadRequested?.Invoke(this);
 
         // The song's waveform, coloured as it plays, with a thin playhead and a mark at the cue point; click or drag

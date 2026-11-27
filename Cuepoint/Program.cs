@@ -1541,7 +1541,7 @@ static int Run(ScreenshotTool.Request? capture)
             screen.Log($"Couldn't save the hot cues to {database.FilePath}: {e.Message}");
             return;
         }
-        screen.Log($"Deck {deck.Name}: suggested {string.Join(", ", added)}; Ctrl+Z takes them back");
+        screen.Log($"Deck {deck.Name}: suggested {string.Join(", ", added)}; {GlfwUiInput.CtrlName}+Z takes them back");
     }
 
     screen.HotcueMenuRequested += (deck, index, at) =>
@@ -1672,7 +1672,7 @@ static int Run(ScreenshotTool.Request? capture)
             return;
         }
         edits.RecordLibrary("the panic", panic.Undo);
-        screen.Log($"Panic: {panic.Changed} {(panic.Changed == 1 ? "thing" : "things")} back to neutral; Ctrl+Z puts them back");
+        screen.Log($"Panic: {panic.Changed} {(panic.Changed == 1 ? "thing" : "things")} back to neutral; {GlfwUiInput.CtrlName}+Z puts them back");
     }
 
 
@@ -2130,7 +2130,7 @@ static int Run(ScreenshotTool.Request? capture)
                     FoldersChanged();
                 }
             );
-            screen.Log($"Deleted {folder.Name}; its songs are untouched, and Ctrl + Z brings it back");
+            screen.Log($"Deleted {folder.Name}; its songs are untouched, and {GlfwUiInput.CtrlName} + Z brings it back");
         }
         catch (InvalidOperationException e)
         {
@@ -2669,7 +2669,7 @@ static int Run(ScreenshotTool.Request? capture)
                                     var (name, search) = (smart.Name, smart.Search);
                                     smartPlaylists.Delete(smart);
                                     edits.RecordLibrary($"deleting {name}", () => smartPlaylists.Add(smartPlaylists.CheckName(name) is null ? name : $"{name} (2)", search));
-                                    screen.Log($"Deleted {name}; Ctrl + Z brings it back");
+                                    screen.Log($"Deleted {name}; {GlfwUiInput.CtrlName} + Z brings it back");
                                 }
                             )
                     ),
@@ -3461,7 +3461,7 @@ static int Run(ScreenshotTool.Request? capture)
         var what = songs.Count == 1 ? songs[0].Title : $"{songs.Count} songs";
         if (error is null)
             edits.RecordLibrary($"taking {what} out of {folder.Name}", () => virtualFolders.Restore(folder, before));
-        screen.Log(error is not null ? $"Couldn't save {folder.Name}: {error}" : $"Took {what} out of {folder.Name}; Ctrl + Z puts it back");
+        screen.Log(error is not null ? $"Couldn't save {folder.Name}: {error}" : $"Took {what} out of {folder.Name}; {GlfwUiInput.CtrlName} + Z puts it back");
     };
     browser.MoveRequested += (folder, songs, before) =>
     {
