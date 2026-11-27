@@ -10,12 +10,29 @@ namespace Cuepoint.Music;
 static partial class FileDeletion
 {
     /// <summary>
+    /// What deleted files go to, by its name where the app runs: the Trash on a Mac, the Recycle Bin on Windows.
+    /// </summary>
+    public static string BinName { get; } = OperatingSystem.IsMacOS() ? "Trash" : "Recycle Bin";
+
+    /// <summary>
     /// Whether deleting <paramref name="path"/> sends it to the Recycle Bin, so it can be got back: on Windows, on a
     /// fixed drive, unless the Recycle Bin is turned off for that drive ("Don't move files to the Recycle Bin") or for
     /// every drive by policy. A memory card, a network drive or a drive elsewhere has none.
     /// </summary>
     public static bool WouldRecycle(string path)
     {
+        // A Mac has a Trash on its own drives, the startup disk and the others alike, but not on a network share.
+        if (OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                return StorageDrives.RootOf(path) is { } macRoot && new DriveInfo(macRoot).DriveType != DriveType.Network;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                return false;
+            }
+        }
         if (!OperatingSystem.IsWindows())
             return false;
         try

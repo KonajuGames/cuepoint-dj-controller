@@ -267,7 +267,7 @@ static int Run(ScreenshotTool.Request? capture)
         Path.Combine(AppFolder.Path, "VirtualFolders"),
         () => VirtualFolders.ReadyDrives(WindowsShell.IsReadOnlyVolume)
     );
-    if (OperatingSystem.IsWindows())
+    if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS())
         virtualFolders.RemoveFile = WindowsShell.MoveToRecycleBin;
 
     // Other DJ software's playlists and hot cues: Rekordbox collections exported as XML, and Serato's crates. Each
@@ -3045,9 +3045,9 @@ static int Run(ScreenshotTool.Request? capture)
         var recycling = others.ToDictionary(path => path, FileDeletion.WouldRecycle, StringComparer.OrdinalIgnoreCase);
         var forGood = recycling.Count(pair => !pair.Value);
         var going =
-            forGood == 0 ? $"{(others.Count == 1 ? "goes" : "go")} to the Recycle Bin"
-            : forGood == others.Count ? $"{(others.Count == 1 ? "is" : "are")} deleted for good, as there's no Recycle Bin for {(others.Count == 1 ? "it" : "them")}"
-            : $"{(others.Count - forGood == 1 ? "goes" : "go")} to the Recycle Bin but for {forGood}, deleted for good as there's no Recycle Bin for {(forGood == 1 ? "it" : "them")}";
+            forGood == 0 ? $"{(others.Count == 1 ? "goes" : "go")} to the {FileDeletion.BinName}"
+            : forGood == others.Count ? $"{(others.Count == 1 ? "is" : "are")} deleted for good, as there's no {FileDeletion.BinName} for {(others.Count == 1 ? "it" : "them")}"
+            : $"{(others.Count - forGood == 1 ? "goes" : "go")} to the {FileDeletion.BinName} but for {forGood}, deleted for good as there's no {FileDeletion.BinName} for {(forGood == 1 ? "it" : "them")}";
         confirmation.Show(
             $"Keep the copy in {Path.GetFileName(Path.GetDirectoryName(kept.Path))}?",
             $"This one, {kept.Path}, is kept. {(others.Count == 1 ? "The other copy, in" : $"The {others.Count} other copies, in")} {where}, {going}. "
@@ -3260,10 +3260,10 @@ static int Run(ScreenshotTool.Request? capture)
         var recycling = deleting.ToDictionary(song => song, song => FileDeletion.WouldRecycle(song.Path));
         var forGood = recycling.Count(pair => !pair.Value);
         var where =
-            deleting.Count == 1 ? (forGood == 0 ? $"{deleting[0].Path} goes to the Recycle Bin" : $"{deleting[0].Path} is deleted for good, as there's no Recycle Bin for it")
-            : forGood == 0 ? "Their files go to the Recycle Bin"
-            : forGood == deleting.Count ? "Their files are deleted for good, as there's no Recycle Bin for them"
-            : $"{deleting.Count - forGood} of their files go to the Recycle Bin, and {forGood} {(forGood == 1 ? "is" : "are")} deleted for good, as there's no Recycle Bin for {(forGood == 1 ? "it" : "them")}";
+            deleting.Count == 1 ? (forGood == 0 ? $"{deleting[0].Path} goes to the {FileDeletion.BinName}" : $"{deleting[0].Path} is deleted for good, as there's no {FileDeletion.BinName} for it")
+            : forGood == 0 ? $"Their files go to the {FileDeletion.BinName}"
+            : forGood == deleting.Count ? $"Their files are deleted for good, as there's no {FileDeletion.BinName} for them"
+            : $"{deleting.Count - forGood} of their files go to the {FileDeletion.BinName}, and {forGood} {(forGood == 1 ? "is" : "are")} deleted for good, as there's no {FileDeletion.BinName} for {(forGood == 1 ? "it" : "them")}";
         confirmation.Show(
             deleting.Count == 1 ? $"Delete {deleting[0].Title}?" : $"Delete {deleting.Count} songs?",
             $"{where}, and {(deleting.Count == 1 ? "it comes out of any virtual folders it's in" : "they come out of any virtual folders they're in")}."
@@ -3307,7 +3307,7 @@ static int Run(ScreenshotTool.Request? capture)
         {
             var (flac, wav) = (DjEdit.EditPath(song.Path), DjEdit.OldEditPath(song.Path));
             var wavGoes = !File.Exists(wav) ? ""
-                : $" The WAV it was before, {Path.GetFileName(wav)}, {(FileDeletion.WouldRecycle(wav) ? "goes to the Recycle Bin" : "is deleted, as its drive has no Recycle Bin")}.";
+                : $" The WAV it was before, {Path.GetFileName(wav)}, {(FileDeletion.WouldRecycle(wav) ? $"goes to the {FileDeletion.BinName}" : $"is deleted, as its drive has no {FileDeletion.BinName}")}.";
             replacing = (File.Exists(flac) ? $"{Path.GetFileName(flac)} is made again from the song, in place of the one there." : $"It's made again from the song as {Path.GetFileName(flac)}, a FLAC about half the size.")
                 + wavGoes
                 + " Its hot cues and memory cues are the song's again, so any set on the edit itself are lost.";
@@ -3391,7 +3391,7 @@ static int Run(ScreenshotTool.Request? capture)
         {
             var recycle = FileDeletion.WouldRecycle(oldWav);
             oldWavNews = FileDeletion.Delete(oldWav, recycle) is { } error ? $"; couldn't delete the old WAV: {error}"
-                : recycle ? "; the old WAV's in the Recycle Bin"
+                : recycle ? $"; the old WAV's in the {FileDeletion.BinName}"
                 : "; the old WAV's deleted";
             replaced = true;
         }
