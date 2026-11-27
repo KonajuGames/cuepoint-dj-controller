@@ -1,6 +1,6 @@
 # Cuepoint
 
-Cuepoint is a two-deck DJ app for Windows, built for mixing from a library of music files with a keyboard, a mouse or a DJ controller. It analyses every song's tempo, beat grid, key and loudness, keeps the decks in sync, and works with Pioneer's DDJ-SB3, DDJ-FLX4 and DDJ-400 out of the box, including the SB3's FX FADE and PAD SCRATCH effects.
+Cuepoint is a two-deck DJ app for Windows (and, newly and not yet tried, Apple Silicon Macs: see [On a Mac](#on-a-mac)), built for mixing from a library of music files with a keyboard, a mouse or a DJ controller. It analyses every song's tempo, beat grid, key and loudness, keeps the decks in sync, and works with Pioneer's DDJ-SB3, DDJ-FLX4 and DDJ-400 out of the box, including the SB3's FX FADE and PAD SCRATCH effects.
 
 ![Cuepoint with a song on each deck: the scrolling waveforms across the top, the decks either side of the mixer, and the folder list and song list below](docs/screenshot.png)
 
@@ -243,6 +243,35 @@ powershell -File tools\package.ps1 [-SkipTests]
 ```
 
 The version is `<Version>` in [Cuepoint.csproj](Cuepoint/Cuepoint.csproj); raise it for each release. `Cuepoint.exe --version` says which build it is, with the commit it was built from, so package after committing.
+
+## On a Mac
+
+Cuepoint builds for Apple Silicon Macs (M1 and later) on macOS 12 or later. The Mac build is new and hasn't yet been tried on a Mac, so expect rough edges.
+
+For each version tag, [the Mac release workflow](.github/workflows/release-mac.yml) builds it on GitHub's Mac runners, runs the tests, checks the app starts, and puts `Cuepoint-<version>-macos-arm64.zip` on the release beside the Windows one. To build it on a Mac yourself, with the .NET 10 SDK and Homebrew:
+
+```
+brew install molten-vk vulkan-loader
+tools/package-mac.sh
+```
+
+`Cuepoint.app` carries the .NET runtime and MoltenVK, which runs Vulkan on the Mac's Metal, so nothing else needs installing. It's signed ad hoc rather than with a developer certificate, so the first time, macOS won't open it from a double-click: right-click it, choose **Open**, and **Open** again (or run `xattr -dr com.apple.quarantine Cuepoint.app`).
+
+What's different on a Mac:
+
+- **Cmd** does what Ctrl does on Windows (Cmd + Z, Cmd + F, and the rest), and the shortcuts say so. Ctrl works too.
+- The window has the Mac's own title bar and buttons, with Cuepoint's bar under them.
+- The drives in the folder list are the startup disk and each drive in `/Volumes`.
+- Deleted files go to the Trash, the streaming password is kept in the Keychain, and settings and analyses are in `~/Library/Application Support/Cuepoint`.
+- MIDI controllers and MIDI clock go through CoreMIDI. Controllers are found by the names the Mac gives them, so a mapping learned on Windows may need learning again.
+
+Not on a Mac yet:
+
+- Songs in AAC, M4A or ALAC can't be played; MP3, FLAC, WAV, AIFF and OGG can.
+- Editing songs' details, and their cover art, are Windows-only.
+- Stems are separated on the processor, which takes several times as long as on Windows' graphics card.
+
+To try it on a Mac, check that the window opens and draws, the sound cards are listed, songs in `~/Music` are found and analysed, both decks play and sync, a controller is found, the Open and Save dialogs open, and a deleted song goes to the Trash. `Cuepoint.app/Contents/MacOS/Cuepoint --self-test` checks the rest, and anything that went wrong is in `errors.log`.
 
 ## Tests
 
