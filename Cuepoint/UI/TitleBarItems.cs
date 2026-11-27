@@ -341,7 +341,8 @@ sealed class TitleBarItems
         bar.Status.Add(new Spacer(12));
         _os2l = bar.Status.Add(new Os2lIndicator(bold) { Visible = false });
         _os2lGap = bar.Status.Add(new Spacer(16) { Visible = false });
-        _cpu = bar.Status.Add(new Label(body) { Color = Theme.Muted });
+        // As wide as it gets at 100%, so the indicators to its left don't shift as the reading gains or loses a digit.
+        _cpu = bar.Status.Add(new Label(body) { Color = Theme.Muted, MinWidth = MathF.Ceiling(body.Measure("CPU 100%").X) });
 
         _headphones = bar.Tools.Add(new IconButton(TitleIcon.Picture) { Picture = images.Headphones, Tooltip = "Headphones: what they hear, and how loud" });
         _headphones.Clicked += _ => HeadphonesClicked?.Invoke();
