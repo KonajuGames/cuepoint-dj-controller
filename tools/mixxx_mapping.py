@@ -85,10 +85,17 @@ GLOBAL_CONTROLS = {
     ("[Master]", "crossfader"): "crossfader",
     ("[Mixer]", "crossfader"): "crossfader",
     ("[Master]", "gain"): "master",
+    ("[Master]", "volume"): "master",
     ("[Playlist]", "SelectTrackKnob"): "browse",
     ("[Library]", "MoveVertical"): "browse",
     ("[Playlist]", "SelectPlaylist"): "browse.folders",
     ("[Library]", "MoveHorizontal"): "browse.folders",
+    ("[Playlist]", "SelectNextTrack"): "browse.next",
+    ("[Playlist]", "SelectPrevTrack"): "browse.prev",
+    ("[Library]", "MoveDown"): "browse.next",
+    ("[Library]", "MoveUp"): "browse.prev",
+    ("[Playlist]", "SelectNextPlaylist"): "browse.folders.next",
+    ("[Playlist]", "SelectPrevPlaylist"): "browse.folders.prev",
     ("[Playlist]", "ToggleSelectedSidebarItem"): "browse.press",
     ("[Library]", "GoToItem"): "browse.press",
 }
@@ -128,7 +135,23 @@ SCRIPT_GUESSES = [
     (("vinyl",), None),
 ]
 
-GLOBAL = {"shift", "crossfader", "master", "browse", "browse.folders", "browse.press"}
+GLOBAL = {"shift", "crossfader", "master", "master.fx.on", "browse", "browse.folders", "browse.press"}
+
+# Mixxx's effect units' controls, and the nearest Cuepoint deck control: Cuepoint has one effect a deck, so unit 1 is
+# taken as deck A's and unit 2 as deck B's.
+EFFECT_UNIT_GUESSES = {
+    "enabled": "fx.on",
+    "mix": "fx.level",
+    "super1": "fx.level",
+    "next_chain": "fx.next",
+    "chain_selector": "fx.next",
+}
+EFFECT_GUESSES = {
+    "enabled": "fx.on",
+    "next_effect": "fx.next",
+    "effect_selector": "fx.next",
+}
+EFFECT_UNIT_DECKS = {"1": "A", "2": "B"}
 ENCODERS = {"jog", "scratch", "search", "browse", "browse.folders"}
 
 
@@ -168,6 +191,9 @@ def deck_control(key):
 
 def control_for(group, key, script):
     """(Cuepoint control, how sure, why) for a Mixxx group and key."""
+    # Decks 3 and 4, in any of Mixxx's forms: [Channel3], [EqualizerRack1_[Channel3]_Effect1], group_[Channel3]_enable.
+    if re.search(r"\[Channel[3-9]\]", group + key):
+        return None, "none", "Cuepoint has two decks"
     deck = DECKS.get(group)
     if m := re.fullmatch(r"\[EqualizerRack1_(\[Channel\d\])_Effect1\]", group):
         deck = DECKS.get(m.group(1))
@@ -181,6 +207,20 @@ def control_for(group, key, script):
     if m := re.fullmatch(r"group_(\[Channel\d\])_enable", key):
         if group.startswith("[EffectRack1_EffectUnit") and (target := DECKS.get(m.group(1))):
             return f"{target}.fx.on", "guess", "an effect unit switched on for this deck"
+    if key == "group_[Master]_enable" and group.startswith("[EffectRack1_EffectUnit"):
+        return "master.fx.on", "guess", "an effect unit switched on for the whole mix"
+    if m := re.fullmatch(r"\[EffectRack1_EffectUnit(\d+)(_Effect(\d+))?\]", group):
+        unit, effect = m.group(1), m.group(3)
+        guesses = EFFECT_GUESSES if effect else EFFECT_UNIT_GUESSES
+        if key in guesses:
+            if unit not in EFFECT_UNIT_DECKS:
+                return None, "none", f"Mixxx's effect unit {unit}: Cuepoint has one effect a deck, for two decks"
+            # A unit's first effect stands for the deck's one effect; its others have nothing to be.
+            if effect and effect != "1":
+                return None, "none", f"effect {effect} of Mixxx's effect unit {unit}: Cuepoint has one effect a deck"
+            target = EFFECT_UNIT_DECKS[unit]
+            where = f"effect {effect} of Mixxx's effect unit {unit}" if effect else f"Mixxx's effect unit {unit}"
+            return f"{target}.{guesses[key]}", "guess", f"{where}, taken as deck {target}'s effect"
 
     if script:
         name = key.lower()
@@ -204,8 +244,6 @@ def control_for(group, key, script):
 
     if (group, key) in GLOBAL_CONTROLS:
         return GLOBAL_CONTROLS[(group, key)], "exact", ""
-    if group in ("[Channel3]", "[Channel4]"):
-        return None, "none", "Cuepoint has two decks"
     if deck and (control := deck_control(key)):
         return f"{deck}.{control}", "exact", ""
     if deck and key in DECK_GUESSES:

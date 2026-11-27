@@ -405,6 +405,11 @@ sealed class MidiControls : IDisposable
                 foreach (var fx in FxDecks())
                     fx.Effects.On = on;
             }
+            // Buttons that step through the song list or folders, as some controllers have in place of a knob.
+            if (pressed && action is "browse.next" or "browse.prev")
+                Browse?.Invoke(action == "browse.next" ? 1 : -1);
+            if (pressed && action is "browse.folders.next" or "browse.folders.prev")
+                BrowseFolders?.Invoke(action == "browse.folders.next" ? 1 : -1);
             if (action == "browse.press" && pressed)
                 BrowsePressed?.Invoke();
             if (action == "panic" && pressed)

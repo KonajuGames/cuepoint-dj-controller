@@ -6,7 +6,8 @@ namespace Cuepoint.Tests.Midi;
 
 /// <summary>
 /// A pretend controller that sends the same messages with Shift held as without, leaving Shift to the app: its Shift
-/// on note 0x3F, and KEY LOCK's note 0x1A working slip with Shift held.
+/// on note 0x3F, and KEY LOCK's note 0x1A working slip with Shift held. Its browse buttons, 0x50 and 0x51, step
+/// through the song list, and with Shift through the folders.
 /// </summary>
 [Collection(AudioEngineTests.NAME)]
 public sealed class ShiftLayerTests : IDisposable
@@ -16,6 +17,8 @@ public sealed class ShiftLayerTests : IDisposable
     const int KEYLOCK = 0x1A;
     const int ROLL = 0x30;
     const int PLAY = 0x0B;
+    const int NEXT = 0x50;
+    const int PREV = 0x51;
 
     sealed class Ports : IMidiPorts
     {
@@ -64,6 +67,10 @@ public sealed class ShiftLayerTests : IDisposable
                 Note("A.slip", KEYLOCK, shifted: true),
                 Note("A.roll5", ROLL, shifted: true),
                 Note("A.play", PLAY),
+                Note("browse.next", NEXT),
+                Note("browse.prev", PREV),
+                Note("browse.folders.next", NEXT, shifted: true),
+                Note("browse.folders.prev", PREV, shifted: true),
             ]
         );
         Assert.Null(mapping.Save(ControllerMapping.PathFor(_folder["controllers"], DEVICE)));
@@ -127,6 +134,24 @@ public sealed class ShiftLayerTests : IDisposable
 
     // The last light sent for a note: on, off, or null if none was.
     bool? Light(int note) => _ports.Sent.LastOrDefault(message => message.Kind == MidiKind.Note && message.Number == note) is { Kind: not null } sent ? sent.Value > 0 : null;
+
+    [Fact]
+    public void Browse_buttons_step_through_the_songs_and_with_Shift_the_folders()
+    {
+        var songs = new List<int>();
+        var folders = new List<int>();
+        _controls.Browse += songs.Add;
+        _controls.BrowseFolders += folders.Add;
+
+        Press(NEXT);
+        Press(PREV);
+        Down(SHIFT);
+        Press(PREV);
+        Up(SHIFT);
+
+        Assert.Equal([1, -1], songs);
+        Assert.Equal([-1], folders);
+    }
 
     [Fact]
     public void Without_Shift_a_button_works_its_unshifted_binding()

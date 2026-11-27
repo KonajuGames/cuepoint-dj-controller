@@ -157,6 +157,10 @@ static class ControlCatalog
                 new("browse", "Browse songs", ControlKind.Encoder),
                 new("browse.folders", "Browse folders", ControlKind.Encoder),
                 new("browse.press", "Open or close folder", ControlKind.Button),
+                new("browse.next", "Next song in the list", ControlKind.Button),
+                new("browse.prev", "Previous song in the list", ControlKind.Button),
+                new("browse.folders.next", "Next folder", ControlKind.Button),
+                new("browse.folders.prev", "Previous folder", ControlKind.Button),
             ]
         );
         return controls;
