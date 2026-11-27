@@ -30,9 +30,10 @@ sealed class StemJob
 /// Separates songs into their stems with Demucs (on the graphics card where it can be), one at a time on a
 /// low-priority thread, keeping each on disk so it's
 /// only done once. The model is an ONNX export of Demucs's htdemucs (tools/export_demucs.py makes it), which isn't
-/// shipped with the app; without it, only stems already on disk can be had.
+/// shipped with the app: <paramref name="download"/> fetches it the first time it's wanted. Without it, only stems
+/// already on disk can be had.
 /// </summary>
-sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
+sealed class StemSeparator(StemCache cache, string modelPath, StemModelDownload? download = null) : IDisposable
 {
     readonly SemaphoreSlim _one = new(1, 1);
     readonly Lock _lock = new();
@@ -42,6 +43,11 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
     public string ModelPath { get; } = modelPath;
 
     public bool HasModel => File.Exists(ModelPath);
+
+    /// <summary>
+    /// Fetches the model when it isn't there; null if it can't be fetched, only made with tools/export_demucs.py.
+    /// </summary>
+    public StemModelDownload? Download { get; } = download;
 
     /// <summary>
     /// Whether the song at <paramref name="path"/> has been separated already, its stems kept on disk.
@@ -189,5 +195,9 @@ sealed class StemSeparator(StemCache cache, string modelPath) : IDisposable
         return done.Task;
     }
 
-    public void Dispose() => _model?.Dispose();
+    public void Dispose()
+    {
+        Download?.Dispose();
+        _model?.Dispose();
+    }
 }

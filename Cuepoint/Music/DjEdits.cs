@@ -46,7 +46,12 @@ sealed class DjEdits(StemSeparator separator)
         song.Analysis is null ? "once it's analysed"
         : DjEdit.LooksLikeEdit(song.Title, song.Path) ? "it's an edit or extended mix already"
         : IsMaking(song) ? "it's being made"
-        : !separator.HasModel && !separator.HasStems(song.Path) ? "needs the stem model"
+        : !separator.HasModel && !separator.HasStems(song.Path) ? (separator.Download switch
+        {
+            null => "needs the stem model",
+            { Downloading: true } => "once the stem model's downloaded",
+            _ => "needs the stem model: turn a deck's STEMS on to download it",
+        })
         : null;
 
     public bool IsMaking(Song song) => _job?.Song == song || _waiting.Any(job => job.Song == song);

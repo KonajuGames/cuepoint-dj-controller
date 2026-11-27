@@ -410,7 +410,9 @@ static int Run(ScreenshotTool.Request? capture)
 
     // Or the song's stems, with them in STEMS mode: separated with Demucs, and kept on disk once they have been.
     var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Cuepoint");
-    using var separator = new StemSeparator(new StemCache(Path.Combine(appData, "stems")), Path.Combine(appData, "models", "htdemucs.onnx"));
+    // The model's downloaded the first time it's wanted, not shipped: see StemModelDownload.
+    var modelPath = Path.Combine(appData, "models", "htdemucs.onnx");
+    using var separator = new StemSeparator(new StemCache(Path.Combine(appData, "stems")), modelPath, new StemModelDownload(modelPath));
     var stemPads = gridEditors.Select((editor, i) => new StemPads(editor.Deck, separator, editor, rollPads[i], jumpPads[i], samplerPads[i])).ToArray();
     // DJ edits of songs, made from their stems: see DjEdit.
     var djEdits = new DjEdits(separator);
