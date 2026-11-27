@@ -22,7 +22,7 @@ sealed record SetCheck(int Songs, int Missing, int Unplugged, int NotAnalysed)
     /// <summary>
     /// Whether a drive's plugged in, for <see cref="Of"/>: whether the root of <paramref name="path"/> is there.
     /// </summary>
-    public static bool DriveThere(string path) => Path.GetPathRoot(path) is { Length: > 0 } root && Directory.Exists(root);
+    public static bool DriveThere(string path) => StorageDrives.RootOf(path) is { } root && Directory.Exists(root);
 
     public bool AllGood => Missing == 0 && Unplugged == 0 && NotAnalysed == 0;
 

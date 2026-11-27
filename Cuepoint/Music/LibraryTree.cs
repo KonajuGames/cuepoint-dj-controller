@@ -642,6 +642,13 @@ static class LibraryTree
 
     static IEnumerable<LibraryNode> Drives(MusicLibrary library, Func<string, bool> isRecursive)
     {
+        // A Mac's are the startup disk and what's in /Volumes, by name; it lists many more mounts, of the system's own.
+        if (StorageDrives.MacDrives() is { } mac)
+        {
+            foreach (var (root, label) in mac)
+                yield return Folder(library, isRecursive, root, label, LibraryNodeKind.Drive);
+            yield break;
+        }
         foreach (var drive in DriveInfo.GetDrives())
         {
             bool ready;

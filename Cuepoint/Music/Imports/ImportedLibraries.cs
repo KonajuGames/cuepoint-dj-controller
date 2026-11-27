@@ -62,9 +62,9 @@ sealed class ImportedLibraries
             .OfType<RekordboxCollection>()
             .ToList();
 
-        var systemRoot = Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\";
+        var systemRoot = StorageDrives.SystemRoot;
         var serato = SeratoCrates.Folders(music, systemRoot, driveRoots)
-            .Select(found => (Drive: Path.GetPathRoot(found.Root)?.TrimEnd('\\', '/') ?? found.Root, Crates: SeratoCrates.Load(found.Folder, found.Root)))
+            .Select(found => (Drive: StorageDrives.RootOf(found.Root)?.TrimEnd('\\', '/') is { Length: > 0 } drive ? drive : found.Root,Crates: SeratoCrates.Load(found.Folder, found.Root)))
             .Where(found => found.Crates.Count > 0)
             .Select(found => (found.Drive, (IReadOnlyList<SeratoCrate>)found.Crates))
             .ToList();

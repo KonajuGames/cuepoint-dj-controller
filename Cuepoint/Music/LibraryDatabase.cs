@@ -73,8 +73,8 @@ sealed class LibraryDatabase
     {
         var database = new LibraryDatabase(
             LibraryFile.Load(filePath),
-            systemRoot ?? Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\",
-            rootOf ?? (path => Path.GetPathRoot(Path.GetFullPath(path)))
+            systemRoot ?? StorageDrives.SystemRoot,
+            rootOf ?? StorageDrives.RootOf
         );
         database.MoveToDrives();
         return database;

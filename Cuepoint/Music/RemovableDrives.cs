@@ -17,7 +17,7 @@ static partial class RemovableDrives
     /// </summary>
     public static IReadOnlyList<StorageDrive> Writable()
     {
-        var system = Path.GetPathRoot(Environment.SystemDirectory);
+        var system = StorageDrives.SystemRoot;
         return VirtualFolders
             .ReadyDrives()
             .Where(drive => !string.Equals(drive.Root, system, StringComparison.OrdinalIgnoreCase) && IsRemovable(drive.Root) && CanWrite(drive.Root))
@@ -29,6 +29,9 @@ static partial class RemovableDrives
     {
         try
         {
+            // On a Mac, every drive but the startup disk is in /Volumes, and can be ejected; a network share isn't one.
+            if (OperatingSystem.IsMacOS())
+                return root.StartsWith("/Volumes/", StringComparison.OrdinalIgnoreCase) && new DriveInfo(root).DriveType != DriveType.Network;
             var type = new DriveInfo(root).DriveType;
             return type == DriveType.Removable || (type == DriveType.Fixed && OperatingSystem.IsWindows() && IsOnRemovableBus(root));
         }

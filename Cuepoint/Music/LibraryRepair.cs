@@ -120,7 +120,7 @@ static partial class LibraryRepair
         var plugged = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         bool IsPluggedIn(string path)
         {
-            var root = Path.GetPathRoot(path) ?? "";
+            var root = StorageDrives.RootOf(path) ?? "";
             if (!plugged.TryGetValue(root, out var there))
                 plugged[root] = there = Directory.Exists(root);
             return there;

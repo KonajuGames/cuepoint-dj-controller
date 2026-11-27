@@ -86,7 +86,7 @@ sealed class VirtualFolders
         _library = library;
         Directory = directory;
         _drives = drives ?? (() => ReadyDrives());
-        _systemRoot = LibraryFile.WithSeparator(systemRoot ?? Path.GetPathRoot(Environment.SystemDirectory) ?? "C:\\");
+        _systemRoot = LibraryFile.WithSeparator(systemRoot ?? StorageDrives.SystemRoot);
         Load();
     }
 
@@ -102,6 +102,13 @@ sealed class VirtualFolders
     public static IReadOnlyList<StorageDrive> ReadyDrives(Func<string, bool>? readOnly = null)
     {
         var drives = new List<StorageDrive>();
+        // A Mac's are the startup disk and what's in /Volumes; it lists many more mounts, of the system's own.
+        if (StorageDrives.MacDrives() is { } mac)
+        {
+            foreach (var (root, label) in mac)
+                drives.Add(new StorageDrive(root, label, readOnly?.Invoke(root) != true));
+            return drives;
+        }
         foreach (var drive in DriveInfo.GetDrives())
         {
             try
