@@ -34,9 +34,15 @@
   </ItemGroup>
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
-    <!-- A release package (dotnet publish -r win-x64, as tools\package.ps1 does) carries the .NET runtime with it, so
-         it runs on a computer without .NET installed. -->
+    <!-- A release package (dotnet publish -r win-x64 or osx-arm64, as tools\package.ps1 and tools/package-mac.sh do)
+         carries the .NET runtime with it, so it runs on a computer without .NET installed. -->
     <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Built for Windows: for a Windows platform, or for none on a Windows computer. Only Windows has DirectML. -->
+    <ForWindows Condition="'$(RuntimeIdentifier)' != '' and $(RuntimeIdentifier.StartsWith('win'))">true</ForWindows>
+    <ForWindows Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</ForWindows>
   </PropertyGroup>
 
   <ItemGroup>
@@ -44,16 +50,21 @@
     <PackageReference Include="Ahwoo.BRUTAL.Sdl" Version="2026.10.3" />
     <PackageReference Include="Ahwoo.BRUTAL.Sdl.Mixer" Version="2026.10.3" />
     <PackageReference Include="Concentus" Version="2.2.3" />
-    <!-- Stem separation: Demucs through ONNX Runtime, on the graphics card with DirectML. -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
-    <PackageReference Include="Microsoft.AI.DirectML" Version="1.15.4" GeneratePathProperty="true" />
     <PackageReference Include="NAudio.Wasapi" Version="3.2.0" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(ForWindows)' == 'true'">
+    <!-- Stem separation: Demucs through ONNX Runtime, on the graphics card with DirectML. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
+    <PackageReference Include="Microsoft.AI.DirectML" Version="1.15.4" GeneratePathProperty="true" />
     <!-- DirectML's package only copies its DLL for a build with a platform, and without it Windows' own older copy is
          found, which ONNX Runtime can't use. -->
     <None Include="$(PkgMicrosoft_AI_DirectML)/bin/x64-win/DirectML.dll" Link="DirectML.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(ForWindows)' != 'true'">
+    <!-- Elsewhere (a Mac), Demucs runs on the processor. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.4" />
   </ItemGroup>
 
   <ItemGroup>
